@@ -402,7 +402,8 @@ renders INSTEAD of the router.
   Admin page's Configuration, Users, Companies, Activity and Fleet broker
   tabs; the project's "Move to another company" (decision 0063); the Refresh and
   Override controls on Exchange rates, the two job buttons on Datasheets and
-  the order, add, edit and remove controls on Suppliers, whose tabs stay
+  the order, add, edit and remove controls on Suppliers, and the add,
+  rename and remove controls on Company books → Overhead, whose tabs stay
   VISIBLE and read-only; and the field solver's stackup and
   rule-set Edit buttons. **Prefer dropping the control to hiding the panel** —
   a table somebody may read is not the same as an action they may take, and an

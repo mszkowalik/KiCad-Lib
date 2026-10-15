@@ -23,6 +23,16 @@ tools over MCP.
   (`move_batch_process` names its argument `process_version_id` for that
   reason). Shipment writes go to `services/orders.py` directly, because their
   routes read the actor from the `Request` a tool does not have.
+- **Overhead categories** (decision 0091): `list_overhead_categories` reads
+  the list, and with `category` the documents of the caller's companies that
+  still name it. `edit_overhead_category` creates, relabels and deletes it,
+  through the route functions in `routers/overhead.py`. `assign_invoice_line`
+  takes `allocate="overhead"` with `overhead_category`.
+- **A tool that does what an admin-only route does asks `_admin_caller` first**
+  (`get_audit_log`, `edit_overhead_category`). The tool route
+  `/api/agent/tools/{name}` has no `require_admin`, so without that check any
+  token could make the write. Pass the caller to the route function as
+  `admin`, so its audit row names the person.
 - **Undo tools** (decision 0089): `list_changes`, `get_change`, `undo_change`,
   `row_history`. They call `services/row_changes.py` in the tool's own session.
   The ownership rule (your own requests, an administrator anybody's) is in the

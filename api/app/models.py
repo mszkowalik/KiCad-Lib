@@ -4369,6 +4369,22 @@ class CompanyTaxPeriod(Base):
     __table_args__ = (UniqueConstraint("company_id", "from_quarter", name="uq_company_tax_period"),)
 
 
+class OverheadCategory(Base):
+    """One category of company overhead (decisions 0068, 0091). A position
+    with `allocate="overhead"` names it in `run_cost_lines.overhead_category`
+    by `key`, so the key never changes once created; the label may.
+    `services/overhead.py` owns the rules: an admin adds and removes them, and
+    one is removed only when no live position names it."""
+
+    __tablename__ = "overhead_categories"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    key: Mapped[str] = mapped_column(String(40), unique=True)
+    label: Mapped[str] = mapped_column(String(100))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    created_by: Mapped[str] = mapped_column(String(100), default="")
+
+
 class RecordFile(Base):
     """A file kept as the evidence of a sales invoice or a tax entry (decision
     0077): the PDF a company issued before the platform or KSeF wrote its

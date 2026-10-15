@@ -186,7 +186,8 @@ the other. The rules (decision
 - **Admin-only is the deployment, other people's credentials, and the SHARED
   reference data — not the work.** `/api/settings`, `/api/users`,
   `/api/mqtt`, the field solver's stackups and rule sets, the exchange-rate
-  writes, the supplier register writes (decision 0055), the archive-wide
+  writes, the supplier register writes (decision 0055), the overhead
+  category writes (decision 0091), the archive-wide
   datasheet jobs, and `/api/activity` (every user's changes at once —
   decision 0050). A component's own supplier links stay open: they are
   library work. The review axis, production,

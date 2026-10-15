@@ -105,6 +105,12 @@ EXPECTED = {
     ("PATCH", "/api/suppliers/{supplier_id}"),
     ("DELETE", "/api/suppliers/{supplier_id}"),
     ("PUT", "/api/suppliers/order"),
+    # The company overhead categories: every company's books are summed by
+    # them — decision 0091. Reading them stays open; every invoice editor
+    # offers them.
+    ("POST", "/api/overhead-categories"),
+    ("PATCH", "/api/overhead-categories/{key}"),
+    ("DELETE", "/api/overhead-categories/{key}"),
 }
 
 

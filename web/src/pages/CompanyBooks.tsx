@@ -4,10 +4,15 @@
  *  accountant's are the ones that count.
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import {
+  createOverheadCategory,
+  deleteOverheadCategory,
   errorMessage,
   getCompanyBooks,
+  listOverheadCategories,
+  overheadCategoryDocuments,
+  relabelOverheadCategory,
   deleteTaxPeriod,
   accountantFilesUrl,
   getAccountantToSend,
@@ -25,9 +30,12 @@ import {
   type BooksMonth,
   type TaxPeriod,
   type CompanyBooks as Books,
+  type OverheadCategory,
+  type OverheadCategoryDocument,
 } from "../api";
 import { useAuth } from "../auth";
 import { askNotSentReason } from "../components/AccountantMark";
+import { forgetOverheadCategories } from "../components/costs";
 import DataTable, { type Column } from "../components/DataTable";
 import RecordFiles from "../components/RecordFiles";
 import SiInput from "../components/SiInput";
@@ -328,12 +336,154 @@ function AccountantCard({ companyId }: { companyId: number }) {
   );
 }
 
+/** The documents whose live positions name one category, so they can be moved
+ *  before the category is removed. Each opens on the Invoices page. */
+function CategoryDocuments({ categoryKey }: { categoryKey: string }) {
+  const [docs, setDocs] = useState<OverheadCategoryDocument[] | null>(null);
+  const [err, setErr] = useState("");
+  useEffect(() => {
+    const ac = new AbortController();
+    overheadCategoryDocuments(categoryKey, ac.signal).then(setDocs)
+      .catch((e) => { if (!isAbortError(e)) setErr(errorMessage(e)); });
+    return () => ac.abort();
+  }, [categoryKey]);
+  if (err) return <ErrorBanner message={err} />;
+  if (docs === null) return <Spinner label="Loading documents" />;
+  return (
+    <DataTable rows={docs} rowKey={(d) => d.id} empty="No document names this category." columns={[
+      { key: "date", label: "Date", width: 14, className: "mono", get: (d) => d.doc_date },
+      { key: "supplier", label: "Supplier", width: 36, get: (d) => d.supplier, title: (d) => d.supplier },
+      { key: "number", label: "Number", width: 24, className: "mono", get: (d) => d.doc_number,
+        render: (d) => <Link className="comp-link" to={`/production/invoices?doc=${d.id}`}>{d.doc_number || "no number"}</Link> },
+      { key: "pos", label: "Positions", width: 10, numeric: true, get: (d) => d.positions },
+      { key: "net", label: "Net", width: 16, numeric: true, get: (d) => d.net,
+        render: (d) => <>{pl(String(d.net))} {d.currency !== "PLN" ? d.currency : ""}</> },
+    ]} />
+  );
+}
+
+/** The overhead categories (decision 0091), with what the selected company's
+ *  year put into each. Everybody reads it; an admin adds, renames and removes,
+ *  and the API refuses otherwise. A category is removed only when no live
+ *  position names it — open its row to see the documents that still do. */
+function OverheadTab({ books }: { books: Books | null }) {
+  const { isAdmin } = useAuth();
+  const dialog = useDialog();
+  const [rows, setRows] = useState<OverheadCategory[] | null>(null);
+  const [err, setErr] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [label, setLabel] = useState("");
+  const [key, setKey] = useState("");
+  const load = useCallback((signal?: AbortSignal) => {
+    listOverheadCategories(signal).then((r) => { setRows(r); setErr(""); })
+      .catch((e) => { if (!isAbortError(e)) setErr(errorMessage(e)); });
+  }, []);
+  useEffect(() => {
+    const ac = new AbortController();
+    load(ac.signal);
+    return () => ac.abort();
+  }, [load]);
+  const act = async (fn: () => Promise<unknown>) => {
+    setBusy(true);
+    setErr("");
+    try {
+      await fn();
+      forgetOverheadCategories();
+      load();
+      return true;
+    } catch (e) {
+      setErr(errorMessage(e));
+      return false;
+    } finally {
+      setBusy(false);
+    }
+  };
+  const add = async () => {
+    if (await act(() => createOverheadCategory({ label: label.trim(), key: key.trim() }))) {
+      setLabel("");
+      setKey("");
+    }
+  };
+  const rename = async (c: OverheadCategory) => {
+    const next = await dialog.prompt(`New label for ${c.label}. The key ${c.key} stays: positions store it.`,
+      { title: "Rename category", initial: c.label });
+    if (next !== null && next.trim() && next.trim() !== c.label) await act(() => relabelOverheadCategory(c.key, next.trim()));
+  };
+  const remove = async (c: OverheadCategory) => {
+    if (await dialog.confirm(`Remove the overhead category ${c.label}?`,
+      { title: "Remove category", confirmLabel: "Remove", tone: "danger" })) {
+      await act(() => deleteOverheadCategory(c.key));
+    }
+  };
+  const net = (k: string) => Number(books?.overhead[k] ?? 0);
+  const year = books?.year ?? "";
+  const cols: Column<OverheadCategory>[] = [
+    { key: "label", label: "Category", width: isAdmin ? 32 : 38, get: (c) => c.label,
+      render: (c) => <>{c.label}{c.registered ? null : <> <span className="pill warn" title="Positions name this key, but it is not on the list. Add it again with this key.">not on the list</span></>}</> },
+    { key: "key", label: "Key", width: isAdmin ? 20 : 22, className: "mono", get: (c) => c.key },
+    { key: "net", label: `Net ${year} (PLN)`, width: 18, numeric: true, get: (c) => net(c.key),
+      render: (c) => <>{net(c.key) ? pl(books?.overhead[c.key]) : "—"}</> },
+    { key: "pos", label: "Positions", width: isAdmin ? 14 : 22, numeric: true, get: (c) => c.positions,
+      title: () => "Live overhead positions that name it, in every company and year" },
+    ...(isAdmin ? [{ key: "x", label: "", width: 16, className: "ctr", interactive: false, get: () => "",
+      render: (c: OverheadCategory) => c.registered ? (
+        <>
+          <button type="button" className="icon-btn" title="Rename" disabled={busy}
+            onClick={(e) => { e.stopPropagation(); void rename(c); }}>✎</button>
+          {c.fallback ? null : (
+            <button type="button" className="row-del" disabled={busy || c.positions > 0}
+              title={c.positions > 0 ? `${c.positions} position(s) name it. Move them to another category first.` : `Remove ${c.label}`}
+              onClick={(e) => { e.stopPropagation(); void remove(c); }}>&#x2715;</button>
+          )}
+        </>
+      ) : null } as Column<OverheadCategory>] : []),
+  ];
+  return (
+    <div className="card pad">
+      <h2 className="card-title">Overhead categories</h2>
+      <p className="muted dim">
+        A position sent to company overhead names one of these. The net is this company's {year}; the positions
+        are counted over every company and year. Open a row to see the documents that use it. A category is removed
+        only when no position names it: move those positions on their invoices first. Other is where a position
+        without a category goes, and stays.
+      </p>
+      <ErrorBanner message={err} />
+      {rows === null && !err ? <Spinner label="Loading categories" /> : null}
+      {rows !== null ? (
+        <DataTable rows={rows} rowKey={(c) => c.key} columns={cols} empty="No categories."
+          defaultSort={{ key: "net", dir: "desc" }}
+          expand={(c) => <CategoryDocuments categoryKey={c.key} />} />
+      ) : null}
+      {isAdmin ? (
+        <FieldRow>
+          <Field label="New category">
+            <input className="text" value={label} placeholder="e.g. Tools" onChange={(e) => setLabel(e.target.value)} />
+          </Field>
+          <Field label="Key" hint="What a position stores. It never changes. Empty: made from the label.">
+            <input className="text mono" value={key} placeholder="tools"
+              onChange={(e) => setKey(e.target.value.trim().toLowerCase())} />
+          </Field>
+          <button type="button" className="btn btn-primary btn-sm" disabled={busy || label.trim() === ""}
+            onClick={() => void add()}>
+            ＋ Add category
+          </button>
+        </FieldRow>
+      ) : null}
+    </div>
+  );
+}
+
 export default function CompanyBooks() {
   const { companies, scope } = useAuth();
   const [companyId, setCompanyId] = useState<number>(scope !== "all" ? Number(scope) : companies[0]?.id ?? 0);
   const [year, setYear] = useState(new Date().getFullYear());
   const [books, setBooks] = useState<Books | null>(null);
   const [error, setError] = useState("");
+  // Two tabs, so the books stay one screen (user request 2026-10-15). The
+  // tab is in the URL, as on every tabbed page.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const tab = searchParams.get("tab") === "overhead" ? "overhead" : "books";
+  const setTab = (t: string) => setSearchParams(t === "books" ? {} : { tab: t }, { replace: true });
 
   const load = useCallback((signal?: AbortSignal) => {
     if (!companyId) return;
@@ -369,7 +519,6 @@ export default function CompanyBooks() {
       title: () => "Late-payment interest paid with the month's taxes. Never a cost." },
   ], [taxLabel, showZus]);
 
-  const overhead = books ? Object.entries(books.overhead).map(([k, v]) => ({ key: k, label: books.overhead_labels[k] ?? k, amount: v })) : [];
   return (
     <div className="main-solo">
       <div className="page">
@@ -402,25 +551,30 @@ export default function CompanyBooks() {
           </Field>
         </FieldRow>
         <ErrorBanner message={error} />
-        <div className="card pad">
-          <h2 className="card-title">Months</h2>
-          {books === null ? <Spinner label="Computing…" /> : (
-            <DataTable rows={books.months} rowKey={(m) => m.month} columns={cols} empty="—"
-              expand={(m) => <MonthPanel companyId={companyId} m={m} incomeTax={taxLabel} onSaved={() => load()} />} />
-          )}
+        <div className="seg proj-tabs" role="tablist" aria-label="Company books section">
+          {([["books", "Books"], ["overhead", "Overhead"]] as const).map(([t, text]) => (
+            <button key={t} type="button" role="tab" aria-selected={tab === t} className={tab === t ? "on" : ""}
+              onClick={() => setTab(t)}>
+              {text}
+            </button>
+          ))}
         </div>
-        {companyId ? <AccountantCard companyId={companyId} /> : null}
-        {books ? <TaxPeriodsCard key={`${companyId}-${books.income_tax}`} companyId={companyId} periods={books.tax_periods ?? []}
-          incomeTax={books.income_tax} onSaved={() => load()} /> : null}
-        {overhead.length ? (
-          <div className="card pad">
-            <h2 className="card-title">Company overhead</h2>
-            <DataTable rows={overhead} rowKey={(r) => r.key} empty="—" columns={[
-              { key: "cat", label: "Category", width: 70, get: (r) => r.label },
-              { key: "amt", label: "Net (PLN)", width: 30, numeric: true, get: (r) => Number(r.amount), render: (r) => <>{pl(r.amount)}</> },
-            ]} />
-          </div>
-        ) : null}
+        {tab === "books" ? (
+          <>
+            <div className="card pad">
+              <h2 className="card-title">Months</h2>
+              {books === null ? <Spinner label="Computing…" /> : (
+                <DataTable rows={books.months} rowKey={(m) => m.month} columns={cols} empty="—"
+                  expand={(m) => <MonthPanel companyId={companyId} m={m} incomeTax={taxLabel} onSaved={() => load()} />} />
+              )}
+            </div>
+            {companyId ? <AccountantCard companyId={companyId} /> : null}
+            {books ? <TaxPeriodsCard key={`${companyId}-${books.income_tax}`} companyId={companyId} periods={books.tax_periods ?? []}
+              incomeTax={books.income_tax} onSaved={() => load()} /> : null}
+          </>
+        ) : (
+          <OverheadTab books={books} />
+        )}
       </div>
     </div>
   );

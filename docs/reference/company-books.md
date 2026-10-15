@@ -9,8 +9,19 @@ Production → Company books.
 ## Overhead
 
 * **`allocate="overhead"` with `overhead_category`** is a company cost of no
-  product. `run_actuals.OVERHEAD_CATEGORIES` and the web's
-  `components/costs.tsx` `OVERHEAD_CATEGORIES` are the same list; change both.
+  product. The categories are the `overhead_categories` table
+  (`services/overhead.py`, decision
+  [0091](../decisions/0091-overhead-categories-are-a-list-an-admin-edits.md)),
+  edited by an admin on Production → Company books → Overhead. Never put a
+  category list in code again: the web reads `GET /api/overhead-categories`
+  through `useOverheadCategories` in `components/costs.tsx`.
+* **A position stores the category's KEY, with no foreign key.** The key never
+  changes, an empty one counts as `other`, and `other` is never removed.
+  `_check_line` refuses a key that is not on the list, on every write path.
+* **A category is removed only when no live position names it.** Nothing moves
+  positions for the user. An undo can still put a position back on a removed
+  key; the list then shows that key as "not on the list", and an admin adds it
+  again with the same key.
 * **It names nothing else, on every write path.** `routers/run_costs`
   clears the batch, project and transformation and sets `basis="per_run"`
   when a position is created (`_overhead_whole`), patched or split

@@ -686,12 +686,8 @@ def get_audit_log(limit: int = 30, entity_type: str = "", actor: str = "",
     try:
         # The activity log is admin-only on /api/activity (decision 0050), and
         # this tool reads the same rows, so it asks the same question
-        # (decision 0065). Auth off (dev) has no user and is let through.
-        from ..config import settings
-
-        ctx = tracking.current()
-        caller = db.get(M.User, ctx.user_id) if ctx is not None and ctx.user_id else None
-        if settings.auth_enabled and (caller is None or caller.role != "admin"):
+        # (decision 0065).
+        if not _admin_caller(db)[0]:
             return json.dumps({"error": "the audit log is for administrators only"})
         q = db.query(M.AuditLog).order_by(M.AuditLog.ts.desc())
         if not include_tracking:
@@ -2600,6 +2596,17 @@ def _route(fn, *args, **kwargs):
         db.close()
 
 
+def _admin_caller(db) -> tuple[bool, M.User | None]:
+    """Whether the token's user passes `require_admin`, and who it is. A tool
+    that does what an admin-only route does asks this first. Auth off (dev)
+    has no user and is let through, as on the routes."""
+    from ..config import settings
+
+    ctx = tracking.current()
+    caller = db.get(M.User, ctx.user_id) if ctx is not None and ctx.user_id else None
+    return (not settings.auth_enabled or (caller is not None and caller.role == "admin")), caller
+
+
 def _caller_companies(db) -> list[int]:
     """The companies the agent's token user may see. A legacy shared token is
     nobody's and sees none (decision 0065)."""
@@ -2762,18 +2769,21 @@ def create_supplier_invoice(supplier: str, doc_number: str, doc_date: str, curre
 @beta_tool
 def assign_invoice_line(line_id: int, plan_key: str | None = None, run_id: int | None = None,
                         project_id: int | None = None, allocate: str | None = None,
-                        exclude_reason: str | None = None) -> str:
+                        exclude_reason: str | None = None, overhead_category: str | None = None) -> str:
     """Say what a supplier position is and where its money goes, with the same
     checks as the website: a run, a project, the pool (allocate="pooled" on a
-    stock step) or nobody (allocate="excluded" with exclude_reason).
+    stock step), the company (allocate="overhead" with overhead_category) or
+    nobody (allocate="excluded" with exclude_reason).
 
     Args:
         line_id: The position's id (from get_supplier_invoice).
         plan_key: The production step key (e.g. "parts:pool", "fab:pcb").
         run_id: The batch that pays for it.
         project_id: The project that pays for it, when no batch does.
-        allocate: none | pooled | by_value | by_qty | excluded.
+        allocate: none | pooled | by_value | by_qty | excluded | overhead.
         exclude_reason: Why it is charged to nobody (with allocate="excluded").
+        overhead_category: With allocate="overhead": a key from
+            list_overhead_categories (e.g. "leasing", "software"). Empty is "other".
     """
     from ..routers import run_costs
 
@@ -2786,8 +2796,77 @@ def assign_invoice_line(line_id: int, plan_key: str | None = None, run_id: int |
     finally:
         db.close()
     fields = {k: v for k, v in {"plan_key": plan_key, "run_id": run_id, "project_id": project_id,
-                                "allocate": allocate, "exclude_reason": exclude_reason}.items() if v is not None}
+                                "allocate": allocate, "exclude_reason": exclude_reason,
+                                "overhead_category": overhead_category}.items() if v is not None}
     return _route(run_costs.update_line, line_id, run_costs.LinePatch(**fields))
+
+
+@beta_tool
+def list_overhead_categories(category: str = "") -> str:
+    """The company overhead categories (decision 0091): the `key` a position
+    stores as overhead_category with allocate="overhead", the label, and how
+    many live positions name it, over every company. An empty category counts
+    as `fallback` ("other").
+
+    Args:
+        category: A key. Adds `documents`: the supplier documents of your
+            companies whose live positions name it — what has to move before
+            the category can be removed.
+    """
+    from ..routers import overhead as overhead_router
+    from . import overhead
+
+    db = SessionLocal()
+    try:
+        out = {"categories": overhead_router.list_categories(db=db), "fallback": overhead.FALLBACK}
+        if category.strip():
+            out["documents"] = overhead.documents(db, category.strip(), _caller_companies(db))
+        return json.dumps(out)
+    finally:
+        db.close()
+
+
+@beta_tool
+def edit_overhead_category(action: str, key: str = "", label: str = "") -> str:
+    """Add, rename or remove a company overhead category (decision 0091), for
+    administrators only, as on Production -> Company books -> Overhead. The
+    change is live at once: every invoice editor offers the new list. A delete
+    is refused while a live position names the category, and the error lists
+    the documents: move those positions first (assign_invoice_line with
+    allocate="overhead" and another overhead_category). "other" is never
+    removed.
+
+    Args:
+        action: create | relabel | delete.
+        key: create: optional, made from the label when empty (1-40 of a-z,
+            0-9 and _); it never changes afterwards, because positions store
+            it. relabel and delete: the category to change.
+        label: create and relabel: the name people read.
+    """
+    from fastapi import HTTPException
+
+    from ..routers import overhead as R
+
+    db = SessionLocal()
+    try:
+        ok, caller = _admin_caller(db)
+        if not ok:
+            return json.dumps({"error": "overhead categories are changed by administrators only"})
+        try:
+            if action == "create":
+                out = R.create_category(R.CategoryIn(label=label, key=key), db=db, admin=caller)
+            elif action == "relabel":
+                out = R.relabel_category(key, R.CategoryPatch(label=label), db=db, admin=caller)
+            elif action == "delete":
+                out = R.delete_category(key, db=db, admin=caller)
+            else:
+                return json.dumps({"error": f"action must be create, relabel or delete, not {action!r}"})
+        except HTTPException as e:
+            db.rollback()
+            return json.dumps({"error": e.detail})
+        return json.dumps(out)
+    finally:
+        db.close()
 
 
 @beta_tool
@@ -3576,6 +3655,8 @@ TOOLS = [
     fieldsolver_save_profile,
     # invoices: supplier documents, KSeF, sales (decisions 0063-0067)
     list_supplier_invoices, get_supplier_invoice, create_supplier_invoice, assign_invoice_line,
+    # company overhead categories (decision 0091) — the edit is admin-only
+    list_overhead_categories, edit_overhead_category,
     list_ksef_inbox, import_ksef_invoice, list_sales_invoices, create_sales_invoice_draft,
     # production: batches, process versions, shipments, devices, stock (decision 0088)
     get_batch, batch_step, batch_units, set_bench_stack, get_process, edit_process,

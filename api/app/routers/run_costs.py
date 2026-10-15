@@ -16,7 +16,7 @@ from sqlalchemy.orm import Session
 from .. import models as M
 from ..db import get_db
 from ..models import utcnow
-from ..services import (cost_steps, customs, doc_kinds, document_files, journal, nbp, run_actuals,
+from ..services import (cost_steps, customs, doc_kinds, document_files, journal, nbp, overhead, run_actuals,
                         substitutions, supplier_parts)
 from ..services import companies as company_svc
 from ..services.invoicing.amounts import d2
@@ -670,7 +670,7 @@ def _doc(db: Session, doc_id: int) -> M.RunCostDocument:
     return d
 
 
-def _check_line(body: LineIn | LinePatch | ChildIn) -> None:
+def _check_line(body: LineIn | LinePatch | ChildIn, db: Session) -> None:
     step = getattr(body, "plan_key", None)
     # A step that is not in the catalog cannot say what the position IS, and the
     # bucket derived from it would silently be "other". `c<id>` is the older
@@ -689,9 +689,12 @@ def _check_line(body: LineIn | LinePatch | ChildIn) -> None:
     allocate = getattr(body, "allocate", None)
     if allocate is not None and allocate not in ALLOCATES:
         raise HTTPException(422, f"allocate must be one of {sorted(ALLOCATES)}")
-    cat = getattr(body, "overhead_category", None)
-    if cat and cat not in run_actuals.OVERHEAD_CATEGORIES:
-        raise HTTPException(422, f"overhead category must be one of {sorted(run_actuals.OVERHEAD_CATEGORIES)}")
+    # Every write path runs this on what it was sent, so it is the one place a
+    # category is checked against the list (decision 0091).
+    try:
+        overhead.check_key(db, getattr(body, "overhead_category", None) or "")
+    except overhead.OverheadError as e:
+        raise HTTPException(422, str(e)) from None
 
 
 def _check_allocate(step: str | None, allocate: str | None) -> None:
@@ -829,10 +832,8 @@ def _one_destination(f: dict, cur: M.RunCostLine | None = None) -> dict:
         # needs its category (decision 0068).
         f["run_id"], f["project_id"], f["transformation_id"] = None, None, None
         f["basis"] = "per_run"
-        cat = (f.get("overhead_category") or "other").strip()
-        if cat not in run_actuals.OVERHEAD_CATEGORIES:
-            raise HTTPException(422, f"overhead category must be one of {sorted(run_actuals.OVERHEAD_CATEGORIES)}")
-        f["overhead_category"] = cat
+        # `_check_line` has checked a named one against the list.
+        f["overhead_category"] = (f.get("overhead_category") or overhead.FALLBACK).strip()
         return f
     if f.get("allocate") not in (None, run_actuals.OVERHEAD) and "overhead_category" not in f:
         f["overhead_category"] = ""
@@ -1005,7 +1006,7 @@ def _create_document(project_id: int | None, body: DocumentIn, db: Session):
             raise HTTPException(422, "run belongs to a different project")
     body.lines = [_overhead_whole(li) for li in body.lines]
     for li in body.lines:
-        _check_line(li)
+        _check_line(li, db)
         _check_allocate(li.plan_key, li.allocate)
         _check_excluded(li.allocate, li.exclude_reason)
         _check_cancelled(li.plan_key, li.allocate, li.run_id, li.project_id)
@@ -1275,7 +1276,7 @@ def add_line(doc_id: int, body: LineIn, db: Session = Depends(get_db)):
     doc = _doc(db, doc_id)
     _guard_closed(db, doc, "adding a position to this document")
     body = _overhead_whole(body)
-    _check_line(body)
+    _check_line(body, db)
     _check_allocate(body.plan_key, body.allocate)
     _check_excluded(body.allocate, body.exclude_reason)
     _check_cancelled(body.plan_key, body.allocate, body.run_id, body.project_id)
@@ -1321,7 +1322,7 @@ def edit_lines(doc_id: int, body: LinesBatchIn, db: Session = Depends(get_db)):
         raise HTTPException(404, f"no live line {missing} on this document")
 
     for e in body.updates:
-        _check_line(e)
+        _check_line(e, db)
         # The effective values: a patch may change either half, or neither.
         f = e.model_dump(exclude_unset=True)
         _cur = by_id[e.id]
@@ -1336,7 +1337,7 @@ def edit_lines(doc_id: int, body: LinesBatchIn, db: Session = Depends(get_db)):
                               f.get("run_id", _cur.run_id), f.get("project_id", _cur.project_id),
                               f.get("allocate", _cur.allocate))
     for c in body.creates:
-        _check_line(c)
+        _check_line(c, db)
         _check_allocate(c.plan_key, c.allocate)
         _check_excluded(c.allocate, c.exclude_reason)
         _check_cancelled(c.plan_key, c.allocate, c.run_id, c.project_id)
@@ -1543,7 +1544,7 @@ def split_line_core(line_id: int, body: SplitIn, db: Session) -> dict:
     made: list[M.RunCostLine] = []
     pos = max([li.position for li in doc.lines], default=-1)
     for child in body.children:
-        _check_line(child)
+        _check_line(child, db)
         if child.allocate == run_actuals.OVERHEAD:
             # A company overhead share names nothing else (decision 0068).
             child = child.model_copy(update=_one_destination(
@@ -1672,7 +1673,7 @@ def split_line_core(line_id: int, body: SplitIn, db: Session) -> dict:
 def update_line(line_id: int, body: LinePatch, db: Session = Depends(get_db)):
     li = _line(db, line_id)
     _guard_closed(db, _doc(db, li.document_id), "editing this position")
-    _check_line(body)
+    _check_line(body, db)
     fields = body.model_dump(exclude_unset=True)
     _check_allocate(fields.get("plan_key", li.plan_key), fields.get("allocate", li.allocate))
     _check_excluded(fields.get("allocate", li.allocate),

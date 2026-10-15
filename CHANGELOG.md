@@ -1,5 +1,21 @@
 # Changelog
 
+## 2026-10-15 (overhead categories are edited on the platform)
+
+- **An admin adds overhead categories on Production → Company books → Overhead.** Before, the 13
+  categories were fixed in code, so a new one such as "Tools" needed a deployment. Every invoice
+  editor offers a new category at once. A label can change; the key that positions store cannot.
+  Decision 0091.
+- **A category is removed only when no position uses it.** The remove button stays off while
+  positions name the category. Open its row to see those documents, move their positions to another
+  category on the Invoices page, then remove it. "Other" is never removed.
+- **Agents can do the same over MCP.** `list_overhead_categories` lists the categories and the
+  documents that use one. `edit_overhead_category` adds, renames and removes one, for admins only.
+  `assign_invoice_line` sends a position to company overhead with `allocate="overhead"` and
+  `overhead_category`.
+- **Company books has two tabs, Books and Overhead.** The year's overhead by category moved from a
+  card on the books to the Overhead tab, next to the categories.
+
 ## 2026-10-14 (a QR code in the marking artwork)
 
 - **The marking bench fills a QR code in the artwork with the same value as the serial.** Before,

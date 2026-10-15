@@ -51,6 +51,7 @@ from .routers import (
     users,
     view,
     orders,
+    overhead as overhead_router,
 )
 
 log = logging.getLogger(__name__)
@@ -123,6 +124,7 @@ app.include_router(kicad_http.router)
 app.include_router(view.router)
 app.include_router(projects.router)
 app.include_router(suppliers.router)
+app.include_router(overhead_router.router)
 app.include_router(git_credentials.router)
 app.include_router(account.router)
 app.include_router(production_runs.router)
@@ -1413,6 +1415,14 @@ def startup() -> None:
         run_startup_migration()
     except Exception as e:  # noqa: BLE001 — never block startup on a migration
         log.warning(f"supplier register migration did not run: {type(e).__name__}: {e}")
+    # Decision 0091: the overhead categories decision 0068 kept in code, into
+    # an EMPTY table only — a category an admin removed must not come back.
+    try:
+        from .services.overhead import run_startup_seed as _seed_overhead
+
+        _seed_overhead()
+    except Exception as e:  # noqa: BLE001 — never block startup on a migration
+        log.warning(f"overhead category seed did not run: {type(e).__name__}: {e}")
     # The per-file version pool becomes blobs + file sets (decision 0029).
     # Runs after create_all built the three new tables; one transaction,
     # checked before the old tables are dropped, reported on /health/schema.

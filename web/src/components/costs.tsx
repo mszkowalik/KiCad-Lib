@@ -1,9 +1,9 @@
 /** Shared cost-domain primitives: the line-kind list, the production-step
  *  select and the charge-to destination select. Each of these existed as
  *  three drifting literal copies before this file. */
-import { useId } from "react";
+import { useEffect, useId, useState } from "react";
 import type { ReactNode } from "react";
-import type { CostLineKind, CostStepCatalog } from "../api";
+import { listOverheadCategories, type CostLineKind, type CostStepCatalog } from "../api";
 
 export const COST_LINE_KINDS: CostLineKind[] = [
   "part", "fab", "assembly", "tooling", "freight",
@@ -90,14 +90,57 @@ export function StepSelect({
  */
 export type GoesTo = "" | "inherit" | "pool" | "nobody" | string;
 
-/** Company overhead categories (decision 0068): `overhead:<key>` as a destination.
- *  The same keys as `run_actuals.OVERHEAD_CATEGORIES`. */
-export const OVERHEAD_CATEGORIES: [string, string][] = [
-  ["leasing", "Leasing"], ["telecom", "Phone and internet"], ["software", "Software and IT services"],
-  ["accounting", "Accounting"], ["office", "Office"], ["travel", "Travel"], ["car", "Car and fuel"],
-  ["insurance", "Insurance"], ["bank", "Bank fees"], ["rent", "Rent"], ["marketing", "Marketing"],
-  ["training", "Training"], ["other", "Other"],
-];
+/** Company overhead categories (decisions 0068, 0091): `overhead:<key>` as a
+ *  destination. The list is the platform's — an admin edits it on Production →
+ *  Company books → Overhead — so it is loaded, once per page, and shared: an
+ *  invoice draws one select per position, and each asking would be one request
+ *  per row. */
+let overheadLoad: Promise<[string, string][]> | null = null;
+let overheadList: [string, string][] | null = null;
+
+function loadOverheadCategories(): Promise<[string, string][]> {
+  if (overheadLoad === null) {
+    overheadLoad = listOverheadCategories()
+      .then((rows) => (overheadList = rows.filter((r) => r.registered).map((r) => [r.key, r.label])))
+      .catch((err) => {
+        overheadLoad = null;
+        throw err;
+      });
+  }
+  return overheadLoad;
+}
+
+/** Drop the shared list after it changed, so the next select reads it again. */
+export function forgetOverheadCategories() {
+  overheadLoad = null;
+  overheadList = null;
+}
+
+/** `[key, label]` pairs, by label with the fallback (`other`) last. Empty
+ *  until the first load answers. */
+export function useOverheadCategories(): [string, string][] {
+  const [list, setList] = useState<[string, string][]>(overheadList ?? []);
+  useEffect(() => {
+    let live = true;
+    loadOverheadCategories().then((l) => { if (live) setList(l); }).catch(() => {});
+    return () => { live = false; };
+  }, []);
+  return list;
+}
+
+/** The `overhead:<key>` options, plus one for a value the list does not hold —
+ *  a key an undo put back after its category was removed, or any key while the
+ *  list is still loading. A select whose value has no option shows its first
+ *  one, which would read as "not decided" for money that IS assigned. */
+function overheadOptions(list: [string, string][], value: string) {
+  const opts = list.map(([k, t]) => (
+    <option key={`overhead:${k}`} value={`overhead:${k}`}>Overhead · {t}</option>
+  ));
+  if (value.startsWith("overhead:") && !list.some(([k]) => `overhead:${k}` === value)) {
+    opts.push(<option key={value} value={value}>Overhead · {value.slice("overhead:".length)}</option>);
+  }
+  return <optgroup label="Company overhead (no product)">{opts}</optgroup>;
+}
 
 /** A transformation as a destination option: `t:<id>`, decision 0058 §4. */
 export interface TransformOption {
@@ -139,6 +182,7 @@ export function GoesToSelect({
   className?: string;
   disabled?: boolean;
 }) {
+  const overhead = useOverheadCategories();
   // A PROFORMA's positions are not special here. `line_destination` does not
   // look at `doc_type`, so a proforma part line reports "pool" like any other —
   // what makes a proforma different is that `_pool_events` skips the whole
@@ -170,11 +214,7 @@ export function GoesToSelect({
         </option>
       ))}
       {transformOptions(transformations, value)}
-      <optgroup label="Company overhead (no product)">
-        {OVERHEAD_CATEGORIES.map(([k, t]) => (
-          <option key={`overhead:${k}`} value={`overhead:${k}`}>Overhead · {t}</option>
-        ))}
-      </optgroup>
+      {overheadOptions(overhead, value)}
       <option value="nobody">Nobody, on purpose</option>
     </select>
   );
@@ -345,6 +385,7 @@ export function ChargeToSelect({
   className?: string;
   disabled?: boolean;
 }) {
+  const overhead = useOverheadCategories();
   return (
     <select
       className={className}
@@ -364,13 +405,7 @@ export function ChargeToSelect({
         </option>
       ))}
       {transformOptions(transformations, value)}
-      {withOverhead ? (
-        <optgroup label="Company overhead (no product)">
-          {OVERHEAD_CATEGORIES.map(([k, t]) => (
-            <option key={`overhead:${k}`} value={`overhead:${k}`}>Overhead · {t}</option>
-          ))}
-        </optgroup>
-      ) : null}
+      {withOverhead ? overheadOptions(overhead, value) : null}
       {withExcluded && <option value="excluded">nobody, on purpose (excluded)</option>}
     </select>
   );

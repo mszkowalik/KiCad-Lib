@@ -9996,6 +9996,62 @@ export function getCompanyBooks(companyId: number, year: number, signal?: AbortS
   return request(`/api/companies/${companyId}/books?year=${year}`, { signal });
 }
 
+/** A company overhead category (decision 0091). A position stores `key`, so
+ *  the key never changes; the label may. */
+export interface OverheadCategory {
+  key: string;
+  label: string;
+  /** live overhead positions that name it, over every company */
+  positions: number;
+  /** false for a key positions name that is not on the list (an undo put it back) */
+  registered: boolean;
+  /** the category a position with no category counts under; never removed */
+  fallback: boolean;
+}
+
+/** A supplier document whose live positions name one overhead category. */
+export interface OverheadCategoryDocument {
+  id: number;
+  supplier: string;
+  doc_number: string;
+  doc_date: string;
+  currency: string;
+  company_id: number | null;
+  positions: number;
+  net: number;
+}
+
+export function listOverheadCategories(signal?: AbortSignal): Promise<OverheadCategory[]> {
+  return request(`/api/overhead-categories`, { signal });
+}
+
+export function overheadCategoryDocuments(key: string, signal?: AbortSignal): Promise<OverheadCategoryDocument[]> {
+  return request(`/api/overhead-categories/${encodeURIComponent(key)}/documents`, { signal });
+}
+
+/** Admin. `key` is derived from the label when empty. */
+export function createOverheadCategory(body: { label: string; key?: string }): Promise<{ key: string; label: string }> {
+  return request(`/api/overhead-categories`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
+/** Admin. The label only. */
+export function relabelOverheadCategory(key: string, label: string): Promise<{ key: string; label: string }> {
+  return request(`/api/overhead-categories/${encodeURIComponent(key)}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ label }),
+  });
+}
+
+/** Admin. Refused (409) while a live position names it. */
+export function deleteOverheadCategory(key: string): Promise<{ ok: boolean }> {
+  return request(`/api/overhead-categories/${encodeURIComponent(key)}`, { method: "DELETE" });
+}
+
 /** How each income-tax form reads on screen; `company_books.TAX_FORMS` holds the keys. */
 export const LEGAL_FORM_TEXT: Record<string, string> = {
   sole_trader: "Sole trader (PIT)",

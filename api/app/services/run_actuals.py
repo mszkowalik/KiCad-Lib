@@ -80,14 +80,9 @@ EXCLUDED = "excluded"
 POOLED = "pooled"
 # `allocate` value meaning "a cost of the COMPANY, not of any product"
 # (decision 0068): leasing, telephone, software, accounting. The document's
-# buyer carries it, under the position's `overhead_category`.
+# buyer carries it, under the position's `overhead_category` — a key of the
+# `overhead_categories` table (`services/overhead.py`, decision 0091).
 OVERHEAD = "overhead"
-OVERHEAD_CATEGORIES = {
-    "leasing": "Leasing", "telecom": "Phone and internet", "software": "Software and IT services",
-    "accounting": "Accounting", "office": "Office", "travel": "Travel", "car": "Car and fuel",
-    "insurance": "Insurance", "bank": "Bank fees", "rent": "Rent", "marketing": "Marketing",
-    "training": "Training", "other": "Other",
-}
 
 
 def live_consumption(db: Session, **filters):

@@ -200,7 +200,7 @@ def test_linking_a_cost_item_does_not_replace_the_step(db: Session, world):
 
     # What the dialog used to send.
     with pytest.raises(HTTPException) as exc:
-        _check_line(LinePatch(plan_kind="cost", plan_key="1234"))
+        _check_line(LinePatch(plan_kind="cost", plan_key="1234"), db)
     assert exc.value.status_code == 422
 
     # What it sends now: the link lands beside the step, not on top of it.

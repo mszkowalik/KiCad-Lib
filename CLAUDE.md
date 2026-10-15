@@ -148,7 +148,8 @@ personal API token. Full rules in `api/CLAUDE.md` (backend) and `web/CLAUDE.md`
   SHARED data, not the work.** Admin-only: the Configuration tab
   (`/api/settings`), Users, the fleet broker, the field solver's stackups and
   rule sets, editing an exchange rate, the supplier register (its order prices
-  every BOM — decision 0055), the archive-wide datasheet jobs, the
+  every BOM — decision 0055), the overhead categories (decision 0091), the
+  archive-wide datasheet jobs, the
   activity log (`/api/activity`, who changed what — decision 0050), and a
   company's seller data, its memberships, moving a project to another
   company, the company backfills, writing the history's in-house

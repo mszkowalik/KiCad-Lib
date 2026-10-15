@@ -57,10 +57,11 @@ from sqlalchemy.orm import Session
 from .. import models as M
 from . import companies as C
 from . import doc_kinds, fx
+from . import overhead as overhead_svc
 from .accountant import kept_from_accountant
 from .invoicing import service as invoicing
 from .invoicing.amounts import d2
-from .run_actuals import OVERHEAD_CATEGORIES, document_json, header_ids, line_destination
+from .run_actuals import document_json, header_ids, line_destination
 
 TAX_FORMS = ("pit_linear", "pit_scale", "lump", "cit_9", "cit_19")
 #: What a company is decides which tax its income pays, and so which forms fit.
@@ -333,7 +334,7 @@ def year(db: Session, company_id: int, year: int) -> dict:
                 if li.voided_at is not None or li.id in hdrs:
                     continue
                 if line_destination(li, doc)[0] == "overhead":
-                    overhead[li.overhead_category or "other"] += pln(
+                    overhead[li.overhead_category or overhead_svc.FALLBACK] += pln(
                         (li.qty or 0) * (li.unit_price or 0), li.currency or doc.currency, doc.doc_date,
                         doc.fx_rate_usd)
 
@@ -405,7 +406,7 @@ def year(db: Session, company_id: int, year: int) -> dict:
             "totals": {f: total(f) for f in ("revenue_net", "advances_net", "costs_net", "income", "sales_vat",
                                              "purchase_vat", "purchase_vat_excluded", "vat_estimate", "interest")},
             "overhead": {k: str(d2(v)) for k, v in sorted(overhead.items(), key=lambda kv: -kv[1])},
-            "overhead_labels": OVERHEAD_CATEGORIES}
+            "overhead_labels": overhead_svc.labels(db)}
 
 
 def set_entry(db: Session, company_id: int, *, period: str, kind: str, amount, status: str = "final",
