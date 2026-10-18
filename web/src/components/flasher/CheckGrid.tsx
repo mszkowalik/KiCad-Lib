@@ -19,6 +19,8 @@ const CATEGORY_LABEL: Record<string, string> = {
   connectivity: "Connectivity",
   berryware: "Berryware",
   hardware: "Hardware",
+  shipped: "Shipped state",
+  marking: "Marking",
   other: "Other",
 };
 

@@ -301,7 +301,7 @@ _add(["/api/run-documents/", "/api/transfers/"], "doc_id", _doc)
 _add(["/api/run-cost-lines/"], "line_id", _line)
 _add(["/api/order-lines/"], "line_id", _via(M.SalesOrderLine, "order_id", _order))
 _add(["/api/order-invoices/"], "invoice_id", _via(M.OrderInvoice, "order_id", _order))
-_add(["/api/shipments/"], "shipment_id", _via(M.Shipment, "order_id", _order))
+_add(["/api/shipments/", "/api/flasher/shipments/"], "shipment_id", _via(M.Shipment, "order_id", _order))
 _add(["/api/devices/", "/api/flasher/devices/"], "device_id", _device)
 _add(["/api/run-devices/"], "device_id", _via(M.RunDevice, "run_id", _run))
 _add(["/api/snapshots/", "/api/sim/snapshot/"], "snapshot_id",
@@ -440,6 +440,8 @@ NOT_COMPANY_LISTS: set[str] = {
     # not ids at all: property keys, layer names, file paths, step keys, text
     "removed_properties", "reference_layers", "paths", "sides", "pin", "extra_info", "unmodelled",
     "assume", "costs", "done", "draw", "step_keys",
+    # the names of flasher parameters a per-key edit removes
+    "delete_keys",
     # a printed invoice's own text lines (decision 0085)
     "notes",
     # the advance invoices a recorded settlement names, by NUMBER (decision 0077)

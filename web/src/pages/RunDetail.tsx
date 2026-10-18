@@ -47,6 +47,7 @@ import {
   type RunActuals,
   type RunInfo,
   type SnapshotInfo,
+  batchMosquittoPath,
 } from "../api";
 import { BackLink, ErrorBanner, Spinner } from "../components/Ui";
 import DevicesTab from "../components/project/DevicesTab";
@@ -295,6 +296,14 @@ export default function RunDetail() {
                 </option>
               ))}
             </select>
+            <a
+              className="btn btn-sm"
+              href={batchMosquittoPath(runId)}
+              download
+              title="Plaintext user:password file for the units this batch built, each with its current MQTT account only. Hash it with mosquitto_passwd -U before you deploy it."
+            >
+              MQTT accounts
+            </a>
           </div>
         </div>
 

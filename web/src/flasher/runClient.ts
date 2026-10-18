@@ -39,7 +39,15 @@ export interface RunUiEvents {
   onPrinted?(value: string): void;
   /** Modal for a mid-run operator input (e.g. the SIM PIN). Resolving with
    *  "" tells the engine nothing was provided. */
-  onPrompt(field: string, label: string, secret: boolean): Promise<string>;
+  /** `kind` "text" asks for a value (the SIM PIN); "confirm" asks a yes/no
+   *  question (an `operator_check` step) and answers "yes" or "no". */
+  onPrompt(
+    field: string,
+    label: string,
+    secret: boolean,
+    kind: "text" | "confirm",
+    hint: string,
+  ): Promise<string>;
   /** A bench check fired. `level: "block"` is shown and the run is over — the
    *  engine has already ended it, so nothing is asked and nothing is awaited.
    *  A `"warn"` waits: resolving `{ok: true}` continues and `{ok: false}`
@@ -188,6 +196,8 @@ export class RunClient {
           String(msg.field ?? ""),
           String(msg.label ?? "Input needed"),
           Boolean(msg.secret),
+          msg.kind === "confirm" ? "confirm" : "text",
+          String(msg.hint ?? ""),
         );
         this.send({ t: "prompt_result", id: msg.id, value });
         return;

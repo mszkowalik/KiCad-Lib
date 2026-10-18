@@ -771,7 +771,7 @@ function assetsOf(v: DeploymentVersionDetail): FirmwareAssetRow[] {
   return (v.images ?? []).map((i) => ({
     id: i.firmware_asset_id, filename: i.filename, sha256: i.sha256,
     size_bytes: i.size_bytes, chip: i.chip, kind: i.kind,
-    default_address: i.address, build_label: i.build_label, notes: "",
+    default_address: i.address, build_label: i.build_label, notes: "", git_commit: i.git_commit ?? "",
     uploaded_by: "", uploaded_at: null, flashable: true,
   }));
 }

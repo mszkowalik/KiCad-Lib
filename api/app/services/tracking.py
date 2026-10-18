@@ -191,6 +191,10 @@ def _is_secret(table: str, key: str, obj) -> bool:
         return bool(getattr(obj, "is_secret", False))
     if table == "app_settings" and key == "value":
         return getattr(obj, "key", None) in _secret_knobs()
+    # A run's snapshot keeps the WiFi and MQTT passwords and the fleet salt in
+    # clear on the run itself (decision 0094); the change history never copies it.
+    if table == "programming_runs" and key == "params_snapshot":
+        return True
     return False
 
 

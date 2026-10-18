@@ -581,6 +581,14 @@ def _shipment(db: Session, shipment_id: int) -> M.Shipment:
 def _shipment_detail(db: Session, sh: M.Shipment) -> dict:
     out = svc.shipment_json(db, sh)
     out["order"] = svc.order_json(db, sh.order)
+    if out["status"] == "sent":
+        b = svc.shipment_broker(db, sh)
+        for d in out["devices"]:
+            d["broker"] = b["devices"].get(d["device_id"])
+        # Counted over the units the shipment still carries: a returned or
+        # reversed unit is not the client's to install.
+        out["broker"] = {"heard": sum(1 for d in out["devices"] if (d["broker"] or {}).get("heard_at")),
+                         "of": len(out["devices"]), "watching": b["watching"]}
     return out
 
 

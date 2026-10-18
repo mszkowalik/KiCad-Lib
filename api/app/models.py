@@ -3052,6 +3052,11 @@ class FirmwareAsset(Base):
     # flashing one would brick a unit, so the validator refuses it.
     flashable: Mapped[bool] = mapped_column(Boolean, default=True)
     notes: Mapped[str] = mapped_column(String(500), default="")
+    # The commit the image was built from, as the uploader states it. The
+    # bytes cannot say, and a firmware project requires a build from a PUSHED
+    # commit, so the publish gate warns about an image without one. Nothing
+    # here checks the remote (user decision 2026-10-18).
+    git_commit: Mapped[str] = mapped_column(String(64), default="", server_default="")
     uploaded_by: Mapped[str] = mapped_column(String(100), default="")
     uploaded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
@@ -3653,7 +3658,9 @@ class DevicePresence(Base):
     broker replays retained messages to a fresh subscriber. Nothing here is a
     source of truth and nothing here may gate a business decision — a device
     that is `offline` is a device the broker has not heard from, which is not
-    the same claim as a device that is broken.
+    the same claim as a device that is broken. The one exception is a
+    procedure's `broker_heard` step, which an author adds on purpose (decision
+    0093).
 
     `last_seen_at` advances on any LIVE message from the topic, so it survives
     a device that drops off without a clean `Offline` LWT. A RETAINED message

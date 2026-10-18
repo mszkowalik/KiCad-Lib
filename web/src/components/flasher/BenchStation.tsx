@@ -252,7 +252,13 @@ export default function BenchStation(props: StationSlotProps) {
   // outcome is kept where it can.
   const statusRef = useRef<string>("pass");
   const errorRef = useRef<string>("");
-  const [prompt, setPrompt] = useState<{ label: string; secret: boolean; resolve: (v: string) => void } | null>(null);
+  const [prompt, setPrompt] = useState<{
+    label: string;
+    secret: boolean;
+    kind: "text" | "confirm";
+    hint: string;
+    resolve: (v: string) => void;
+  } | null>(null);
   const [notice, setNotice] = useState<
     { n: BenchNotice; resolve: (r: { ok: boolean; reason: string }) => void } | null
   >(null);
@@ -718,8 +724,8 @@ export default function BenchStation(props: StationSlotProps) {
       onProgress: setProgress,
       onMarked: setMarked,
       onPrinted: setPrinted,
-      onPrompt: (_field, label, secret) =>
-        new Promise<string>((resolve) => setPrompt({ label, secret, resolve })),
+      onPrompt: (_field, label, secret, kind, hint) =>
+        new Promise<string>((resolve) => setPrompt({ label, secret, kind, hint, resolve })),
       onNotice: (n) =>
         new Promise<{ ok: boolean; reason: string }>((resolve) => setNotice({ n, resolve })),
       onDone: (st, err, results) => {
@@ -1372,7 +1378,12 @@ export default function BenchStation(props: StationSlotProps) {
         <div className="modal-backdrop">
           <div className="card pad modal-card" {...modal.cardProps}>
             <h2 className="card-title">{prompt.label}</h2>
-            <PromptInput secret={prompt.secret} onSubmit={answerPrompt} />
+            {prompt.hint ? <p className="muted">{prompt.hint}</p> : null}
+            {prompt.kind === "confirm" ? (
+              <ConfirmButtons onAnswer={answerPrompt} />
+            ) : (
+              <PromptInput secret={prompt.secret} onSubmit={answerPrompt} />
+            )}
           </div>
         </div>
       ) : null}
@@ -1472,6 +1483,21 @@ function NoticeBody({
         </>
       )}
     </>
+  );
+}
+
+/** An `operator_check` question. No Skip: the step passes on Yes and fails on
+ *  No, and either answer is recorded on the run with the operator's name. */
+function ConfirmButtons({ onAnswer }: { onAnswer: (v: string) => void }) {
+  return (
+    <div className="btn-row modal-actions">
+      <button type="button" className="btn btn-danger" onClick={() => onAnswer("no")}>
+        No
+      </button>
+      <button type="button" className="btn btn-primary" autoFocus onClick={() => onAnswer("yes")}>
+        Yes
+      </button>
+    </div>
   );
 }
 

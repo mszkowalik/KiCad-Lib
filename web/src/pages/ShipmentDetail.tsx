@@ -31,8 +31,10 @@ import {
   type ShipmentCheck,
   type ShipmentDetail as Detail,
   type ShipmentDeviceRow,
+  shipmentMosquittoPath,
 } from "../api";
 import DataTable, { type Column } from "../components/DataTable";
+import { fmtWhen } from "../components/flasher/common";
 import { useDialog } from "../components/Dialog";
 import Field, { FieldRow } from "../components/Field";
 import { BackLink, ErrorBanner, Spinner, StatusPill } from "../components/Ui";
@@ -94,6 +96,16 @@ export default function ShipmentDetail() {
         <div className="toolbar">
           <h1>Shipment #{id}</h1>
           {sh ? <StatusPill status={sh.status} /> : null}
+          {sh ? (
+            <a
+              className="btn btn-sm"
+              href={shipmentMosquittoPath(sh.id)}
+              download
+              title="Plaintext user:password file for the units in this shipment, each with its current MQTT account only — the file the client installs on their broker. Hash it with mosquitto_passwd -U before you deploy it."
+            >
+              MQTT accounts
+            </a>
+          ) : null}
         </div>
         {error ? <ErrorBanner message={error} /> : null}
         {!sh ? (
@@ -300,13 +312,36 @@ function ContentCard({ sh }: { sh: Detail }) {
       },
       { key: "run", label: "Batch", width: 20, numeric: true, get: (d) => d.run_id ?? "" },
       { key: "state", label: "State now", width: 40, get: (d) => d.state },
+      ...(sh.broker
+        ? [{
+            key: "broker",
+            label: "Fleet broker since shipping",
+            width: 40,
+            get: (d: ShipmentDeviceRow) => d.broker?.heard_at ?? "",
+            title: (d: ShipmentDeviceRow) =>
+              d.broker ? `topic ${d.broker.topic}, counted after ${fmtWhen(d.broker.since)}` : "",
+            render: (d: ShipmentDeviceRow) =>
+              !d.broker?.heard_at
+                ? <span className="muted">not heard</span>
+                : d.broker.online
+                  ? `online${d.broker.online_since ? ` since ${fmtWhen(d.broker.online_since)}` : ""}`
+                  : `last heard ${fmtWhen(d.broker.heard_at)}`,
+          } as Column<ShipmentDeviceRow>]
+        : []),
     ],
-    [],
+    [sh.broker],
   );
   return (
     <div className="card pad">
       <h2 className="card-title">Devices</h2>
       {sh.status === "cancelled" ? <p className="muted dim">Cancelled before it was sent. Its devices went back to stock.</p> : null}
+      {sh.broker ? (
+        <p className="muted">
+          {sh.broker.heard} of {sh.broker.of} units heard on the fleet broker since they shipped. A unit leaves
+          the bench with only its own account, so a unit heard here proves the client installed that account.
+          {sh.broker.watching ? "" : " The broker monitor is not connected now, so this can be behind."}
+        </p>
+      ) : null}
       <DataTable rows={sh.devices} columns={columns} rowKey={(d) => d.device_id} empty="No device on this shipment." />
     </div>
   );

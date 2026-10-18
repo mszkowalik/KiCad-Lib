@@ -1,5 +1,49 @@
 # Changelog
 
+## 2026-10-18 (CE Dongle V3 bench gaps)
+
+- **The bench agent waits up to 5 s for the port after a reset.** A C6 re-enumerates after the flash,
+  and `esp_reset` failed with "could not open port" (run 8868). Download the agent again from the
+  bench page to get this.
+- **A `berry` or `poll_until` step writes the identity it captures to the device.** Before, the
+  IMEI, IMSI and modem firmware stayed on the run only. A value longer than its field is logged and
+  not written.
+- **Text that is too long for its field gives HTTP 422 with the limit, not 500.** Examples: a version
+  comment over 500 characters, a station name over 40.
+- **One parameter key can be set or removed alone.** `PATCH /api/flasher/projects/{id}/param-sets/{name}`
+  takes `set_keys` and `delete_keys`. The other values do not travel. The same guard and revision log
+  apply as for a full save.
+- **A procedure can ask the operator a yes/no question** (step `operator_check`). Yes passes, No fails
+  the step. The answer and the operator's name are on the run. Reload an open bench tab to get the
+  Yes and No buttons.
+- **A check step can let the run go on when it fails** (`continue_on_fail`). One run then lists every
+  failed check of a unit, and the run still ends as a fail. Connect, flash, console and credential
+  steps still stop the run.
+- **A procedure can require that the platform's broker heard the unit** (step `broker_heard`). It
+  passes on a live message on the unit's topic after the flash. Decision 0093.
+- **The batch page and the shipment page have an "MQTT accounts" button.** The file holds the units
+  of that batch or shipment, each with its current account only, for the client's own broker. The
+  Devices page export still lists every name a unit ever had.
+- **Five check names of Dongle V3 version 6 have a label and a category**: "Firmware version",
+  "Mux expanders (TCA6408A)", and "Bench WiFi cleared", "WiFi radio on" and "Quick power cycle
+  recovery off" in the new group "Shipped state".
+- **The bench does not warn "online elsewhere" about a unit that its own earlier run put on the
+  broker** (runs 8866, 8867). A broker session that began before the bench run, or long after it,
+  still warns.
+- **A firmware image has a git commit field.** Set it when you upload or edit an image on Files →
+  Firmware. The publish check warns when a pinned image has no commit.
+- **The run record keeps every value the bench sent, the SIM PIN included.** The log, the step
+  responses, the parameter snapshot and the results no longer hide passwords, the fleet salt or the
+  PIN, so a run proves what a unit got. The change history still shows the snapshot as
+  `<redacted>`. Decision 0094.
+- **A range check can take its limits from parameters, per bench station.** `assert_range` and
+  `poll_until` accept `{parameter}` as min and max. A key `name@slot 2` in the parameter set is the
+  value of `name` for runs at slot 2. The run's results keep each measured value beside its limits.
+  New check names: "WiFi signal in range" and "LTE signal in range".
+- **A sent shipment shows which units the fleet broker heard after they shipped.** A unit leaves
+  the bench with only its own MQTT account, so a unit heard after shipping proves the client
+  installed that account. The Devices card shows the count and a column per unit.
+
 ## 2026-10-15 (overhead categories are edited on the platform)
 
 - **An admin adds overhead categories on Production → Company books → Overhead.** Before, the 13

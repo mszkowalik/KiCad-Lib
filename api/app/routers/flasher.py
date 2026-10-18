@@ -16,6 +16,7 @@ from __future__ import annotations
 import hashlib
 import io
 import json
+import re
 import struct
 import uuid
 import zipfile
@@ -27,8 +28,9 @@ from fastapi import (
     APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile,
     WebSocket, WebSocketDisconnect,
 )
+from fastapi import Path as PathParam
 from fastapi.responses import Response
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import String, cast, func, select, text
 from sqlalchemy.orm import Session
 
@@ -43,7 +45,7 @@ from ..services.flasher import (bundle, checks as checks_svc, credentials,
                                 params as params_svc, transports, validate)
 from ..services.flasher import engine as engine_mod
 from ..services.flasher.engine import (SERIAL_MAX, SERIAL_MIN, RunEngine)
-from .util import acting_name, actor_of, audit, content_disposition
+from .util import acting_name, actor_of, audit, col_cap, content_disposition
 
 router = APIRouter(prefix="/api/flasher", tags=["flasher"])
 
@@ -74,7 +76,7 @@ STEP_OPS = [
     "serial_open", "serial_close", "reset", "sleep", "wait_boot", "command",
     "set_and_check", "backlog", "berry", "expect", "assert_equals",
     "assert_range", "poll_until", "download_files", "derive_credentials",
-    "lte_sim_pin", "mark_laser", "print_label",
+    "lte_sim_pin", "mark_laser", "print_label", "operator_check", "broker_heard",
 ]
 
 
@@ -133,6 +135,19 @@ def _looks_flashable(data: bytes, kind: str) -> bool:
     return any(len(data) > off and data[off] == ESP_MAGIC for off in ESP_MAGIC_OFFSETS)
 
 
+# A git object name: abbreviated (7+) or full, SHA-1 (40) or SHA-256 (64).
+GIT_COMMIT_RE = re.compile(r"^[0-9a-f]{7,64}$")
+
+
+def _git_commit(value: str | None) -> str:
+    """The commit as stored: lowercase hex, or "" for none. Anything else is a
+    400, because a typo here is a claim about provenance nobody can check."""
+    v = (value or "").strip().lower()
+    if v and not GIT_COMMIT_RE.match(v):
+        raise HTTPException(400, f"git_commit {value!r} is not a git commit hash (7 to 64 hex characters)")
+    return v
+
+
 def _firmware_json(a: M.FirmwareAsset, used_by: int | None = None) -> dict:
     return {
         "id": a.id, "filename": a.filename, "sha256": a.sha256,
@@ -140,7 +155,7 @@ def _firmware_json(a: M.FirmwareAsset, used_by: int | None = None) -> dict:
         "flashable": a.flashable,
         "default_address": default_offset(a.chip, a.kind),
         "used_by": used_by,
-        "build_label": a.build_label, "notes": a.notes,
+        "build_label": a.build_label, "notes": a.notes, "git_commit": a.git_commit or "",
         "uploaded_by": a.uploaded_by, "uploaded_at": _iso(a.uploaded_at),
     }
 
@@ -151,13 +166,15 @@ async def upload_firmware(
     file: UploadFile = File(...),
     kind: str = Form("factory"),
     chip: str = Form(""),
-    build_label: str = Form(""),
-    notes: str = Form(""),
+    build_label: str = Form("", max_length=col_cap(M.FirmwareAsset, "build_label")),
+    notes: str = Form("", max_length=col_cap(M.FirmwareAsset, "notes")),
+    git_commit: str = Form("", max_length=col_cap(M.FirmwareAsset, "git_commit")),
     db: Session = Depends(get_db),
 ):
     uploaded_by = acting_name()
     if kind not in FIRMWARE_KINDS:
         raise HTTPException(400, f"kind must be one of {FIRMWARE_KINDS}")
+    git_commit = _git_commit(git_commit)
     data = await file.read()
     if not data:
         raise HTTPException(400, "empty file")
@@ -182,7 +199,7 @@ async def upload_firmware(
         project_id=project_id, filename=file.filename or "firmware.bin", sha256=sha,
         size_bytes=len(data), chip=chip, kind=kind, minio_key=key,
         build_label=build_label, notes=notes, uploaded_by=uploaded_by,
-        flashable=_looks_flashable(data, kind),
+        flashable=_looks_flashable(data, kind), git_commit=git_commit,
     )
     db.add(asset)
     db.commit()
@@ -193,10 +210,11 @@ async def upload_firmware(
 
 
 class FirmwarePatch(BaseModel):
-    chip: str | None = None
-    kind: str | None = None
-    build_label: str | None = None
-    notes: str | None = None
+    chip: str | None = Field(None, max_length=col_cap(M.FirmwareAsset, "chip"))
+    kind: str | None = Field(None, max_length=col_cap(M.FirmwareAsset, "kind"))
+    build_label: str | None = Field(None, max_length=col_cap(M.FirmwareAsset, "build_label"))
+    notes: str | None = Field(None, max_length=col_cap(M.FirmwareAsset, "notes"))
+    git_commit: str | None = Field(None, max_length=col_cap(M.FirmwareAsset, "git_commit"))
 
 
 def _firmware_usage(db: Session, asset_id: int) -> list[dict]:
@@ -224,7 +242,9 @@ def patch_firmware(asset_id: int, body: FirmwarePatch, db: Session = Depends(get
         raise HTTPException(400, f"kind must be one of {FIRMWARE_KINDS}")
     if data.get("chip") and data["chip"] not in CHIPS:
         raise HTTPException(400, f"chip must be one of {CHIPS}")
-    for field in ("chip", "kind", "build_label", "notes"):
+    if data.get("git_commit") is not None:
+        data["git_commit"] = _git_commit(data["git_commit"])
+    for field in ("chip", "kind", "build_label", "notes", "git_commit"):
         if field in data and data[field] is not None:
             setattr(a, field, data[field])
     db.commit()
@@ -328,8 +348,8 @@ def get_file_set_entry(set_id: int, filename: str, db: Session = Depends(get_db)
 
 
 class FileSetPatch(BaseModel):
-    label: str | None = None
-    comment: str | None = None
+    label: str | None = Field(None, max_length=col_cap(M.FileSet, "label"))
+    comment: str | None = Field(None, max_length=col_cap(M.FileSet, "comment"))
 
 
 @router.patch("/file-sets/{set_id}")
@@ -521,9 +541,9 @@ DEPLOYMENT_KINDS = ("flash", "test", "mark")
 
 
 class DeploymentIn(BaseModel):
-    name: str
+    name: str = Field(max_length=col_cap(M.Deployment, "name"))
     description: str = ""
-    chip: str = ""
+    chip: str = Field("", max_length=col_cap(M.Deployment, "chip"))
     # None = leave it alone. A PATCH that omitted it would otherwise reset a
     # test or mark deployment to "flash" and quietly take its button away.
     kind: str | None = None
@@ -550,7 +570,7 @@ class ComposeIn(BaseModel):
     from nothing (a first version) requires the sections you care about.
     """
     from_version_id: int | None = None
-    comment: str = ""
+    comment: str = Field("", max_length=col_cap(M.DeploymentVersion, "comment"))
     # sections — None means "inherit"
     images: list[ImageIn] | None = None
     # the berryware release and the artwork drawing, by set id; -1 clears
@@ -891,7 +911,7 @@ def validate_deployment_version(version_id: int, db: Session = Depends(get_db)):
 
 class VersionPatch(BaseModel):
     """Edits allowed only while a version is still a DRAFT."""
-    comment: str | None = None
+    comment: str | None = Field(None, max_length=col_cap(M.DeploymentVersion, "comment"))
     steps: list[dict] | None = None
     images: list[ImageIn] | None = None
     # explicit null (or -1) clears the pin; omitted leaves it alone
@@ -1078,7 +1098,7 @@ class ParamSetIn(BaseModel):
     # Why the values changed. It ends up on the revision row, which is the only
     # record that a MEANING changed — a key whose name survives and whose value
     # moves passes every other check the platform has.
-    note: str = ""
+    note: str = Field("", max_length=col_cap(M.ParamSetRevision, "note", reserve=len(" [forced]")))
     # Remove a key a published version declares anyway. The refusal names the
     # versions; forcing it is a decision, so it is recorded on the revision.
     force: bool = False
@@ -1115,8 +1135,52 @@ def list_param_sets(project_id: int, db: Session = Depends(get_db)):
     return out
 
 
+def _param_values(ps: M.ParamSet) -> dict:
+    """The set's current values, or {} for a new or unreadable set."""
+    if not ps.values_enc:
+        return {}
+    try:
+        return json.loads(crypto.decrypt_token(ps.values_enc))
+    except Exception:  # noqa: BLE001 — an unreadable set is replaced wholesale
+        return {}
+
+
+def _write_param_set(db: Session, ps: M.ParamSet, old: dict, new_values: dict, *,
+                     note: str, force: bool, action: str) -> M.ParamSetRevision:
+    """The ONE write of a parameter set: guard, revision, values, audit.
+
+    The full replace (`PUT`) and the per-key edit (`PATCH`) both end here, so a
+    key edit gets the same breaking guard and the same revision row as a save.
+    """
+    # The guard decision 0024 exists for: refuse an edit that would break a
+    # PUBLISHED version, and say which. A draft is not counted — its author is
+    # usually the person editing here, and a guard people learn to force is
+    # worse than no guard.
+    broken = params_svc.breaking(db, ps.id, new_values)
+    if broken and not force:
+        raise HTTPException(409, {
+            "error": "this change would break a published version: " + "; ".join(broken),
+            "breaking": broken,
+        })
+    rev = params_svc.record_revision(
+        db, ps, old, new_values, acting_name(),
+        note=(note + (" [forced]" if broken and force else "")).strip(),
+    )
+    ps.values_enc = crypto.encrypt_token(json.dumps(new_values))
+    ps.updated_by = acting_name()
+    ps.updated_at = datetime.now(timezone.utc)
+    db.commit()
+    audit(db, action, "param_set", ps.id,
+          {"revision_no": rev.revision_no, "added": rev.keys_added,
+           "removed": rev.keys_removed, "changed": rev.changed,
+           "forced": bool(broken and force)})
+    return rev
+
+
 @router.put("/projects/{project_id}/param-sets/{name}")
-def put_param_set(project_id: int, name: str, body: ParamSetIn, db: Session = Depends(get_db)):
+def put_param_set(project_id: int, body: ParamSetIn,
+                  name: str = PathParam(max_length=col_cap(M.ParamSet, "name")),
+                  db: Session = Depends(get_db)):
     ps = (
         db.query(M.ParamSet)
         .filter(M.ParamSet.project_id == project_id, M.ParamSet.name == name)
@@ -1126,41 +1190,64 @@ def put_param_set(project_id: int, name: str, body: ParamSetIn, db: Session = De
         ps = M.ParamSet(project_id=project_id, name=name)
         db.add(ps)
         db.flush()  # the revision row needs the id
-    old: dict = {}
-    if ps.values_enc:
-        try:
-            old = json.loads(crypto.decrypt_token(ps.values_enc))
-        except Exception:  # noqa: BLE001 — an unreadable set is replaced wholesale
-            old = {}
-    new_values = dict(body.values)
-    # The guard decision 0024 exists for: refuse an edit that would break a
-    # PUBLISHED version, and say which. A draft is not counted — its author is
-    # usually the person editing here, and a guard people learn to force is
-    # worse than no guard.
-    broken = params_svc.breaking(db, ps.id, new_values)
-    if broken and not body.force:
-        raise HTTPException(409, {
-            "error": "this change would break a published version: " + "; ".join(broken),
-            "breaking": broken,
-        })
-    rev = params_svc.record_revision(
-        db, ps, old, new_values, acting_name(),
-        note=(body.note + (" [forced]" if broken and body.force else "")).strip(),
+    rev = _write_param_set(db, ps, _param_values(ps), dict(body.values), note=body.note,
+                           force=body.force, action="flasher.param_set_write")
+    return {"id": ps.id, "revision_no": rev.revision_no}
+
+
+class ParamKeysIn(BaseModel):
+    """Set some keys and delete others, leaving every other value as it is.
+
+    The whole-set `PUT` meant reading every secret back out to add one key
+    (revision 1 of parameter set 1, 2026-10-18): a caller that only means to
+    add `test_mqtt_user` should never have to hold the fleet salt."""
+    set_keys: dict[str, str | int | float] = {}
+    delete_keys: list[str] = []
+    note: str = Field("", max_length=col_cap(M.ParamSetRevision, "note", reserve=len(" [forced]")))
+    # Delete a key a published version declares anyway — the same decision,
+    # recorded the same way, as on the whole-set write.
+    force: bool = False
+
+
+@router.patch("/projects/{project_id}/param-sets/{name}")
+def patch_param_set(project_id: int, body: ParamKeysIn,
+                    name: str = PathParam(max_length=col_cap(M.ParamSet, "name")),
+                    db: Session = Depends(get_db)):
+    """Set or delete individual keys. The values never travel back to the caller."""
+    both = set(body.set_keys) & set(body.delete_keys)
+    if both:
+        raise HTTPException(400, f"a key cannot be both set and deleted: {', '.join(sorted(both))}")
+    if not body.set_keys and not body.delete_keys:
+        raise HTTPException(400, "nothing to change: give `set_keys`, `delete_keys` or both")
+    ps = (
+        db.query(M.ParamSet)
+        .filter(M.ParamSet.project_id == project_id, M.ParamSet.name == name)
+        .one_or_none()
     )
-    ps.values_enc = crypto.encrypt_token(json.dumps(new_values))
-    ps.updated_by = acting_name()
-    ps.updated_at = datetime.now(timezone.utc)
-    db.commit()
-    audit(db, "flasher.param_set_write", "param_set", ps.id,
-          {"revision_no": rev.revision_no, "added": rev.keys_added,
-           "removed": rev.keys_removed, "changed": rev.changed,
-           "forced": bool(broken and body.force)})
+    if ps is None:
+        if body.delete_keys:
+            raise HTTPException(404, f"no parameter set {name!r} in this project")
+        ps = M.ParamSet(project_id=project_id, name=name)
+        db.add(ps)
+        db.flush()  # the revision row needs the id
+    old = _param_values(ps)
+    missing = [k for k in body.delete_keys if k not in old]
+    if missing:
+        raise HTTPException(404, f"the set has no key {', '.join(sorted(missing))}")
+    new_values = {k: v for k, v in old.items() if k not in body.delete_keys} | dict(body.set_keys)
+    if new_values == old:
+        # No revision for an edit that changes nothing: the log records moves.
+        last = (db.query(func.max(M.ParamSetRevision.revision_no))
+                .filter(M.ParamSetRevision.param_set_id == ps.id).scalar())
+        return {"id": ps.id, "revision_no": last or 0, "unchanged": True}
+    rev = _write_param_set(db, ps, old, new_values, note=body.note, force=body.force,
+                           action="flasher.param_set_keys")
     return {"id": ps.id, "revision_no": rev.revision_no}
 
 
 class ParamRevertIn(BaseModel):
     revision_no: int
-    note: str = ""
+    note: str = Field("", max_length=col_cap(M.ParamSetRevision, "note", reserve=len(" [forced]")))
     force: bool = False
 
 
@@ -1197,12 +1284,7 @@ def revert_param_set(param_set_id: int, body: ParamRevertIn, db: Session = Depen
             "error": "this change would break a published version: " + "; ".join(broken),
             "breaking": broken,
         })
-    old: dict = {}
-    if ps.values_enc:
-        try:
-            old = json.loads(crypto.decrypt_token(ps.values_enc))
-        except Exception:  # noqa: BLE001
-            old = {}
+    old = _param_values(ps)
     note = body.note.strip() or f"reverted to r{rev.revision_no}"
     new_rev = params_svc.record_revision(
         db, ps, old, values, acting_name(),
@@ -1696,8 +1778,8 @@ class RunCreate(BaseModel):
     """
     production_run_id: int | None = None
     deployment_version_id: int | None = None
-    station: str = ""
-    override_reason: str = ""
+    station: str = Field("", max_length=col_cap(M.ProgrammingRun, "station"))
+    override_reason: str = Field("", max_length=col_cap(M.ProgrammingRun, "release_override_reason"))
 
 
 @router.post("/runs")
@@ -1798,13 +1880,13 @@ def create_run(body: RunCreate, request: Request, db: Session = Depends(get_db))
 
 class BenchRunIn(BaseModel):
     """A bench action that ran no procedure: an erase, or a mark typed by hand."""
-    action: str = "erase"
+    action: str = Field("erase", max_length=col_cap(M.ProgrammingRun, "action"))
     project_id: int
-    mac: str = ""
-    chip: str = ""
-    status: str = "pass"          # pass | fail
+    mac: str = Field("", max_length=col_cap(M.ProgrammingRun, "mac_read"))
+    chip: str = Field("", max_length=col_cap(M.ProgrammingRun, "chip_read"))
+    status: str = Field("pass", max_length=col_cap(M.ProgrammingRun, "status"))   # pass | fail
     error: str = ""
-    station: str = ""
+    station: str = Field("", max_length=col_cap(M.ProgrammingRun, "station"))
     started_at: str = ""
     log: list[dict] = []          # [{"dir": "app", "text": "..."}]
     results: dict = {}            # what the action produced, e.g. {"marked": "..."}
@@ -2014,7 +2096,7 @@ class BatchDeploymentIn(BaseModel):
     """Pin a version outright, or follow a channel by name (mutually exclusive
     in practice: an explicit pin wins at run creation)."""
     deployment_version_id: int | None = None
-    deployment_channel: str = ""
+    deployment_channel: str = Field("", max_length=col_cap(M.ProductionRun, "deployment_channel"))
 
 
 @router.put("/production-runs/{production_run_id}/deployment")
@@ -2304,7 +2386,8 @@ def bench_policy(request: Request):
     )
 
 
-def _mosquitto_file(db: Session, project_id: int | None) -> Response:
+def _mosquitto_file(db: Session, project_id: int | None, *, device_ids: list[int] | None = None,
+                    current_only: bool = False, filename: str = "mosquitto_passwords.txt") -> Response:
     """The broker password file in PLAINTEXT, one `user:password` line per
     device — the format the old tool appended to mosquitto_passwords.txt
     (CE_Production_flasher/config.py:52). The developer who deploys the broker
@@ -2323,7 +2406,12 @@ def _mosquitto_file(db: Session, project_id: int | None) -> Response:
     CE_Dongle_V2) were first programmed as `dongle_<6 hex>` and later as `dongle_<12 hex>`; both names
     stay on the broker. Devices named from the broker carry accounts derived
     from their topic, with no run behind them (decision 0054); their
-    `set_by_run_id` is NULL, so they pair on (unit, None)."""
+    `set_by_run_id` is NULL, so they pair on (unit, None).
+
+    `device_ids` with `current_only` is the file for ONE delivery: the units of
+    a batch or a shipment, each with the account it is programmed with NOW and
+    no other. That is what a client installs on their own broker; the old names
+    are our broker's business, not theirs (2026-10-18)."""
     q = (
         db.query(M.DeviceConfigValue.device_unit_id, M.DeviceConfigValue.key,
                  M.DeviceConfigValue.value, M.DeviceConfigValue.set_by_run_id)
@@ -2332,6 +2420,10 @@ def _mosquitto_file(db: Session, project_id: int | None) -> Response:
     )
     if project_id is not None:
         q = q.filter(M.DeviceUnit.project_id == project_id)
+    if device_ids is not None:
+        q = q.filter(M.DeviceUnit.id.in_(device_ids or [-1]))
+    if current_only:
+        q = q.filter(M.DeviceConfigValue.current.is_(True))
     mine = access.allowed_companies(db)
     if mine is not None:
         # The gate's device rule (decisions 0065 and 0070): a device is its
@@ -2363,7 +2455,7 @@ def _mosquitto_file(db: Session, project_id: int | None) -> Response:
     return Response(
         content=body + ("\n" if body else ""),
         media_type="text/plain",
-        headers={"Content-Disposition": 'attachment; filename="mosquitto_passwords.txt"'},
+        headers={"Content-Disposition": content_disposition("attachment", filename)},
     )
 
 
@@ -2375,6 +2467,42 @@ def mosquitto_export_all(project_id: int | None = None, db: Session = Depends(ge
 @router.get("/projects/{project_id}/mosquitto")
 def mosquitto_export(project_id: int, db: Session = Depends(get_db)):
     return _mosquitto_file(db, project_id)
+
+
+@router.get("/production-runs/{production_run_id}/mosquitto")
+def mosquitto_export_batch(production_run_id: int, db: Session = Depends(get_db)):
+    """The units this batch BUILT (`DeviceUnit.production_run_id`), each with
+    its current account only."""
+    batch = db.get(M.ProductionRun, production_run_id)
+    if batch is None:
+        raise HTTPException(404, "no such production run")
+    ids = [i for (i,) in db.query(M.DeviceUnit.id)
+           .filter(M.DeviceUnit.production_run_id == production_run_id)]
+    return _mosquitto_file(db, None, device_ids=ids, current_only=True,
+                           filename=f"mosquitto_passwords_{batch.label or batch.id}.txt")
+
+
+def shipment_device_ids(db: Session, shipment_id: int) -> list[int]:
+    """The units in a shipment: packed in it now, or sent with it. A unit taken
+    back out, or returned since, is not."""
+    rows = (db.query(M.DeviceEvent.device_id, M.DeviceEvent.kind)
+            .filter(M.DeviceEvent.shipment_id == shipment_id)
+            .order_by(M.DeviceEvent.at, M.DeviceEvent.id).all())
+    last: dict[int, str] = {}
+    for device_id, kind in rows:
+        last[device_id] = kind
+    return sorted(d for d, k in last.items() if k in ("allocated", "shipped"))
+
+
+@router.get("/shipments/{shipment_id}/mosquitto")
+def mosquitto_export_shipment(shipment_id: int, db: Session = Depends(get_db)):
+    """The units of one shipment, each with its current account only — the file
+    a client installs on their own broker."""
+    sh = db.get(M.Shipment, shipment_id)
+    if sh is None:
+        raise HTTPException(404, "no such shipment")
+    return _mosquitto_file(db, None, device_ids=shipment_device_ids(db, shipment_id),
+                           current_only=True, filename=f"mosquitto_passwords_shipment_{sh.id}.txt")
 
 
 # ------------------------------------------------------------------ WebSocket

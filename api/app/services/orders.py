@@ -1270,6 +1270,53 @@ def shipment_json(db: Session, sh: M.Shipment) -> dict:
             "reversed": reversed_n, "deletable": not any_event}
 
 
+def shipment_broker(db: Session, sh: M.Shipment) -> dict:
+    """What the fleet broker has heard from a sent shipment's units since they left.
+
+    The fleet broker is the CLIENT's broker, and a unit leaves the bench with
+    its own account, which the client has to install there. So a live message
+    on the unit's topic after it shipped is the proof that the account was
+    installed (CE_Dongle_V3 bench gaps, item 11). The broker does not say which
+    account logged in: the bench test account uses the same topic, which is why
+    only a message after BOTH the shipment and the unit's last bench run
+    counts. Display only — presence decides nothing here (decision 0033).
+    """
+    from . import mqtt_monitor
+    from sqlalchemy import func
+
+    shipped: dict[int, datetime] = {}
+    for device_id, at in (db.query(M.DeviceEvent.device_id, M.DeviceEvent.at)
+                          .filter(M.DeviceEvent.shipment_id == sh.id, M.DeviceEvent.kind == "shipped")
+                          .order_by(M.DeviceEvent.at)):
+        shipped[device_id] = at
+    ids = list(shipped)
+    if not ids:
+        return {"devices": {}, "watching": bool(mqtt_monitor.STATE.get("connected"))}
+    ended = dict(db.query(M.ProgrammingRun.device_unit_id,
+                          func.max(func.coalesce(M.ProgrammingRun.finished_at, M.ProgrammingRun.started_at)))
+                 .filter(M.ProgrammingRun.device_unit_id.in_(ids))
+                 .group_by(M.ProgrammingRun.device_unit_id))
+    # The account the unit holds NOW. Its user name is its topic.
+    users = dict(db.query(M.DeviceConfigValue.device_unit_id, M.DeviceConfigValue.value)
+                 .filter(M.DeviceConfigValue.device_unit_id.in_(ids),
+                         M.DeviceConfigValue.key == "mqtt_user",
+                         M.DeviceConfigValue.current.is_(True)))
+    names = dict(db.query(M.DeviceUnit.id, M.DeviceUnit.tasmota_id).filter(M.DeviceUnit.id.in_(ids)))
+    topic = {i: users.get(i) or names.get(i) or "" for i in ids}
+    rows = {p.topic: p for p in db.query(M.DevicePresence)
+            .filter(M.DevicePresence.topic.in_([t for t in topic.values() if t] or [""]))}
+    out: dict[int, dict] = {}
+    for i in ids:
+        since = max(t for t in (shipped[i], ended.get(i)) if t is not None)
+        p = rows.get(topic[i])
+        heard = p.last_seen_at if p is not None and p.last_seen_at and p.last_seen_at > since else None
+        came = (p.last_online_at if heard and p.last_online_at and p.last_online_at > since else None)
+        out[i] = {"topic": topic[i], "since": since.isoformat(),
+                  "heard_at": heard.isoformat() if heard else None,
+                  "online": bool(heard and p.online), "online_since": came.isoformat() if came else None}
+    return {"devices": out, "watching": bool(mqtt_monitor.STATE.get("connected"))}
+
+
 def shipment_list_json(db: Session, sh: M.Shipment, projects: dict[int, str]) -> dict:
     """One row of the Shipments page: the header, its order, and a count."""
     base = shipment_json(db, sh)

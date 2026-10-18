@@ -35,6 +35,13 @@ a new path parameter, or a new `*_id` query parameter or body key, must be
 classified there (`tests/auth/test_company_access.py`). Rules in
 [docs/reference/companies.md](../../../docs/reference/companies.md).
 
+## A body states its string limits
+
+A text field that lands in a `String(N)` column carries
+`Field(max_length=util.col_cap(Model, "column"))`, so a value that is too long
+is a 422 that names the field. `main.py` turns any other
+`StringDataRightTruncation` into a 422 as well, without the field name.
+
 ## List surfaces — the two traps that cost a second each
 
 Both were measured on 2026-08-24 against production data (421 components, 2296

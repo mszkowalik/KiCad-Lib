@@ -17,7 +17,17 @@ Full design: `docs/flasher/design.md` (§15 = file sets, §14 = the bundle model
   case must stay silent** — a new board, in a running batch, in the right
   project, gets nothing. Do not block on `ProductionRun.status`: it is free
   text set by hand, and every batch here that has devices was still `planned`
-  when its first unit was programmed.
+  when its first unit was programmed. `online_elsewhere` is silent when the
+  broker session BEGAN during an earlier run of the same unit, or within
+  `BENCH_SESSION_GRACE` after it: a procedure that proves MQTT puts the unit on
+  the broker itself, and the retry of runs 8866 and 8867 warned about that.
+
+- **`broker_heard` is the ONLY step that reads `device_presence`**, and a
+  procedure adds it on purpose (decision
+  [0093](../../../../docs/decisions/0093-a-procedure-may-require-that-the-broker-heard-the-unit.md)).
+  It counts a live message after the flash, and its failure names the monitor,
+  because a monitor outage fails a working unit. Nothing else may decide a
+  result from presence.
 
 - **A NEW `produced` event names one twin of the batch's selected stack**
   (`twins.name_at_bench`, decision 0059), in a savepoint after the event is
@@ -156,7 +166,7 @@ Full design: `docs/flasher/design.md` (§15 = file sets, §14 = the bundle model
   [0024](../../../../docs/decisions/0024-a-version-declares-the-parameters-it-needs.md)).
   `services/flasher/params.py` is the ONE implementation of "which keys does
   this version use" — the publish gate, the parameter editor and the freeze all
-  call it, and `validate.py` no longer keeps its own copy of the walk. Four
+  call it, and `validate.py` no longer keeps its own copy of the walk. Five
   things follow:
 
   1. **A ParamSet is still NOT versioned** (2026-07-27, unchanged): rotating a
@@ -183,7 +193,12 @@ Full design: `docs/flasher/design.md` (§15 = file sets, §14 = the bundle model
      **A revert APPENDS.** Reverting r5 to r2 writes r6 with r2's values, so
      the history still says r3-r5 happened and that somebody undid them, and
      the breaking guard applies to it exactly as it does to a save.
-  4. **`params.OP_PARAM_FIELDS` is a FIFTH declaration site** beside the four
+  4. **`name@station` in a set is `name` for runs at that station**
+     (`params.for_station`, applied when the engine loads). The station is the
+     bench page's slot (`slot 1`), so two bench machines share it. The plain
+     `name` must exist too: the publish gate and the breaking guard know only
+     that key.
+  5. **`params.OP_PARAM_FIELDS` is a FIFTH declaration site** beside the four
      below. An op that reads a parameter by name instead of interpolating
      `{it}` must be listed there. `derive_credentials` reads `creds_salt`
      straight out of the run's variables and raises without it, so before this
@@ -202,7 +217,9 @@ Full design: `docs/flasher/design.md` (§15 = file sets, §14 = the bundle model
   refusal. Errors block publishing (chip/transport mismatch,
   overlapping flash offsets, unresolved `{placeholder}` or assert variable,
   autoexec.be not last, serial op before `serial_open`); warnings inform.
-  Publishing also requires a comment. **A new step op has to be declared in
+  Publishing also requires a comment. A step with `continue_on_fail` lets the
+  run go on after its check fails, and the run still ends as a fail; only the
+  ops in `validate.CONTINUE_OPS` may carry it, and only with a `check` name. **A new step op has to be declared in
   FOUR places**, and missing one fails late: the engine's `_exec` dispatch, its
   rules here, `STEP_OPS` in `routers/flasher.py` (which refuses an unknown op on
   compose, with a 400 that says nothing about the other three) and
@@ -487,12 +504,16 @@ Full design: `docs/flasher/design.md` (§15 = file sets, §14 = the bundle model
   restarts the chip — the pulse in `web/src/flasher/station.ts` does.
 - **`lte_sim_pin` is sent once and NEVER retried** — the firmware driver
   PUK-guards a re-sent rejected PIN (xdrv_128 ~483). Resolution: bench field →
-  param-set `sim_pin` → WS prompt. The PIN is masked in the stored log and in
-  `params_snapshot` (`SECRET_RE` masks any param whose key matches
-  password|pin|salt|secret|token).
+  param-set `sim_pin` → WS prompt.
+- **The run record keeps every value IN CLEAR, the SIM PIN included** (decision
+  [0094](../../../../docs/decisions/0094-the-run-record-keeps-every-value-the-bench-sent.md)):
+  the log, the step responses, `params_snapshot` and `results`. It is the proof
+  of what a unit was programmed with. Do not add masking to the engine. The
+  change history is the one place that redacts it (`tracking._is_secret`).
 - **Captured variables with reserved names update the device row**
   (`IDENTITY_VARS`: topic→tasmota_id, imei, iccid, imsi, modem_model,
-  modem_fw). Device identity is the MAC (`device_units.mac` UNIQUE),
+  modem_fw), from every op that captures: `command`, `set_and_check`, `berry`
+  and `poll_until`. A value longer than its column is logged and not written. Device identity is the MAC (`device_units.mac` UNIQUE),
   upserted at `esp_connect` ~2 s into a run, so even early failures are
   attributed. The `mosquitto` export (`GET /api/flasher/mosquitto`, optional
   `project_id`; the Devices page button) writes the broker file in PLAINTEXT
@@ -501,7 +522,10 @@ Full design: `docs/flasher/design.md` (§15 = file sets, §14 = the bundle model
   `mqtt_creds_line` hash, and derived from it when `mqtt_password` is missing.
   It lists EVERY name a device ever had (history rows too), not only the
   current one: 78 units carry both a 6-hex and a 12-hex name. Never drop an
-  old name — a device still running its old config connects with it.
+  old name — a device still running its old config connects with it. The
+  batch and shipment exports (`/production-runs/{id}/mosquitto`,
+  `/shipments/{id}/mosquitto`) are the other file: one delivery's units, each
+  with its CURRENT account only, for a client to install on their own broker.
   Devices named from the broker, with no programming run, carry accounts
   DERIVED from their topic (`set_by_run_id` NULL, decision
   [0054](../../../../docs/decisions/0054-a-device-named-from-the-broker-gets-its-account-from-its-topic.md)).

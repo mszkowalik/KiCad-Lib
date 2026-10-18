@@ -35,6 +35,7 @@ CATALOG: dict[str, tuple[str, str, int]] = {
     "identity.mac": ("MAC read", "identity", 1),
     "firmware.flash": ("Firmware written", "firmware", 0),
     "firmware.boot": ("Firmware boots", "firmware", 1),
+    "firmware.version": ("Firmware version", "firmware", 2),
     "wifi.join": ("WiFi joins", "connectivity", 0),
     "sim.pin": ("SIM PIN accepted", "connectivity", 1),
     "sim.identity": ("SIM identified", "connectivity", 2),
@@ -43,12 +44,21 @@ CATALOG: dict[str, tuple[str, str, int]] = {
     "mqtt.config": ("MQTT configured", "connectivity", 5),
     "mqtt.connect": ("MQTT connects on WiFi", "connectivity", 6),
     "mqtt.lte": ("MQTT connects on LTE", "connectivity", 7),
+    "wifi.signal": ("WiFi signal in range", "connectivity", 8),
+    "lte.signal": ("LTE signal in range", "connectivity", 9),
     "berryware.files": ("Berryware files", "berryware", 0),
     "modbus.config": ("Modbus port", "hardware", 0),
     "relay.1": ("Relay 1 (Switch7)", "hardware", 1),
     "relay.2": ("Relay 2 (Switch8)", "hardware", 2),
     "relay.3": ("Relay 3 (Switch9)", "hardware", 3),
     "temp.ds18b20": ("Temp sensor (DS18B20)", "hardware", 4),
+    "hw.mux": ("Mux expanders (TCA6408A)", "hardware", 5),
+    # What the unit LEAVES the bench as. Each one is a setting the customer
+    # depends on, not a function, so a unit can work and still ship wrong
+    # (CE_Dongle_V3 deployment 1 v6, 2026-10-18).
+    "wifi.cleared": ("Bench WiFi cleared", "shipped", 0),
+    "wifi.radio": ("WiFi radio on", "shipped", 1),
+    "settings.qpc": ("Quick power cycle recovery off", "shipped", 2),
     # Marking is its own category: it proves nothing electrical, and a unit can
     # be fully working and unmarked.
     "mark.serial": ("Serial engraved", "marking", 0),
@@ -56,7 +66,7 @@ CATALOG: dict[str, tuple[str, str, int]] = {
 }
 
 CATEGORY_ORDER = ["identity", "firmware", "connectivity", "berryware", "hardware",
-                  "marking", "other"]
+                  "shipped", "marking", "other"]
 
 # The Aqua test's temperature window, copied from test.py's asserts.
 TEMP_MIN, TEMP_MAX = -10.0, 70.0

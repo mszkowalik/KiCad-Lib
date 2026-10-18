@@ -22,7 +22,8 @@ WebSocket protocol (server view):
   send {t:"tx", data}                       — dialog byte pipe
   recv {t:"rx", data}                       — one console line per message
   recv {t:"log", dir, text}                 — esptool/app lines for the record
-  send {t:"prompt", id, field, label, secret} / recv {t:"prompt_result", id, value}
+  send {t:"prompt", id, field, label, secret, kind, hint} / recv {t:"prompt_result", id, value}
+                                            — kind "text" asks for a value, "confirm" for yes/no
   send {t:"notice", id, level, code, text, hint} / recv {t:"notice_ack", id, ok, reason}
   send {t:"state", index, total, label, status}
   recv {t:"device_lost", error}             — the console port died (unplugged)
@@ -51,7 +52,6 @@ BROWSER_OPS = {
 # Generous per-op ceilings for browser actions (a C6 full flash measured 116 s;
 # an ESP32 erase ~20 s). A step's own `timeout` (seconds) overrides.
 ACTION_TIMEOUTS = {"erase": 240, "flash": 900, "await_reenumerate": 90, "esp_connect": 90}
-SECRET_RE = re.compile(r"password|pin|salt|secret|token", re.I)
 # Default URL template for the files the DEVICE fetches. A step may carry its
 # own `url`; both go through `RunEngine._url`, so `{base_url}` means the same
 # thing in either. See `_resolve_base_url` for where that value comes from.
@@ -177,6 +177,10 @@ class RunEngine:
         self._recv_task: asyncio.Task | None = None
         self._flush_task: asyncio.Task | None = None
         self.device_unit_id: int | None = None
+        # Server clock, the same one the broker monitor stamps `last_seen_at`
+        # with: `broker_heard` counts only what the broker heard after these.
+        self.started_at = utcnow()
+        self.flashed_at: datetime | None = None
         self.spec: dict = {}
         # Whose name goes on an acknowledged bench check. Filled from the run
         # row when the spec is built; "bench" until then.
@@ -244,6 +248,8 @@ class RunEngine:
             # in a step without trusting the bench for it.
             params.setdefault("operator", run.operator or "")
             self.operator = run.operator or ""
+            # A `name@station` value replaces `name` for this run's station.
+            params, by_station = params_svc.for_station(params, run.station or "")
             return {
                 "project_id": dep.project_id,
                 "production_run_id": prod.id if prod else None,
@@ -264,10 +270,13 @@ class RunEngine:
                 "images": images,
                 "files": files,
                 "params": params,
+                "by_station": by_station,
             }
 
         self.spec = await self._db(load)
         self.vars = dict(self.spec["params"])
+        for line in self.spec.get("by_station") or []:
+            self.log("app", f"station parameter: {line}")
         # base_url is resolved AFTER hello, not here: the bench's own address is
         # one of the candidates and it arrives with the hello message.
 
@@ -436,12 +445,14 @@ class RunEngine:
             raise StepFailed(msg.get("error") or f"{op} failed on the bench")
         return msg.get("info") or {}
 
-    async def prompt(self, field: str, label: str, secret: bool = True) -> str:
+    async def prompt(self, field: str, label: str, secret: bool = True, *, kind: str = "text",
+                     hint: str = "", timeout: float = 600) -> str:
         self._msg_id += 1
         mid = self._msg_id
         self.log("app", f"waiting for operator input: {label}")
-        await self._send({"t": "prompt", "id": mid, "field": field, "label": label, "secret": secret})
-        msg = await self._await_msg(mid, 600)
+        await self._send({"t": "prompt", "id": mid, "field": field, "label": label, "secret": secret,
+                          "kind": kind, "hint": hint})
+        msg = await self._await_msg(mid, timeout)
         return str(msg.get("value", ""))
 
     async def notice(self, n: dict, wait: bool = True) -> None:
@@ -515,11 +526,10 @@ class RunEngine:
             if not getter.done():
                 getter.cancel()
 
-    async def send_serial(self, text: str, mask: str | None = None) -> None:
+    async def send_serial(self, text: str) -> None:
         if self.device_lost:
             raise StepFailed(f"the device disconnected ({self.device_lost})")
-        shown = text if mask is None else text.replace(mask, "•••")
-        self.log("tx", shown.rstrip("\n"))
+        self.log("tx", text.rstrip("\n"))
         await self._send({"t": "tx", "data": text})
 
     async def wait_for(self, key: str, timeout: float, pattern: re.Pattern | None = None) -> Any:
@@ -539,11 +549,11 @@ class RunEngine:
 
     async def send_command(
         self, cmd: str, payload: Any = None, expect_key: str | None = None,
-        timeout: float = 10, mask: str | None = None,
+        timeout: float = 10,
     ) -> Any:
         self.drain_rx()
         body = f"{cmd}\n" if payload in (None, "") else f"{cmd} {payload}\n"
-        await self.send_serial(body, mask=mask)
+        await self.send_serial(body)
         resp = await self.wait_for(expect_key or cmd, timeout)
         self.last_response = resp
         return resp
@@ -582,17 +592,16 @@ class RunEngine:
                                 + ", ".join(sorted(skip)))
             client_info = hello.get("client_info") or {}
             self._resolve_base_url(client_info)
-            masked = {
-                k: ("•••" if SECRET_RE.search(k) else v) for k, v in self.vars.items()
-            }
+            # Every value, secrets included (decision 0094): the snapshot is the
+            # record of what this unit was programmed with.
+            snapshot = dict(self.vars)
 
             def start(db):
                 run = db.get(M.ProgrammingRun, self.run_id)
-                run.params_snapshot = masked
-                # WHICH revision of the values this unit got. `masked` hides
-                # every secret, so it cannot answer "which salt?" after a
-                # rotation; the revision id can, without storing the secret
-                # twice (decision 0024).
+                run.params_snapshot = snapshot
+                # WHICH revision of the values this unit got (decision 0024):
+                # the snapshot holds the values, the revision says which edit
+                # of the set they came from.
                 v = db.get(M.DeploymentVersion, run.deployment_version_id)
                 run.param_set_revision_id = params_svc.current_revision_id(
                     db, v.param_set_id if v else None
@@ -612,6 +621,10 @@ class RunEngine:
                            for s in self.spec["steps"]]}})
 
             steps = self.spec["steps"]
+            # Checks that failed on a `continue_on_fail` step. The run goes on
+            # so one run gives the unit's whole defect list (bench gaps item 8),
+            # and still ends as a fail.
+            continued: list[str] = []
             for idx, step in enumerate(steps):
                 label = step.get("label") or step.get("op", "?")
                 await self._send({"t": "state", "index": idx, "total": len(steps),
@@ -638,11 +651,24 @@ class RunEngine:
                                    self._step_end(db, sid, "fail", d, m))
                     if lost:
                         raise StepFailed(msg) from e
+                    if isinstance(e, StepFailed) and step.get("continue_on_fail"):
+                        continued.append(f"step {idx + 1} ({label}): {msg}")
+                        self.results["continued_failures"] = list(continued)
+                        await self._send({"t": "state", "index": idx, "total": len(steps),
+                                          "label": label, "status": "fail"})
+                        self.log("app", f"--- step {idx + 1} fail in {dur / 1000:.2f}s — "
+                                        "the run goes on (continue_on_fail)")
+                        continue
                     raise
+            if continued:
+                raise StepFailed(f"{len(continued)} check(s) failed: " + "; ".join(continued))
         except Aborted:
             status, error = "aborted", "aborted"
         except StepFailed as e:
             status, error = "fail", str(e)
+            earlier = self.results.get("continued_failures") or []
+            if earlier and not error.startswith(f"{len(earlier)} check(s) failed"):
+                error = f"{error} (and {len(earlier)} earlier check(s) failed)"
         except Exception as e:  # engine bug or socket death — still record it
             status, error = "fail", f"engine error: {e}"
         finally:
@@ -675,9 +701,7 @@ class RunEngine:
             await self._flush_logs()
         except Exception:
             pass
-        clean_results = {
-            k: v for k, v in self.results.items() if not SECRET_RE.search(k)
-        }
+        clean_results = dict(self.results)
 
         def fin(db):
             run = db.get(M.ProgrammingRun, self.run_id)
@@ -874,6 +898,15 @@ class RunEngine:
             await self._register_by_topic(str(names["topic"]))
         cols = {IDENTITY_VARS[k]: str(v) for k, v in names.items()
                 if k in IDENTITY_VARS and v not in (None, "")}
+        # A value longer than its column is a capture that went wrong — a
+        # Berry answer with the modem's whole reply in it — not an identity.
+        # Writing it would fail the run in the database, after the work is done.
+        for col, val in list(cols.items()):
+            limit = M.DeviceUnit.__table__.c[col].type.length
+            if limit and len(val) > limit:
+                self.log("app", f"{col} {val[:40]!r} is {len(val)} characters, more than the "
+                                f"device record holds ({limit}) — not stored")
+                del cols[col]
         if not cols or not self.device_unit_id:
             return
 
@@ -950,6 +983,10 @@ class RunEngine:
                 # talks to whatever is on the port now.
                 self.device_lost = ""
                 self.lost_event.clear()
+            if op == "flash":
+                # From here on the device runs THIS run's firmware: anything the
+                # broker hears after it is this run's doing (`broker_heard`).
+                self.flashed_at = utcnow()
             if op == "esp_connect":
                 chip, mac = str(info.get("chip", "")), str(info.get("mac", ""))
                 if not mac:
@@ -1044,7 +1081,11 @@ class RunEngine:
             resp = await self.send_command("Br", V(step["code"]), "Br", timeout)
             if resp is None:
                 raise StepFailed("no Br response")
-            self._capture(step, resp)
+            # Berry is how the modem's own identity is read (IMEI, IMSI, modem
+            # firmware), so its captures reach the device row exactly as a
+            # `command` step's do. Before 2026-10-18 they stopped at the run.
+            got = self._capture(step, resp)
+            await self._store_identity(got)
             return None
 
         if op == "expect":
@@ -1068,13 +1109,24 @@ class RunEngine:
 
         if op == "assert_range":
             raw = self.vars.get(step["var"]) if step.get("var") else protocol.dig(self.last_response, step["path"])
+            # A limit is a number or a {parameter}, so a station can carry its
+            # own (bench gaps item 10).
+            lo, hi = V(step.get("min")), V(step.get("max"))
+            try:
+                lo, hi = float(lo), float(hi)
+            except (TypeError, ValueError):
+                raise StepFailed(f"assert_range: the limits {lo!r} and {hi!r} are not both numbers")
             try:
                 got = float(raw)
             except (TypeError, ValueError):
                 raise StepFailed(f"assert_range: {raw!r} is not a number")
-            if not (float(step["min"]) <= got <= float(step["max"])):
-                raise StepFailed(f"assert_range: {got} outside [{step['min']}, {step['max']}]")
-            self.log("app", f"assert ok: {got} in [{step['min']}, {step['max']}]")
+            # The value beside the limits it was judged by, per check: what
+            # the first units' results are read back for to set the limits.
+            name = step.get("check") or step.get("var") or step.get("path")
+            self.results.setdefault("limits", {})[str(name)] = {"value": got, "min": lo, "max": hi}
+            if not (lo <= got <= hi):
+                raise StepFailed(f"assert_range: {got:g} outside [{lo:g}, {hi:g}]")
+            self.log("app", f"assert ok: {got:g} in [{lo:g}, {hi:g}]")
             return None
 
         if op == "poll_until":
@@ -1094,6 +1146,12 @@ class RunEngine:
 
         if op == "print_label":
             return await self._print_label(step, timeout)
+
+        if op == "operator_check":
+            return await self._operator_check(step)
+
+        if op == "broker_heard":
+            return await self._broker_heard(step, float(step.get("timeout", 120)))
 
         raise StepFailed(f'unknown op "{op}"')
 
@@ -1245,19 +1303,94 @@ class RunEngine:
                     elif "min" in step or "max" in step:
                         try:
                             v = float(value)
-                            ok = float(step.get("min", "-inf")) <= v <= float(step.get("max", "inf"))
+                            ok = (float(protocol.subst(step.get("min", "-inf"), self.vars)) <= v
+                                  <= float(protocol.subst(step.get("max", "inf"), self.vars)))
                         except (TypeError, ValueError):
                             ok = False
                     else:
                         ok = value not in (None, "")
                 if ok:
                     self.log("app", f"poll_until satisfied on attempt {attempt}")
-                    self._capture(step, resp)
+                    got = self._capture(step, resp)
+                    await self._store_identity(got)
                     return None
             wait = deadline - asyncio.get_running_loop().time()
             if wait > 0:
                 await asyncio.sleep(min(every, wait))
         raise StepFailed(f'poll_until: condition on "{step["cmd"]}" not met within {timeout:.0f}s')
+
+    async def _operator_check(self, step: dict) -> None:
+        """Ask the operator one yes/no question and record the answer on the run.
+
+        For what only a person can see or do with no test jig: an LED's colour,
+        a button press (CE_Dongle_V3 bench gaps, item 6). The step passes on
+        "yes" and fails on anything else, with the question, the answer and the
+        signed-in operator in the step's response, so the check row carries the
+        evidence and the run's results keep every answer in order.
+        """
+        question = str(protocol.subst(step.get("question", ""), self.vars)).strip()
+        if not question:
+            raise StepFailed("operator_check: the step asks no question")
+        hint = str(protocol.subst(step.get("hint", ""), self.vars)).strip()
+        answer = (await self.prompt("confirm", question, secret=False, kind="confirm", hint=hint,
+                                    timeout=float(step.get("timeout", 600)))).strip().lower()
+        record = {"question": question, "answer": answer or "none",
+                  "by": self.operator or "operator"}
+        self.last_response = record
+        self.results.setdefault("operator_answers", []).append(record)
+        if answer != "yes":
+            raise StepFailed(f"the operator answered {answer or 'nothing'}: {question}")
+        self.log("app", f"{record['by']} answered yes: {question}")
+
+    async def _broker_heard(self, step: dict, timeout: float) -> None:
+        """Wait until the platform's broker monitor hears the unit's topic.
+
+        `MqttCount` proves the device logged in; this proves a message the
+        device published reached the broker and was read back (bench gaps,
+        item 9). Only a LIVE message counts — `last_seen_at` never moves on a
+        retained replay (decision 0056) — and only one heard after the flash,
+        or after the run started when the run flashes nothing, so a message
+        from the firmware the unit arrived with proves nothing. With `fresh`,
+        only one heard after this step began. The platform never publishes to
+        the broker (decision 0033): the DEVICE has to send it, so put this step
+        after the one that brings MQTT up.
+        """
+        topic = str(protocol.subst(step.get("topic") or "{topic}", self.vars)).strip()
+        if not topic or "{" in topic:
+            raise StepFailed(f"broker_heard: no topic to look for (resolved to {topic!r})")
+        since = utcnow() if step.get("fresh") else (self.flashed_at or self.started_at)
+        every = max(float(step.get("every", 3)), 0.5)
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + timeout
+        self.log("app", f"waiting for the broker to hear {topic} after "
+                        f"{since.isoformat(timespec='seconds')}")
+
+        def look(db):
+            row = (db.query(M.DevicePresence.last_seen_at, M.DevicePresence.lwt)
+                   .filter(M.DevicePresence.topic == topic).one_or_none())
+            return (row[0], row[1]) if row else (None, "")
+
+        seen, lwt = None, ""
+        while True:
+            seen, lwt = await self._db(look)
+            if seen is not None and seen > since:
+                self.last_response = {"topic": topic, "last_seen_at": seen.isoformat(),
+                                      "lwt": lwt}
+                self.results["broker_heard_at"] = seen.isoformat()
+                self.log("app", f"the broker heard {topic} at {seen.isoformat(timespec='seconds')}")
+                return None
+            if self.abort_event.is_set():
+                raise Aborted()
+            left = deadline - loop.time()
+            if left <= 0:
+                break
+            await asyncio.sleep(min(every, left))
+        before = (f"it last heard it at {seen.isoformat(timespec='seconds')}" if seen is not None
+                  else "it has never heard this topic")
+        raise StepFailed(
+            f"broker_heard: the broker monitor heard nothing from {topic} within {timeout:.0f}s "
+            f"({before}). Check that the device publishes to the platform's broker and that "
+            "the monitor is connected (Admin → Fleet broker).")
 
     async def _download_files(self, step: dict) -> None:
         """The device fetches every pinned file version from THIS platform over
@@ -1364,11 +1497,8 @@ class RunEngine:
             if not pin:
                 raise StepFailed("no SIM PIN provided")
             self.vars["sim_pin"] = pin
-        resp = await self.send_command("LteSimPin", pin, "LteSimPin", timeout, mask=pin)
+        resp = await self.send_command("LteSimPin", pin, "LteSimPin", timeout)
         if resp is None:
             raise StepFailed("no response to LteSimPin")
-        self.last_response = resp if not isinstance(resp, dict) else {
-            k: ("•••" if "pin" in k.lower() else v) for k, v in resp.items()
-        }
         self.log("app", "SIM PIN provisioned (sent once, never retried)")
         return None

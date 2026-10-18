@@ -74,7 +74,9 @@ returns `presence: null` for it and the UI prints "never seen".
 Presence is also a **different axis from the check grid**. The checks are what
 the bench proved and they cannot change; presence is a live cache that is
 allowed to be stale, wrong or missing. A device that is offline is a device the
-broker has not heard from — not a claim that anything is broken.
+broker has not heard from — not a claim that anything is broken. One bench step
+reads presence on purpose, `broker_heard`, and only in a procedure that names
+it (decision [0093](../decisions/0093-a-procedure-may-require-that-the-broker-heard-the-unit.md)).
 
 **A retained message is not the device speaking.** The broker replays every
 retained `LWT`, `PERSIST_SAVE` and discovery message whenever the watcher

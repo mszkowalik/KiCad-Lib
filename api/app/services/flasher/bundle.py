@@ -95,7 +95,7 @@ def image_json(img: M.DeploymentImage) -> dict:
     return {
         "firmware_asset_id": a.id, "address": img.address, "filename": a.filename,
         "kind": a.kind, "chip": a.chip, "size_bytes": a.size_bytes, "sha256": a.sha256,
-        "build_label": a.build_label,
+        "build_label": a.build_label, "git_commit": a.git_commit or "",
     }
 
 

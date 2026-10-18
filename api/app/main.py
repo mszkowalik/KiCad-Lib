@@ -1,9 +1,12 @@
 import logging
 
-from fastapi import Depends, FastAPI
+from fastapi import Depends, FastAPI, Request
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from psycopg import errors as psycopg_errors
 from sqlalchemy import text
+from sqlalchemy.exc import DataError
 
 from .authgate import AuthGate
 from .config import settings
@@ -72,6 +75,23 @@ _row_changes.install_tagging()
 # parameter classified.
 app = FastAPI(title="Project Management Platform", version="0.1.0",
               dependencies=[Depends(access.require_company_access)])
+
+
+@app.exception_handler(DataError)
+def _too_long(request: Request, exc: DataError):
+    """A value longer than its column is the caller's input, not a crash.
+
+    Postgres refuses it with `value too long for type character varying(N)`,
+    which surfaced as a bare 500 (`POST /api/flasher/deployments/1/versions`
+    with a 501-character comment, 2026-10-18). A route should still state its
+    own limit with `Field(max_length=…)`, which names the field; this is the
+    net under every route that does not. Any other DataError stays a 500."""
+    if isinstance(getattr(exc, "orig", None), psycopg_errors.StringDataRightTruncation):
+        detail = str(exc.orig).strip().splitlines()[0]
+        return JSONResponse(status_code=422, content={"detail": f"a value is too long: {detail}"})
+    logging.getLogger(__name__).error("unhandled DataError on %s", request.url.path, exc_info=exc)
+    return JSONResponse(status_code=500, content={"detail": "Internal Server Error"})
+
 
 # ORDER MATTERS, and it is the reverse of the reading order: `add_middleware`
 # prepends, so the LAST one added is the OUTERMOST and runs first. CORS must be
@@ -1266,6 +1286,11 @@ def startup() -> None:
             ))
             conn.execute(text(
                 "ALTER TABLE twin_steps ADD COLUMN IF NOT EXISTS deployment_version_id integer"
+            ))
+            # The commit a firmware image was built from (bench gaps item 17).
+            conn.execute(text(
+                "ALTER TABLE firmware_assets ADD COLUMN IF NOT EXISTS "
+                "git_commit varchar(64) NOT NULL DEFAULT ''"
             ))
             # Decision 0074: the current process version is a pointer. When the
             # column is new, it points at what "current" meant before: the

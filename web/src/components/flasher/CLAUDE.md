@@ -46,7 +46,8 @@ text applied to another.
   `monitor_signals` is null and DTR/RTS are left alone) — do not "clean them
   up" on either side.
 - `src/flasher/runClient.ts` talks to the engine WebSocket: it executes
-  `action` ops, pipes `tx`/`rx`, answers `prompt`s (SIM PIN modal) and
+  `action` ops, pipes `tx`/`rx`, answers `prompt`s (the SIM PIN, and the
+  Yes/No of an `operator_check` step) and
   forwards every station log line as `{t:"log"}` so the stored record is
   complete. The scenario itself NEVER runs in the browser.
 - Pages: **`/production/deployments`** is the home of the flasher — deployment

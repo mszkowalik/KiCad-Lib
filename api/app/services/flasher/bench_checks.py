@@ -44,6 +44,12 @@ SETTLED_AFTER = timedelta(days=30)
 #: purpose: a unit booked back in is exactly what a repair bench reprograms.
 AWAY_STATES = ("shipped", "allocated", "disposed", "missing")
 
+#: How long after a bench run of the same unit a NEW broker session is still
+#: that run's doing. A run that ends in a restart, or fails while the modem is
+#: still switching to LTE, leaves a unit that comes online a minute or two after
+#: the run is closed (runs 8866 and 8867, 2026-10-18). Chosen, not measured.
+BENCH_SESSION_GRACE = timedelta(minutes=15)
+
 
 def _notice(level: str, code: str, text: str, hint: str = "", **data) -> dict:
     return {"level": level, "code": code, "text": text, "hint": hint, "data": data}
@@ -72,7 +78,7 @@ def for_device(db: Session, run: M.ProgrammingRun, dev: M.DeviceUnit, *,
         return out
 
     if not created:
-        out.extend(_about_a_known_unit(db, dev, batch))
+        out.extend(_about_a_known_unit(db, dev, batch, run))
         out.extend(_about_the_process(db, run, dev, ops or set()))
     if batch is not None:
         out.extend(_about_the_batch(db, batch, dev, created=created, run=run))
@@ -123,8 +129,38 @@ def _about_the_process(db: Session, run: M.ProgrammingRun, dev: M.DeviceUnit,
     return out
 
 
+def _online_from_the_bench(db: Session, dev: M.DeviceUnit, pres: M.DevicePresence,
+                           run: M.ProgrammingRun | None) -> M.ProgrammingRun | None:
+    """The bench run of this unit that explains why the broker has it online.
+
+    The broker session counts as the bench's own when it BEGAN while an earlier
+    run of the same unit was open, or within `BENCH_SESSION_GRACE` after it
+    closed. A procedure that proves MQTT puts the unit on the broker itself, and
+    the unit stays there while it is still on the bench: without this, the
+    retry of a failed run warned about the unit it had just configured (runs
+    8866, 8867). The session START is compared, not the last message: a unit
+    left powered keeps sending telemetry for as long as it is plugged in, while
+    a clone elsewhere began its session before this unit's bench run did.
+    """
+    began = pres.last_online_at or pres.last_seen_at
+    if began is None:
+        return None
+    q = (db.query(M.ProgrammingRun)
+         .filter(M.ProgrammingRun.device_unit_id == dev.id,
+                 M.ProgrammingRun.started_at <= began)
+         .order_by(M.ProgrammingRun.started_at.desc()))
+    if run is not None and run.id is not None:
+        q = q.filter(M.ProgrammingRun.id != run.id)
+    for prev in q.limit(5):
+        ended = prev.finished_at or utcnow()
+        if began <= ended + BENCH_SESSION_GRACE:
+            return prev
+    return None
+
+
 def _about_a_known_unit(db: Session, dev: M.DeviceUnit,
-                        batch: M.ProductionRun | None) -> list[dict]:
+                        batch: M.ProductionRun | None,
+                        run: M.ProgrammingRun | None = None) -> list[dict]:
     out: list[dict] = []
 
     if (dev.state or "") in AWAY_STATES:
@@ -171,7 +207,7 @@ def _about_a_known_unit(db: Session, dev: M.DeviceUnit,
     # one whenever any of them is, so it is the one to warn about.
     rows = mqtt_monitor.presence_rows(db, dev)
     pres = rows[0] if rows else None
-    if pres is not None and pres.online:
+    if pres is not None and pres.online and _online_from_the_bench(db, dev, pres, run) is None:
         seen = pres.last_seen_at.isoformat(timespec="minutes") if pres.last_seen_at else "recently"
         out.append(_notice(
             "warn", "online_elsewhere",

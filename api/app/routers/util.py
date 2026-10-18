@@ -142,6 +142,17 @@ def actor_of(request) -> str:
     return (getattr(u, "display_name", "") or getattr(u, "username", "") or "user").strip() or "user"
 
 
+def col_cap(model, column: str, reserve: int = 0) -> int:
+    """The length of a String column, for a request body's `max_length`.
+
+    Read from the model so the limit and the column cannot drift. A value over
+    it reached Postgres and came back as a 500; with `Field(max_length=…)`
+    pydantic refuses it with a 422 that names the field and the limit.
+    `reserve` keeps room for text the route appends itself, such as
+    " [forced]" on a parameter-set note."""
+    return model.__table__.c[column].type.length - reserve
+
+
 def acting_name() -> str:
     """The name to store in a who-column (`author`, `created_by`, `decided_by`…).
 

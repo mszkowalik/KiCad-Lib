@@ -281,10 +281,35 @@ const RAW_OPS: OpSpec[] = [
       { key: "path", label: "Path to test", kind: "path", placeholder: "StatusSTS.Wifi.SSId", summary: true },
       { key: "equals", label: "Must equal", kind: "value" },
       { key: "matches", label: "Must match (regex)", kind: "text" },
-      { key: "min", label: "At least", kind: "number" },
-      { key: "max", label: "At most", kind: "number" },
+      { key: "min", label: "At least", kind: "value", hint: "a number, or a {parameter} — a key@station value in the set wins for that station" },
+      { key: "max", label: "At most", kind: "value" },
       { key: "every", label: "Poll every", kind: "seconds", placeholder: "2 s" },
       TIMEOUT, CAPTURE,
+    ],
+  },
+  {
+    op: "operator_check", title: "Ask the operator (yes / no)", phase: "check",
+    blurb: "The bench asks one question and waits for Yes or No. Yes passes, No fails the step. The answer and who gave it are recorded on the run — for what only a person can see, such as an LED colour or a button press.",
+    fields: [
+      LABEL,
+      { key: "question", label: "Question", kind: "value", summary: true,
+        placeholder: "Is LED U17 red?" },
+      { key: "hint", label: "Hint for the operator", kind: "text",
+        placeholder: "Look through the left light pipe" },
+      { key: "timeout", label: "Timeout", kind: "seconds", placeholder: "600 s" },
+    ],
+  },
+  {
+    op: "broker_heard", title: "The broker hears the unit", phase: "check",
+    blurb: "Waits until the platform's broker monitor receives a live message on the unit's topic — proof that MQTT works end to end, not only the login. Counts only what arrives after the flash (or after this step starts, with Only new messages). The platform never publishes: the device has to send it.",
+    fields: [
+      LABEL,
+      { key: "topic", label: "Topic", kind: "value", placeholder: "{topic}", summary: true,
+        hint: "the Tasmota topic the device publishes under — empty = the captured {topic}" },
+      { key: "fresh", label: "Only new messages", kind: "bool",
+        hint: "on = count only a message that arrives after this step starts" },
+      { key: "every", label: "Look every", kind: "seconds", placeholder: "3 s" },
+      { key: "timeout", label: "Timeout", kind: "seconds", placeholder: "120 s" },
     ],
   },
   {
@@ -307,13 +332,29 @@ const RAW_OPS: OpSpec[] = [
     fields: [
       LABEL,
       { key: "var", label: "Variable", kind: "varname", summary: true },
-      { key: "min", label: "At least", kind: "number", summary: true },
-      { key: "max", label: "At most", kind: "number", summary: true },
+      { key: "min", label: "At least", kind: "value", summary: true,
+        hint: "a number, or a {parameter} — a key@station value in the set wins for that station" },
+      { key: "max", label: "At most", kind: "value", summary: true },
     ],
   },
 ];
 
-export const OPS: OpSpec[] = RAW_OPS.map((o) => ({ ...o, fields: [...o.fields, CHECK] }));
+/** The ops a step may continue on failure on. Mirrors validate.CONTINUE_OPS;
+ *  this decides only where the box is drawn, the server refuses the rest. */
+const CONTINUE_OPS = new Set([
+  "command", "set_and_check", "berry", "expect", "assert_equals",
+  "assert_range", "poll_until", "operator_check", "broker_heard",
+]);
+
+const CONTINUE: Field = {
+  key: "continue_on_fail", label: "Go on when this fails", kind: "bool",
+  hint: "the failure is recorded on its check and the run still ends as a fail — so one run lists every defect. Needs a check name",
+};
+
+export const OPS: OpSpec[] = RAW_OPS.map((o) => ({
+  ...o,
+  fields: [...o.fields, CHECK, ...(CONTINUE_OPS.has(o.op) ? [CONTINUE] : [])],
+}));
 
 export const OP_BY_NAME: Record<string, OpSpec> = Object.fromEntries(OPS.map((o) => [o.op, o]));
 

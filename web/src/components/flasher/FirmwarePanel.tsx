@@ -42,6 +42,7 @@ export default function FirmwarePanel({
   const [chip, setChip] = useState("esp32c6");
   const [buildLabel, setBuildLabel] = useState("");
   const [notes, setNotes] = useState("");
+  const [gitCommit, setGitCommit] = useState("");
   const [picked, setPicked] = useState<File | null>(null);
   const [editing, setEditing] = useState<FirmwareAssetRow | null>(null);
   const modal = useModal(() => setEditing(null), { active: !!editing });
@@ -77,7 +78,7 @@ export default function FirmwarePanel({
     setNote(null);
     try {
       const res = await uploadFirmware(projectId, picked, {
-        kind, chip, build_label: buildLabel, notes,
+        kind, chip, build_label: buildLabel, notes, git_commit: gitCommit,
       });
       const detected = res.chip_detected
         ? `chip ${res.chip_detected} read from the image header`
@@ -92,6 +93,7 @@ export default function FirmwarePanel({
       setPicked(null);
       setBuildLabel("");
       setNotes("");
+      setGitCommit("");
       reload();
     } catch (err) {
       setError(errorMessage(err));
@@ -106,7 +108,7 @@ export default function FirmwarePanel({
     try {
       await patchFirmware(editing.id, {
         chip: editing.chip, kind: editing.kind,
-        build_label: editing.build_label, notes: editing.notes,
+        build_label: editing.build_label, notes: editing.notes, git_commit: editing.git_commit,
       });
       setEditing(null);
       reload();
@@ -143,6 +145,7 @@ export default function FirmwarePanel({
       get: (a) => a.filename,
       title: (a) =>
         `${a.filename}\nsha256 ${a.sha256}\n${a.build_label || "no build label"}` +
+        `\n${a.git_commit ? `commit ${a.git_commit}` : "no git commit recorded"}` +
         (a.notes ? `\n${a.notes}` : "") +
         `\nuploaded ${fmtWhen(a.uploaded_at)}`,
       render: (a) => (
@@ -268,6 +271,16 @@ export default function FirmwarePanel({
           </label>
 
           <label className="fw-field fw-wide">
+            <span className="fw-label">Git commit</span>
+            <input
+              className="row-input mono"
+              placeholder="the pushed commit it was built from, e.g. ec3f070f9"
+              value={gitCommit}
+              onChange={(e) => setGitCommit(e.target.value)}
+            />
+          </label>
+
+          <label className="fw-field fw-wide">
             <span className="fw-label">Notes</span>
             <input
               className="row-input"
@@ -365,6 +378,14 @@ export default function FirmwarePanel({
                   className="row-input"
                   value={editing.build_label}
                   onChange={(e) => setEditing({ ...editing, build_label: e.target.value })}
+                />
+              </label>
+              <label className="fw-field fw-wide">
+                <span className="fw-label">Git commit</span>
+                <input
+                  className="row-input mono"
+                  value={editing.git_commit}
+                  onChange={(e) => setEditing({ ...editing, git_commit: e.target.value })}
                 />
               </label>
               <label className="fw-field fw-wide">

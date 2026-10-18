@@ -47,6 +47,11 @@ Three things that follow, and are easy to break:
   no socket assigned. That is the contract, not a limitation to route around.
 - **The connect ladder lives HERE and nowhere else** (`EspRun`). The browser
   copy is deleted; do not reintroduce one.
+- **An open that follows a reset waits for the node** (`open_port`,
+  `PORT_WAIT_S`): the hard reset and the console. A C6 re-enumerates after
+  every reset, so its node is gone for a moment, and run 8868 failed
+  `esp_reset` on "could not open port". The connect ladder does not use it:
+  there, a port that cannot be opened is not a rung.
 - **One console session at a time**, and `/monitor/open` closes any previous
   one. The page's identity probe relies on that, and so does the hand-off
   between the esptool phase and the dialog phase.

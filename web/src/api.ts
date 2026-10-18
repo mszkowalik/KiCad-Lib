@@ -5022,6 +5022,8 @@ export interface FirmwareAssetRow {
   kind: string;
   build_label: string;
   notes: string;
+  /** the commit the image was built from, as the uploader stated it; "" = none */
+  git_commit: string;
   uploaded_by: string;
   uploaded_at: string | null;
 }
@@ -5035,6 +5037,7 @@ export interface DeploymentImageRow {
   size_bytes: number;
   sha256: string;
   build_label: string;
+  git_commit: string;
 }
 
 /** The short form a version carries for a pinned set: enough to label a
@@ -5698,7 +5701,7 @@ export function listFirmware(projectId: number, signal?: AbortSignal): Promise<F
 export function uploadFirmware(
   projectId: number,
   file: File,
-  meta: { kind: string; chip?: string; build_label?: string; notes?: string },
+  meta: { kind: string; chip?: string; build_label?: string; notes?: string; git_commit?: string },
 ): Promise<FirmwareAssetRow & { existing: boolean; chip_detected: string }> {
   const form = new FormData();
   form.append("file", file);
@@ -5706,6 +5709,7 @@ export function uploadFirmware(
   if (meta.chip) form.append("chip", meta.chip);
   if (meta.build_label) form.append("build_label", meta.build_label);
   if (meta.notes) form.append("notes", meta.notes);
+  if (meta.git_commit) form.append("git_commit", meta.git_commit);
   return request(`/api/flasher/projects/${projectId}/firmware`, { method: "POST", body: form });
 }
 
@@ -5935,7 +5939,7 @@ export function deriveFileSet(
 
 export function patchFirmware(
   assetId: number,
-  body: { chip?: string; kind?: string; build_label?: string; notes?: string },
+  body: { chip?: string; kind?: string; build_label?: string; notes?: string; git_commit?: string },
 ): Promise<FirmwareAssetRow> {
   return request(`/api/flasher/firmware/${assetId}`, {
     method: "PATCH",
@@ -6132,6 +6136,17 @@ export function assignBatchDeployment(
 export function mosquittoExportPath(projectId?: number | null): string {
   const qs = projectId == null ? "" : `?project_id=${projectId}`;
   return `${API_URL}/api/flasher/mosquitto${qs}`;
+}
+
+/** The same file for the units one batch built, current accounts only. */
+export function batchMosquittoPath(productionRunId: number): string {
+  return `${API_URL}/api/flasher/production-runs/${productionRunId}/mosquitto`;
+}
+
+/** The same file for the units of one shipment, current accounts only — what
+ *  a client installs on their own broker. */
+export function shipmentMosquittoPath(shipmentId: number): string {
+  return `${API_URL}/api/flasher/shipments/${shipmentId}/mosquitto`;
 }
 
 /** ws:// (or wss://) address of a programming run's engine socket.
@@ -8057,6 +8072,19 @@ export interface ShipmentDeviceRow {
   run_id: number | null;
   /** when it went into an OPEN box */
   packed_at?: string | null;
+  /** a SENT shipment only: what the fleet broker heard after the unit left */
+  broker?: ShipmentDeviceBroker | null;
+}
+
+/** The fleet broker is the client's, so a live message after the shipment
+ *  (and after the unit's last bench run) is the unit on its own account. */
+export interface ShipmentDeviceBroker {
+  topic: string;
+  /** the later of the shipment and the unit's last bench run */
+  since: string;
+  heard_at: string | null;
+  online: boolean;
+  online_since: string | null;
 }
 
 export type ShipmentStatus = "open" | "sent" | "cancelled";
@@ -8395,6 +8423,8 @@ export interface ShipmentListRow extends Omit<ShipmentRow, "devices"> {
 
 export interface ShipmentDetail extends ShipmentRow {
   order: OrderRow;
+  /** a SENT shipment only: units heard on the fleet broker since they left */
+  broker?: { heard: number; of: number; watching: boolean };
 }
 
 /** One scanned code, judged against an open box. Writes nothing. */

@@ -990,6 +990,40 @@ VENDOR_ZIP = Path(__file__).resolve().with_name("vendor.zip")
 VENDOR_DIRS = ("esptool", "serial", "bitstring", "ecdsa", "intelhex", "reedsolo.py", "yaml")
 ROM_BAUD = 115200
 BOOT_WAIT_S = 30.0
+# How long an open waits for a port node that is not there yet. A C6 on
+# USB-Serial/JTAG re-enumerates after every reset, so its node is GONE for a
+# moment right after a flash: run 8868 (2026-10-18) failed `esp_reset` with
+# "could not open port" where runs 8866, 8867 and 8869 passed the same step
+# only by timing.
+PORT_WAIT_S = 5.0
+
+
+def open_port(port: str, baud: int, timeout: float, job: "Job | None" = None,
+              wait: float = PORT_WAIT_S):
+    """`serial.Serial(port, baud)`, tried again until `wait` runs out.
+
+    Only for the opens that follow a reset — the hard reset and the console.
+    The connect ladder keeps its own rule (a port that cannot be opened is not
+    a rung), because esptool opens the port itself there. Keeps the MESSAGE of
+    a failure, never the exception, for the reason `EspRun._esptool` gives.
+    """
+    import serial
+    deadline = time.time() + wait
+    tries, last = 0, ""
+    while True:
+        tries += 1
+        try:
+            s = serial.Serial(port, baud, timeout=timeout)
+        except (serial.SerialException, OSError) as exc:
+            last = str(exc) or exc.__class__.__name__
+            del exc
+        else:
+            if tries > 1 and job is not None:
+                job.add("app", f"{port} opened on attempt {tries}")
+            return s
+        if time.time() >= deadline:
+            raise MarkError(f"{last} (waited {wait:.0f}s for the port)")
+        time.sleep(0.25)
 
 
 def import_vendor() -> "str | None":
@@ -1219,8 +1253,7 @@ class EspRun:
             mode = self._connect_ladder(argv, "hard_reset")
             return {"connect_mode": mode}
         if self.op == "reset":
-            import serial
-            with serial.Serial(self.port, ROM_BAUD, timeout=0.1) as s:
+            with open_port(self.port, ROM_BAUD, 0.1, self.job) as s:
                 s.dtr = False   # IO0 high: a normal boot
                 s.rts = True    # EN low
                 time.sleep(0.1)
@@ -1245,7 +1278,6 @@ class Monitor:
     """
 
     def __init__(self, port: str, baud: int, signals: "dict | None"):
-        import serial
         self.port, self.baud = port, baud
         self.lines: "collections.deque[dict]" = collections.deque(maxlen=4000)
         self.first = 0  # lines that have already fallen out of the ring
@@ -1264,7 +1296,7 @@ class Monitor:
         # for it — so a big n plus a long timeout is a latency floor, not a
         # buffer size. Kept short, and `_read` asks for one byte at a time and
         # then drains what is waiting.
-        self.ser = serial.Serial(port, baud, timeout=0.05)
+        self.ser = open_port(port, baud, 0.05)
         if signals is not None:
             # A profile that says "do not drive these" means exactly that: on
             # the C6's USB-Serial/JTAG a DTR/RTS move resets the chip.

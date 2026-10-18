@@ -55,6 +55,12 @@ LOOPBACK_URL = re.compile(r"//(localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1\])", re.I
 # (caught composing v19, 2026-09-17).
 BAUD_OPS = {"esp_connect", "erase", "flash", "serial_open"}
 
+# The ops a step may `continue_on_fail` on: the ones that only LOOK at the
+# device. A failed connect, flash, console open, download or credential step
+# leaves nothing for the steps after it to test, so those still stop the run.
+CONTINUE_OPS = {"command", "set_and_check", "berry", "expect", "assert_equals",
+                "assert_range", "poll_until", "operator_check", "broker_heard"}
+
 
 def _norm_chip(s: str) -> str:
     return (s or "").lower().replace("-", "").replace(" ", "").replace("_", "")
@@ -121,6 +127,10 @@ def check(db, version: M.DeploymentVersion) -> dict:
                 f"deployment targets {deployment.chip}")
         elif not img_chip:
             warnings.append(f"image {img.asset.filename} has no chip recorded")
+        if not (img.asset.git_commit or "").strip():
+            warnings.append(
+                f"image {img.asset.filename} records no git commit — say which pushed commit it "
+                "was built from on Files → Firmware")
         if not img.asset.flashable:
             errors.append(
                 f"{img.asset.filename} is not a writable ESP image — it is a placeholder or "
@@ -286,6 +296,55 @@ def check(db, version: M.DeploymentVersion) -> dict:
             warnings.append(
                 f"step {idx + 1} provisions the SIM PIN but no param set supplies 'sim_pin' — "
                 "the operator will be prompted for every unit (mark it optional for PIN-less SIMs)")
+
+    # 8b. A step that lets the run go on when it fails.
+    for idx, step in enumerate(steps):
+        if not step.get("continue_on_fail"):
+            continue
+        if step.get("op") not in CONTINUE_OPS:
+            errors.append(
+                f"step {idx + 1} ({step.get('op')}) cannot continue on failure — only a step "
+                f"that checks something can ({', '.join(sorted(CONTINUE_OPS))})")
+        elif not step.get("check"):
+            errors.append(
+                f"step {idx + 1} continues on failure but names no check, so its failure "
+                "would not show in the device's grid")
+
+    # 8c. Range limits: a number, or one {parameter} that holds one.
+    for idx, step in enumerate(steps):
+        op = step.get("op")
+        if op not in ("assert_range", "poll_until"):
+            continue
+        for key in ("min", "max"):
+            if key not in step:
+                if op == "assert_range":
+                    errors.append(f"step {idx + 1} (assert_range) has no {key}")
+                continue
+            raw = step[key]
+            if isinstance(raw, str) and PLACEHOLDER.fullmatch(raw.strip()):
+                continue
+            try:
+                float(raw)
+            except (TypeError, ValueError):
+                errors.append(
+                    f"step {idx + 1} ({op}) {key} {raw!r} is neither a number nor a {{parameter}}")
+
+    # 9. Operator questions and the broker check.
+    available_now = set(bundle.RUNTIME_VARS) | params_svc.available_keys(db, version)
+    for idx, step in enumerate(steps):
+        op = step.get("op")
+        if op == "operator_check" and not str(step.get("question") or "").strip():
+            errors.append(f"step {idx + 1} asks the operator nothing — give it a question")
+        if op == "broker_heard" and not str(step.get("topic") or "").strip() \
+                and "topic" not in available_now:
+            # The default is `{topic}`, which the walk above cannot see because
+            # the step does not spell it out.
+            errors.append(
+                f"step {idx + 1} waits for the broker to hear {{topic}}, which no earlier step "
+                "captures — capture `topic` first, or name the topic on the step")
+        available_now |= set((step.get("capture") or {}).keys())
+        if op == "esp_connect":
+            available_now |= {"mac", "serial", "chip"}
 
     # Cross-cutting: serial ops need an open port.
     monitor_ops = {"command", "set_and_check", "backlog", "berry", "expect", "wait_boot",

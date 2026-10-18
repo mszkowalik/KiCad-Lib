@@ -116,6 +116,32 @@ def set_keys(db, param_set_id: int | None) -> set[str]:
         return {"<undecryptable>"}
 
 
+#: `name@station` in a parameter set is the value of `name` for runs at that
+#: bench station (the run's `station`, e.g. "slot 1"). It exists for limits
+#: that depend on where a unit sits on the bench — the antenna path differs per
+#: position (CE_Dongle_V3 bench gaps, item 10).
+STATION_SEP = "@"
+
+
+def for_station(params: dict, station: str) -> tuple[dict, list[str]]:
+    """The values a run at `station` uses, and a line per override applied.
+
+    Every `name@station` key leaves the result; the one for THIS station, if
+    any, replaces `name`. A station name is the bench page's slot, so two bench
+    machines share `slot 1`. The plain `name` must still exist: the publish gate
+    and the breaking guard know only that key."""
+    out = {k: v for k, v in params.items() if STATION_SEP not in str(k)}
+    applied: list[str] = []
+    want = (station or "").strip().casefold()
+    for key, value in params.items():
+        base, sep, st = str(key).rpartition(STATION_SEP)
+        if not sep or not base or not want or st.strip().casefold() != want:
+            continue
+        out[base] = value
+        applied.append(f"{base} = {value!r} for {station} (from {key})")
+    return out, applied
+
+
 def available_keys(db, version: M.DeploymentVersion) -> set[str]:
     """Everything the version can resolve: its own defaults, then its set."""
     return set((version.param_defaults or {}).keys()) | set_keys(db, version.param_set_id)
