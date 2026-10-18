@@ -30,5 +30,5 @@ unit 28844 (MAC `98:a3:16:be:da:90`). The board-side record is in
 
 | # | Item |
 |---|---|
-| 10 | Signal limits: a version 7 with `assert_range` on `wifi_rssi` (percent) and `lte_rsrp` (dBm), limits from loose parameters (`wifi_rssi_min`, `lte_rsrp_min`, … and `name@slot N` per station). Read the values back from the first 50 units, then set the real limits. |
+| 10 | Signal limits: version 7 (id 48) is a DRAFT on production with `assert_range` on `wifi_rssi` (percent) and `lte_rsrp` (dBm), `continue_on_fail`, and loose limits in parameter set `production` r2 (`wifi_rssi_min` 10, `wifi_rssi_max` 100, `lte_rsrp_min` -140, `lte_rsrp_max` -44; `name@slot N` overrides one station). Run a bench trial, publish it, read the `limits` results of the first 50 units, then set the real limits. |
 | 14 | The process step "Laser mark" names no procedure. Deployment 10 "Dongle_V3 marking" exists and is active. The bench shows "no procedure". The project owner is still working on the marking. |

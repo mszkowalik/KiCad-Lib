@@ -43,6 +43,9 @@
 - **A sent shipment shows which units the fleet broker heard after they shipped.** A unit leaves
   the bench with only its own MQTT account, so a unit heard after shipping proves the client
   installed that account. The Devices card shows the count and a column per unit.
+- **"Last heard" no longer shows 2026-09-28 20:24 for 1141 broker topics.** That time came from a
+  retained replay, not from the devices. Those rows now show their last SENSOR time, or no time.
+  Decision 0095.
 
 ## 2026-10-15 (overhead categories are edited on the platform)
 

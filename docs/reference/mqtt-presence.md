@@ -84,11 +84,12 @@ retained `LWT`, `PERSIST_SAVE` and discovery message whenever the watcher
 live message reaches an established subscription with RETAIN 0). A replay
 updates the STATE columns (`online`, `persist`, the discovery fields) and never
 `last_seen_at`, `last_online_at` or `last_offline_at`. `persist_at` and
-`reported_mac_at` are written only while empty. Before decision
-[0056](../decisions/0056-a-unit-owns-every-topic-it-was-given.md) a replay
-moved `last_seen_at` too, and on 2026-09-28 at 20:24 one replay stamped every
-offline topic. Those old values stay until someone resets them, so on a row
-not heard live since the deploy, "last seen" may still be a reconnect time.
+`reported_mac_at` are written only while empty
+([0056](../decisions/0056-a-unit-owns-every-topic-it-was-given.md)). The stamps
+an earlier replay left (2026-09-28, 20:24 CEST, 1141 rows) were reset by
+decision [0095](../decisions/0095-reset-the-replay-stamps-of-2026-09-28.md),
+so `last_seen_at` is a live message, the last SENSOR time where that was all
+that survived, or empty.
 
 ## The MAC
 
