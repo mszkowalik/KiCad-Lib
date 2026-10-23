@@ -43,11 +43,15 @@ log = logging.getLogger("uvicorn.error")
 # Tables with no trigger. The record itself and the logs that already hold what
 # they describe; machine state rewritten all day (95.8 million presence updates,
 # 2.8 million bench log lines, a price cache replaced on every refresh, the
-# datasheet fetcher's host table, a computed conformance cache); and the tables
-# whose rows ARE credentials.
+# datasheet fetcher's host table, a computed conformance cache); the material
+# ledger's shadow, rebuilt whole from journalled tables (decision 0097, phase 1:
+# it takes the trigger when it takes the writes); and the tables whose rows ARE
+# credentials.
 SKIP = frozenset({
     "row_changes", "change_undos", "audit_log", "write_batches", "write_batch_rows",
     "device_presence", "programming_logs", "component_price_points", "fetch_hosts", "conformance",
+    "material_events", "material_lots", "material_moves", "material_event_lots", "material_links",
+    "material_properties", "material_cost_aims",
     "user_sessions", "login_attempts", "jlc_web_sessions", "api_tokens",
 })
 

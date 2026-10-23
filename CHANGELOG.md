@@ -1,5 +1,18 @@
 # Changelog
 
+## 2026-10-23 (material ledger, phase 1)
+
+- **Decision 0097: stock, work and units move to one material ledger.** The design is in
+  [docs/material-ledger/design.md](docs/material-ledger/design.md). Phase 1 builds a shadow of
+  today's pool, lots, transformations and twins, and checks it against today's figures. Nothing
+  changes for operators: the old tables stay the truth.
+- **Administrators get the parity check** at `POST /api/material-ledger/parity`. It lists every
+  part, lot, click, batch, unit or device whose figure differs between the two models. Rules in
+  [docs/reference/material-ledger.md](docs/reference/material-ledger.md).
+- **An administrator can state that an internal part is a state of another item**
+  (`PUT /api/material-ledger/state-maps`), for example "SIM6-12-3W cut" is SIM6-12-3W with four
+  `cut_*` properties. Only the shadow reads it.
+
 ## 2026-10-18 (CE Dongle V3 bench gaps)
 
 - **The bench agent waits up to 5 s for the port after a reset.** A C6 re-enumerates after the flash,

@@ -3026,6 +3026,249 @@ class TwinStep(Base):
     )
 
 
+# ------------------------------------------------- material ledger (0097)
+#
+# Phase 1 of decision 0097: a SHADOW of the pool, the lots, the prepared parts
+# and the twins, rebuilt whole from those tables by
+# `services/material_ledger/project.py` and compared with them by `parity.py`.
+# The old tables stay the truth. `material_items` and `material_state_maps`
+# hold what people decide (a tracking level, "this internal part is a state of
+# that item") and survive a rebuild; every other table here is dropped and
+# built again, so it carries no journal trigger (`row_changes.SKIP`).
+# Design: docs/material-ledger/design.md.
+
+class MaterialItem(Base):
+    """What a thing is. Work never changes it (0097 §1)."""
+
+    __tablename__ = "material_items"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    #: The pool identity (`run_actuals._key`: `c<id>`, `m<MPN>`, `l<LCSC>`) of a
+    #: part, or `p<project id>` for a project's product unit.
+    key: Mapped[str] = mapped_column(String(220), unique=True)
+    kind: Mapped[str] = mapped_column(String(10), default="part")  # part | product
+    component_id: Mapped[int | None] = mapped_column(Integer, nullable=True)  # soft ptr
+    mpn: Mapped[str] = mapped_column(String(200), default="")
+    lcsc: Mapped[str] = mapped_column(String(50), default="")
+    project_id: Mapped[int | None] = mapped_column(Integer, nullable=True)  # soft ptr
+    uom: Mapped[str] = mapped_column(String(10), default="pcs")
+    #: What the floor states at a use: `count` (FIFO, nobody asked), `lot`
+    #: (the lot, once per batch), `serial` (the unit, by its identifier).
+    tracking: Mapped[str] = mapped_column(String(10), default="count")
+    identifier_kind: Mapped[str] = mapped_column(String(20), default="")  # mac | engraved | label
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class MaterialStateMap(Base):
+    """A person's statement that an internal part is a STATE of another item:
+    component 577 "SIM6-12-3W cut" is component 233 with four `cut_*`
+    properties. The projector then writes the part's transformations as
+    properties on lots of the item, not as lots of a new item."""
+
+    __tablename__ = "material_state_maps"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    component_id: Mapped[int] = mapped_column(Integer, unique=True)  # the internal part
+    item_component_id: Mapped[int] = mapped_column(Integer)  # the item it is a state of
+    properties: Mapped[dict | None] = mapped_column(JSONB, nullable=True)  # {name: value}
+    note: Mapped[str] = mapped_column(String(500), default="")
+    decided_by: Mapped[str] = mapped_column(String(100), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class MaterialEvent(Base):
+    """One operation: who, when, which batch, under which rule (0097 §6)."""
+
+    __tablename__ = "material_events"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    #: receive | transfer | step | transform | consume | count
+    kind: Mapped[str] = mapped_column(String(20))
+    at: Mapped[str] = mapped_column(String(20), default="")  # ISO date; drives the replay
+    actor: Mapped[str] = mapped_column(String(100), default="")
+    company_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    run_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    process_version_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    step_key: Mapped[str] = mapped_column(String(40), default="")
+    step_label: Mapped[str] = mapped_column(String(200), default="")  # as it read then
+    step_kind: Mapped[str] = mapped_column(String(20), default="")  # the step's kind (finish, scrap, ...)
+    #: The units a step acted on (`StepRun.qty`): each owns 1/units of its draws.
+    units: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    chosen: Mapped[str] = mapped_column(String(20), default="")
+    station: Mapped[str] = mapped_column(String(40), default="")
+    programming_run_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    deployment_version_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    file_set_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    params: Mapped[dict | None] = mapped_column(JSONB, nullable=True)  # resolved, never secret
+    note: Mapped[str] = mapped_column(String(500), default="")
+    reverses_event_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    #: The row it was projected from: `document`, `consumption`, `step_run`,
+    #: `transformation`, `adjustment`.
+    source_kind: Mapped[str] = mapped_column(String(20), default="")
+    source_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    __table_args__ = (
+        Index("ix_material_event_source", "source_kind", "source_id"),
+        Index("ix_material_event_run", "run_id"),
+    )
+
+
+class MaterialLot(Base):
+    """A quantity of one item whose members are identical in the record
+    (0097 §2). Its quantity is the sum of its moves and is never stored."""
+
+    __tablename__ = "material_lots"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    item_id: Mapped[int] = mapped_column(ForeignKey("material_items.id"))
+    company_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    #: Read off the object (a MAC, an engraved code), never invented.
+    identifier: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    device_unit_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    split_from_lot_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    created_event_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    #: A product unit: the batch it was received in (0059 §12), and whether a
+    #: stock count found it (zero value, 0058).
+    origin_run_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    found: Mapped[bool] = mapped_column(Boolean, default=False)
+    #: What the lot stands for: `line` (a purchase), `adjustment`, `twin`.
+    source_kind: Mapped[str] = mapped_column(String(20), default="")
+    source_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    label: Mapped[str] = mapped_column(String(120), default="")  # L123, A675, a supplier lot
+    at: Mapped[str] = mapped_column(String(20), default="")  # ISO date it came into being
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    __table_args__ = (
+        Index("ix_material_lot_item", "item_id"),
+        Index("ix_material_lot_source", "source_kind", "source_id"),
+        Index("ix_material_lot_device", "device_unit_id"),
+    )
+
+
+class MaterialMove(Base):
+    """One change of a quantity: `qty` units (signed) of one lot, or of an
+    item when nobody recorded the lot (0097 §3).
+
+    `value_usd` is what the move carried, signed like `qty`: frozen for a
+    draw, read on read for a receipt (`value_source = invoice`) and for a
+    lot's conversion costs. `lot_value_usd` is what the LOT gave or got. The
+    two differ while `lot_pricing` is off: a draw is charged the moving
+    average and takes the lot's landed cost out of the lot."""
+
+    __tablename__ = "material_moves"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    event_id: Mapped[int] = mapped_column(ForeignKey("material_events.id"))
+    item_id: Mapped[int] = mapped_column(ForeignKey("material_items.id"))
+    lot_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    company_id: Mapped[int | None] = mapped_column(Integer, nullable=True)  # whose stock
+    run_id: Mapped[int | None] = mapped_column(Integer, nullable=True)  # the batch it is charged to
+    qty: Mapped[float] = mapped_column(Float, default=0.0)
+    value_usd: Mapped[float | None] = mapped_column(Float, nullable=True)
+    lot_value_usd: Mapped[float | None] = mapped_column(Float, nullable=True)
+    #: frozen | invoice (a purchase line, landed) | adjustment (stored, plus
+    #: conversion costs on read) | average (the moving average at the replay)
+    value_source: Mapped[str] = mapped_column(String(20), default="frozen")
+    #: How the lot is known: reported | fifo | manual | stated | scanned |
+    #: unallocated | legacy_average, as `component_consumption_lots.source`.
+    bind_source: Mapped[str] = mapped_column(String(20), default="")
+    #: The day the quantity changed. Its event's day for new work. In history it
+    #: can differ: a rebuild fed a batch's earlier draws to later clicks.
+    at: Mapped[str] = mapped_column(String(20), default="")
+    #: The pool's same-day order: 0 adjustment, 1 purchase, 2 draw.
+    rank: Mapped[int] = mapped_column(Integer, default=2)
+    #: The identity the pool files this move under (`run_actuals._key`). It is
+    #: the item's key, except for a lot of an internal part that a state map
+    #: turned into a state of another item. Phase 1 parity compares by it.
+    pool_key: Mapped[str] = mapped_column(String(220), default="")
+    source_kind: Mapped[str] = mapped_column(String(20), default="")
+    source_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+    __table_args__ = (
+        Index("ix_material_move_event", "event_id"),
+        Index("ix_material_move_item", "item_id"),
+        Index("ix_material_move_lot", "lot_id"),
+    )
+
+
+class MaterialEventLot(Base):
+    """A lot a step acted on without a change of quantity: the units of a
+    click. Replaces `twin_steps` (0097 §6)."""
+
+    __tablename__ = "material_event_lots"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    event_id: Mapped[int] = mapped_column(ForeignKey("material_events.id"))
+    lot_id: Mapped[int] = mapped_column(Integer)
+    programming_run_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    deployment_version_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    source_id: Mapped[int | None] = mapped_column(Integer, nullable=True)  # the twin_steps row
+
+    __table_args__ = (
+        Index("ix_material_event_lot_event", "event_id"),
+        Index("ix_material_event_lot_lot", "lot_id"),
+    )
+
+
+class MaterialLink(Base):
+    """A lot inside another lot: a bundle (0097 §4). Phase 1 projects none:
+    the history records draws, not where they went."""
+
+    __tablename__ = "material_links"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    parent_lot_id: Mapped[int] = mapped_column(Integer)
+    child_lot_id: Mapped[int] = mapped_column(Integer)
+    qty: Mapped[float] = mapped_column(Float, default=1.0)
+    role: Mapped[str] = mapped_column(String(40), default="")
+    kind: Mapped[str] = mapped_column(String(20), default="permanent")  # permanent | transient
+    attached_event_id: Mapped[int] = mapped_column(Integer)
+    detached_event_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+    __table_args__ = (
+        Index("ix_material_link_parent", "parent_lot_id"),
+        Index("ix_material_link_child", "child_lot_id"),
+    )
+
+
+class MaterialProperty(Base):
+    """A fact about a lot, stated by an event (0097 §5): a state is a
+    property, not an item."""
+
+    __tablename__ = "material_properties"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    lot_id: Mapped[int] = mapped_column(Integer)
+    event_id: Mapped[int] = mapped_column(Integer)
+    name: Mapped[str] = mapped_column(String(60))
+    value: Mapped[dict | None] = mapped_column(JSONB, nullable=True)  # any JSON value
+    cleared: Mapped[bool] = mapped_column(Boolean, default=False)
+
+    __table_args__ = (Index("ix_material_property_lot", "lot_id"),)
+
+
+class MaterialCostAim(Base):
+    """An invoice position aimed at work (0097 §7): one event, or every event
+    of one step in one batch. Replaces `RunCostLine.transformation_id`,
+    `cost_line_steps` and `cost_line_step_keys`."""
+
+    __tablename__ = "material_cost_aims"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    line_id: Mapped[int] = mapped_column(Integer)
+    event_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    run_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    step_key: Mapped[str] = mapped_column(String(40), default="")
+    #: transformation | click | step_key — the old row it was projected from.
+    source_kind: Mapped[str] = mapped_column(String(20), default="")
+
+    __table_args__ = (
+        Index("ix_material_cost_aim_line", "line_id"),
+        Index("ix_material_cost_aim_event", "event_id"),
+    )
+
+
 # ------------------------------------------------- firmware releases (flasher)
 class FirmwareAsset(Base):
     """A firmware binary. CONTENT-ADDRESSED: the same build uploaded twice is

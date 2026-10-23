@@ -34,6 +34,7 @@ from .routers import (
     kicad_http,
     kicad_sync,
     ledger,
+    material_ledger,
     libraries,
     models3d,
     mqtt,
@@ -157,6 +158,7 @@ app.include_router(jlc_stock.router)
 app.include_router(jlc_web.router)
 app.include_router(jlc_import.router)
 app.include_router(ledger.router)
+app.include_router(material_ledger.router)
 app.include_router(run_costs.router)
 app.include_router(flasher.router)
 app.include_router(mqtt.router)

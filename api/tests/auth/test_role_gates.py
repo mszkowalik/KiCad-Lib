@@ -36,6 +36,13 @@ from app.routers.users import require_admin
 
 # (method, path) for every route that must refuse a non-admin.
 EXPECTED = {
+    # The material ledger's shadow, rebuilt archive-wide, and its state maps — decision 0097.
+    ("GET", "/api/material-ledger/summary"),
+    ("POST", "/api/material-ledger/rebuild"),
+    ("POST", "/api/material-ledger/parity"),
+    ("GET", "/api/material-ledger/state-maps"),
+    ("PUT", "/api/material-ledger/state-maps"),
+    ("DELETE", "/api/material-ledger/state-maps/{comp_id}"),
     # The companies' own data and ownership — decision 0063.
     ("PATCH", "/api/companies/{company_id}"),
     ("POST", "/api/companies/backfill"),

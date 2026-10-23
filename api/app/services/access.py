@@ -427,6 +427,8 @@ NOT_COMPANY_FIELDS: set[str] = {
     # row_history's row of any table, shown only where the caller's own request
     # changed it (decision 0089)
     "row_id",
+    # the library part a material-ledger state map names (admin, decision 0097)
+    "item_component_id",
 }
 
 
