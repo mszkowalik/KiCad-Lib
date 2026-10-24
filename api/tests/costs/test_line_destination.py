@@ -247,7 +247,7 @@ def test_the_register_identity_closes_exactly(db: Session, world):
     """
     s = ra.invoice_register(db)["summary"]
     buckets = (s["to_runs_usd"] + s["to_projects_usd"] + s["to_pool_usd"]
-               + s["to_transformations_usd"]
+               + s["to_transformations_usd"] + s["to_overhead_usd"]   # company overhead (decision 0068)
                + s["excluded_usd"] + s["unassigned_usd"] + s["residual_usd"]
                - (s["overallocated_usd"] or 0.0))
     assert s["lines_total_usd"] == pytest.approx(buckets, abs=0.0005)

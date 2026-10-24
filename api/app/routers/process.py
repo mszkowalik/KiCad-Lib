@@ -60,8 +60,8 @@ def get_process(project_id: int, version_id: int | None = None, db: Session = De
         # one: show the newest, so "Make current" is reachable (decision 0074).
         shown = (svc.current_version(db, project_id) or next((v for v in vs if v.status == "draft"), None)
                  or next((v for v in vs if v.status == "published"), None))
-    ts = (db.query(M.ProcessTransformation).filter_by(project_id=project_id)
-          .order_by(M.ProcessTransformation.made_at.desc(), M.ProcessTransformation.id.desc())
+    ts = (db.query(M.Make).filter_by(project_id=project_id)
+          .order_by(M.Make.at.desc(), M.Make.id.desc())
           .limit(200).all())
     names = svc._part_names(db, {t.output_component_id for t in ts})
     from ..services import run_actuals
@@ -181,6 +181,7 @@ def create_internal_part(body: InternalPartIn, db: Session = Depends(get_db)):
 # -------------------------------------------------------- transformations
 
 class LotPick(BaseModel):
+    #: a stored lot of the material ledger, by the API's name for it
     adjustment_id: int
     qty: float
 
@@ -210,7 +211,7 @@ def transform(project_id: int, body: TransformIn, db: Session = Depends(get_db))
                         version_id=body.version_id, lots=lots, note=body.note,
                         actor=acting_name(), dry_run=body.dry_run)
     if not body.dry_run:
-        audit(db, "process.transform", "process_transformation", res["transformation_id"],
+        audit(db, "process.transform", "material_event", res["transformation_id"],
               {"project_id": project_id, "recipe_key": body.recipe_key, "qty": body.qty,
                "scrap": body.scrap, "run_id": body.run_id,
                "input_value_usd": res["input_value_usd"],
@@ -223,15 +224,16 @@ def transform(project_id: int, body: TransformIn, db: Session = Depends(get_db))
 
 @router.get("/process-transformations")
 def list_transformations(db: Session = Depends(get_db)):
-    """Live transformations of every project, newest first — what an invoice
-    position can be aimed at as a conversion cost (decision 0058 §4)."""
-    ts = (db.query(M.ProcessTransformation).filter(M.ProcessTransformation.voided_at.is_(None))
-          .order_by(M.ProcessTransformation.made_at.desc(), M.ProcessTransformation.id.desc())
+    """Live makes of every project, newest first — what an invoice position can
+    be aimed at as a conversion cost (decision 0058 §4). The API keeps the
+    word "transformation"."""
+    ts = (db.query(M.Make).filter(M.Make.voided_at.is_(None))
+          .order_by(M.Make.at.desc(), M.Make.id.desc())
           .limit(500).all())
     projects = {p.id: p.name for p in db.query(M.Project).all()}
     names = svc._part_names(db, {t.output_component_id for t in ts})
     return [{"id": t.id, "project_id": t.project_id, "project": projects.get(t.project_id, ""),
-             "recipe_label": t.recipe_label, "made_at": t.made_at, "qty": t.qty,
+             "recipe_label": t.step_label, "made_at": t.at, "qty": t.qty,
              "output_name": (names.get(t.output_component_id) or {}).get("name")} for t in ts]
 
 
@@ -241,11 +243,11 @@ class VoidIn(BaseModel):
 
 @router.post("/process-transformations/{transformation_id}/void")
 def void_transformation(transformation_id: int, body: VoidIn, db: Session = Depends(get_db)):
-    t = db.get(M.ProcessTransformation, transformation_id)
+    t = db.get(M.Make, transformation_id)
     if t is None:
         raise HTTPException(404, "no such transformation")
     res = svc.void_transformation(db, t, reason=body.reason, actor=acting_name())
-    audit(db, "process.void", "process_transformation", t.id,
+    audit(db, "process.void", "material_event", t.id,
           {"project_id": t.project_id, "reason": body.reason}, actor=acting_name())
     db.commit()
     return res
@@ -301,6 +303,7 @@ def stocktake(project_id: int, body: StocktakeIn, db: Session = Depends(get_db))
 
 
 class WriteOffIn(BaseModel):
+    #: the stored lot, by the API's name for it
     lot_adjustment_id: int
     qty: float
     at: str = ""
@@ -314,11 +317,11 @@ def write_off(project_id: int, body: WriteOffIn, db: Session = Depends(get_db)):
     """Units of a prepared-part lot that broke — the bench's "scrap one from the lot",
     charged to the batch when one is named."""
     _project(db, project_id)
-    res = svc.write_off(db, project_id, lot_adjustment_id=body.lot_adjustment_id, qty=body.qty,
+    res = svc.write_off(db, project_id, lot_id=body.lot_adjustment_id, qty=body.qty,
                         at=body.at, charge_run_id=body.charge_run_id, note=body.note,
                         actor=acting_name(), dry_run=body.dry_run)
     if not body.dry_run:
-        audit(db, "process.write_off", "component_stock_adjustment", body.lot_adjustment_id,
+        audit(db, "process.write_off", "material_lot", body.lot_adjustment_id,
               {"project_id": project_id, "qty": body.qty, "charge_run_id": body.charge_run_id,
                "note": body.note}, actor=acting_name())
         db.commit()
@@ -888,5 +891,5 @@ def device_twin(device_id: int, db: Session = Depends(get_db)):
     for a device made before twins."""
     if db.get(M.DeviceUnit, device_id) is None:
         raise HTTPException(404, "no such device")
-    tw = db.query(M.Twin).filter_by(device_unit_id=device_id).first()
+    tw = db.query(M.Unit).filter_by(device_unit_id=device_id).first()
     return {"device_id": device_id, "twin": twins_svc.twin_json(db, tw) if tw else None}

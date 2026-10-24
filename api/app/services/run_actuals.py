@@ -9,19 +9,21 @@ Model (user decisions, 2026-07-27):
 
 - Purchases go into a **cost pool**, not onto a run: JLC invoices are stockpile
   replenishment, so a purchase can never be booked straight to a batch. A
-  `RunCostLine` with ``kind="part"`` and no ``run_id`` IS the pool; every other
-  kind is a direct cost of its run.
-- A run pays for what it **drew** from the pool (`ComponentConsumption`), valued
-  at a **moving weighted average** — not FIFO, because JLC merges reels and never
-  reports which lot went into a build, so lot-picking would be fiction.
+  `RunCostLine` on a stock step with no ``run_id`` IS the pool; every other
+  step is a direct cost of its run.
+- A run pays for what it **drew** from the pool (a `Draw`, a move of the
+  material ledger, decision 0097), valued at a **moving weighted average**
+  while `lot_pricing` is off, and at its lots' cost while it is on (0073).
 - The goal is **splitting invoice cost, not matching JLC's stock counts**.
-  Attrition is expected and first-class (`ComponentStockAdjustment`), optionally
+  Attrition is expected and first-class (an `Adjustment`), optionally
   charged to a run so its per-device figure carries the real loss. A residual
   pool balance is normal.
+- A move's `qty` is SIGNED (0098): a purchase line adds its quantity, a draw is
+  negative, an adjustment is either. Every replay adds them as they are.
 - Everything is computed ON READ from append-only rows, like `run_effective`.
   Nothing here is stored.
 
-Replay order is the EVENT date (`doc_date` / `consumed_at` / `adjusted_at`),
+Replay order is the EVENT date (a document's `doc_date`, a move's `at`),
 never insertion order — backfilling 2024 invoices in 2026 must not change the
 average a 2024 run already paid.
 """
@@ -38,6 +40,7 @@ from .. import models as M
 from ..config import settings
 from . import companies as _companies  # also registers `stamp_stock` (decision 0064)
 from . import cost_steps, doc_kinds, fx
+from .material_ledger import core as _ledger_core  # noqa: F401 — registers the item listener
 from .project_bom import display_currency, run_pricing_date
 
 # Money that is STOCK is identified by its production STEP, not by a second
@@ -95,11 +98,11 @@ def live_consumption(db: Session, **filters):
     already released, and both conservation identities still pass — the exact
     failure class that let $14,443 sit in `excluded` unnoticed.
 
-    So readers call this, not `db.query(M.ComponentConsumption)`. Grepping the
-    raw query is then a reliable audit: the only legitimate uses left are writes
-    and the void/unvoid paths themselves.
+    So readers call this, not `db.query(M.Draw)`. Grepping the raw query is
+    then a reliable audit: the only legitimate uses left are writes and the
+    void/unvoid paths themselves.
     """
-    q = db.query(M.ComponentConsumption).filter(M.ComponentConsumption.voided_at.is_(None))
+    q = db.query(M.Draw).filter(M.Draw.voided_at.is_(None))
     return q.filter_by(**filters) if filters else q
 
 
@@ -762,16 +765,16 @@ def _pool_events(db: Session, company_id: int | None = None, *, with_transfers: 
         doc = doc_by_id[li.document_id]
         events.append((doc.doc_date or "", "buy", li))
     draws = live_consumption(db)
-    adjs = db.query(M.ComponentStockAdjustment)
+    adjs = db.query(M.Adjustment)
     if company_id is not None:
-        draws = draws.filter(M.ComponentConsumption.company_id == company_id)
-        adjs = adjs.filter(M.ComponentStockAdjustment.company_id == company_id)
+        draws = draws.filter(M.Draw.company_id == company_id)
+        adjs = adjs.filter(M.Adjustment.company_id == company_id)
     elif not with_transfers:
-        draws = draws.filter(M.ComponentConsumption.transfer_line_id.is_(None))
-    for c in draws.all():
-        events.append((c.consumed_at or "", "use", c))
-    for a in adjs.all():
-        events.append((a.adjusted_at or "", "adj", a))
+        draws = draws.filter(M.Draw.transfer_line_id.is_(None))
+    for c in draws.order_by(M.Draw.id).all():
+        events.append((c.at or "", "use", c))
+    for a in adjs.order_by(M.Adjustment.id).all():
+        events.append((a.at or "", "adj", a))
     # Same-date ties resolve adj < buy < use, so an invoice dated the day of a
     # run counts as available to it.
     events.sort(key=lambda e: (e[0] or "9999", e[1]))
@@ -792,8 +795,9 @@ def _buy_usd(row: M.RunCostLine, doc: M.RunCostDocument, extra: float,
 
 
 def conversion_by_transformation(db: Session) -> dict[int, float]:
-    """USD of the invoice positions aimed at each transformation (decision 0058
-    §4) — the conversion cost, read on every call and never stored.
+    """USD of the invoice positions aimed at each make (decision 0058 §4) — the
+    conversion cost, read on every call and never stored. A position names its
+    make by `RunCostLine.transformation_id`, the make event's id.
 
     The same filter as a purchase: a live leaf on a document that is not a
     proforma, not excluded. Priced the way a purchase is: the document's pinned
@@ -827,18 +831,16 @@ def conversion_by_transformation(db: Session) -> dict[int, float]:
 
 
 def conversion_extras_usd(db: Session) -> dict[int, float]:
-    """The conversion cost per OUTPUT ADJUSTMENT — what the replayers add to a
-    transformation's lot, the way `surcharge` adds freight to a purchase."""
+    """The conversion cost per OUTPUT ADJUSTMENT (the move that deposited a
+    make's lot) — what the replayers add to the lot, the way `surcharge` adds
+    freight to a purchase."""
     by_t = conversion_by_transformation(db)
     if not by_t:
         return {}
-    out: dict[int, float] = {}
-    for t in (db.query(M.ProcessTransformation)
-              .filter(M.ProcessTransformation.id.in_(list(by_t)),
-                      M.ProcessTransformation.voided_at.is_(None)).all()):
-        if t.output_adjustment_id:
-            out[t.output_adjustment_id] = by_t[t.id]
-    return out
+    made = {m.output_lot_id: m.id for m in db.query(M.Make)
+            .filter(M.Make.id.in_(list(by_t)), M.Make.voided_at.is_(None)).all() if m.output_lot_id}
+    return {a.id: by_t[made[a.lot_id]] for a in db.query(M.Adjustment)
+            .filter(M.Adjustment.lot_id.in_(list(made) or [-1])).all()}
 
 
 def pool_state(db: Session, project_id: int | None = None, as_of: str | None = None,
@@ -919,7 +921,7 @@ def pool_state(db: Session, project_id: int | None = None, as_of: str | None = N
             p["_avg_qty"] += row.qty or 0.0
             p["_avg_value"] += value
         elif kind == "use":
-            q = row.qty or 0.0
+            q = -(row.qty or 0.0)   # what the draw took; a draw's qty is negative
             # The snapshot is the price, INCLUDING zero. A draw from a lot that
             # entered at zero value (found historical WIP, decision 0058) is
             # worth exactly 0, and the register charges its batch 0; reading 0
@@ -940,8 +942,8 @@ def pool_state(db: Session, project_id: int | None = None, as_of: str | None = N
             basis_avg = p["_avg_value"] / p["_avg_qty"] if p["_avg_qty"] > 0.0001 else 0.0
             p["_avg_qty"] -= taken
             p["_avg_value"] = max(p["_avg_value"] - taken * basis_avg, 0.0)
-        else:  # adjustment: negative delta = attrition / write-off
-            q = row.qty_delta or 0.0
+        else:  # adjustment: negative = attrition / write-off
+            q = row.qty or 0.0
             p["qty"] += q
             delta = q * (row.unit_cost_usd if row.unit_cost_usd is not None else p["avg_usd"])
             if q > 0:
@@ -1002,6 +1004,7 @@ def component_ledger(db: Session, component_id: int | None = None,
     events, doc_by_id, surcharge = _pool_events(db, company_id)
     extras = conversion_extras_usd(db)  # conversion costs on prepared-part lots (0058)
     runs = {r.id: r for r in db.query(M.ProductionRun).all()}
+    kinds = dict(db.query(M.MaterialEvent.id, M.MaterialEvent.kind).all())
 
     rate_cache: dict[str, dict[str, float]] = {}
 
@@ -1030,7 +1033,7 @@ def component_ledger(db: Session, component_id: int | None = None,
             ref = f"{doc.supplier or '?'} {doc.doc_number or ''}".strip()
             detail = row.label or ""
         elif kind == "use":
-            qty_d = -(row.qty or 0.0)
+            qty_d = row.qty or 0.0
             unit = row.unit_cost_usd if row.unit_cost_usd is not None else avg
             value_d = qty_d * unit
             # basis loses value at its OWN average, never the snapped price
@@ -1043,16 +1046,15 @@ def component_ledger(db: Session, component_id: int | None = None,
             # A draw with no run is UNCHARGED, not a draw against run "None"
             # (0034). It is an ordinary state now — an order that builds someone
             # else's project, or a movement JLC made that no batch asked for.
-            ref = (f"into a prepared part (transformation #{row.transformation_id})"
-                   if row.run_id is None and row.transformation_id is not None else
+            made = row.run_id is None and kinds.get(row.event_id) == "make"
+            ref = (f"into a prepared part (transformation #{row.event_id})" if made else
                    "sent to the other company (in-house transfer)"
-                   if row.run_id is None and row.transformation_id is None
-                   and getattr(row, "transfer_line_id", None) else
+                   if row.run_id is None and row.transfer_line_id else
                    "charged to no batch" if row.run_id is None else
                    f"run {row.run_id}" + (f" — {run.label}" if run else ""))
             detail = row.note or ""
         else:  # adjustment
-            qty_d = row.qty_delta or 0.0
+            qty_d = row.qty or 0.0
             unit = row.unit_cost_usd if row.unit_cost_usd is not None else avg
             value_d = qty_d * unit + (extras.get(row.id, 0.0) if qty_d > 0 else 0.0)
             if qty_d >= 0:
@@ -1140,8 +1142,7 @@ def check_shortages(db: Session, candidates: list[dict],
                                       getattr(row, "lcsc", "") or ""))
             if not (keys & want):
                 continue
-            q = (row.qty or 0.0) if kind == "buy" else \
-                (-(row.qty or 0.0) if kind == "use" else (row.qty_delta or 0.0))
+            q = row.qty or 0.0   # signed: a purchase adds, a draw takes, an adjustment either
             entries.append((((date_iso or "9999"), kind), q, False))
         for pw, pd, pq, pc in accepted:
             if pw & want and pc == ccid:
@@ -1433,10 +1434,10 @@ def run_actuals(db: Session, run: M.ProductionRun) -> dict:
 
     # 1. components drawn from the pool
     cons = live_consumption(db, run_id=run.id).all()
-    comp_usd = sum((c.qty or 0) * (c.unit_cost_usd or 0) for c in cons)
+    comp_usd = sum(c.taken * (c.unit_cost_usd or 0) for c in cons)
     by_basis: dict[str, float] = defaultdict(float)
     for c in cons:
-        by_basis[c.basis or "manual"] += (c.qty or 0) * (c.unit_cost_usd or 0)
+        by_basis[c.basis or "manual"] += c.taken * (c.unit_cost_usd or 0)
 
     # 2. direct lines on documents pointing at this run (or lines carrying run_id)
     candidates = (
@@ -1509,14 +1510,14 @@ def run_actuals(db: Session, run: M.ProductionRun) -> dict:
         src["amount_usd"] += usd
 
     # 3. attrition explicitly charged to this run
-    adjs = db.query(M.ComponentStockAdjustment).filter_by(charge_run_id=run.id).all()
+    adjs = db.query(M.Adjustment).filter_by(run_id=run.id).all()
     pool = pool_state(db, run.project_id, company_id=run_scope(db, run))
     attrition_usd = 0.0
     for a in adjs:
         unit = a.unit_cost_usd
         if unit is None:
             unit = pool.get(_key(a), {}).get("avg_usd", 0.0)
-        attrition_usd += abs(a.qty_delta or 0) * (unit or 0)
+        attrition_usd += abs(a.qty or 0) * (unit or 0)
 
     total_usd = comp_usd + direct_usd + attrition_usd
     qty_plan = max(run.plan_qty or run.qty or 1, 1)
@@ -1763,8 +1764,7 @@ def pool_series(events, keys: set[str], since: str, drop: set[int] = frozenset()
                 continue            # another component, whatever names it shares
         elif not (keys & named):
             continue
-        q = (row.qty or 0.0) if kind == "buy" else (-(row.qty or 0.0) if kind == "use" else (row.qty_delta or 0.0))
-        entries.append((((date_iso or "9999"), kind), q))
+        entries.append((((date_iso or "9999"), kind), row.qty or 0.0))   # signed
     entries += [(((d or "9999"), "use"), -q) for d, q in extra]
     entries.sort(key=lambda e: e[0])
     bal, start, days = 0.0, None, {}
@@ -1888,7 +1888,7 @@ def parts_stock(db: Session, company_id: int | None = None) -> dict:
     - `delta_qty` = held - remaining. Positive means JLC holds more than the
       platform has paid for; negative means the pool still counts parts JLC no
       longer has — boards were built without recording the draw, or stock was lost
-      (record it with `ComponentStockAdjustment`).
+      (record it with an `Adjustment`).
     - `delta_value_usd` = `(market_unit - paid_unit) x remaining_qty`, i.e. what
       the unconsumed remainder would be worth at today's price versus what it cost.
       Deliberately valued on the SAME quantity — comparing "held at market" against
@@ -2286,9 +2286,10 @@ def _invoice_register(db: Session, company_ids: list[int] | None, accountant: bo
     # The sender's side of an in-house transfer (decision 0064): drawn, charged
     # to no batch, and not waiting for one — the receiver's pool holds it.
     transferred_out_usd = 0.0
+    kinds = dict(db.query(M.MaterialEvent.id, M.MaterialEvent.kind).all())
     for c in live_consumption(db).all():
-        value = (c.qty or 0) * (c.unit_cost_usd or 0)
-        if c.run_id is None and c.transformation_id is not None:
+        value = c.taken * (c.unit_cost_usd or 0)
+        if c.run_id is None and kinds.get(c.event_id) == "make":
             into_prepared_usd += value
         elif c.run_id is None and c.transfer_line_id is not None:
             transferred_out_usd += value
@@ -2479,7 +2480,7 @@ def _invoice_register(db: Session, company_ids: list[int] | None, accountant: bo
 
 
 def consume_from_bom(db: Session, run: M.ProductionRun, basis: str = "bom",
-                     consumed_at: str = "") -> dict:
+                     at: str = "") -> dict:
     """Draw this run's components from the pool using its BOM x built units.
 
     Priced at the pool's moving average per part, snapshotted onto each row.
@@ -2500,7 +2501,7 @@ def consume_from_bom(db: Session, run: M.ProductionRun, basis: str = "bom",
         return {"created": 0, "unpriced": [], "error": "snapshot not found"}
     volume = good_units(db, run)
     # Price the draw from the pool AS IT STOOD at the run's date.
-    pool = pool_state(db, run.project_id, as_of=(consumed_at or run.run_date or None),
+    pool = pool_state(db, run.project_id, as_of=(at or run.run_date or None),
                       company_id=run_scope(db, run))
     bom = (
         db.query(M.SnapshotBomLine)
@@ -2508,7 +2509,7 @@ def consume_from_bom(db: Session, run: M.ProductionRun, basis: str = "bom",
         .all()
     )
     created, unpriced, skipped = 0, [], []
-    date_iso = consumed_at or (run.run_date or "")
+    date_iso = at or (run.run_date or "")
     # Per-run corrections, sharing the SAME key scheme and the SAME `drop` flag the
     # planned side already uses (`project_bom.run_effective`): `b<bom line id>` and
     # `x<extra item id>`. A batch that predates a part, or shipped without it, is a
@@ -2602,6 +2603,10 @@ def consume_from_bom(db: Session, run: M.ProductionRun, basis: str = "bom",
                 "uncovered": uncovered,
                 "error": f"{len(uncovered)} part(s) are in no lot on {date_iso}: {_lots.short_text(uncovered)} "
                          "— enter the missing purchase (decision 0073)"}
+    from .material_ledger import core as _ledger
+
+    event = _ledger.stock_event(db, at=date_iso, run_id=run.id, company_id=run.company_id,
+                                project_id=run.project_id, note=f"BOM draw, {basis}") if planned else None
     for d in planned:
         if d.get("bindings"):
             avg = d["unit_cost_usd"]
@@ -2611,14 +2616,10 @@ def consume_from_bom(db: Session, run: M.ProductionRun, basis: str = "bom",
             avg = pool.get(_key(probe), {}).get("avg_usd", 0.0)
         if avg <= 0:
             unpriced.append(d["label"])
-        c = M.ComponentConsumption(
-            run_id=run.id, component_id=d["component_id"], lcsc=d["lcsc"], mpn=d["mpn"],
-            qty=d["qty"], unit_cost_usd=avg, basis=basis, consumed_at=d["date"],
-            note=d["note"],
-        )
-        db.add(c)
+        c = _ledger.draw(db, event=event, component_id=d["component_id"], lcsc=d["lcsc"], mpn=d["mpn"],
+                         taken=d["qty"], unit_cost_usd=avg, basis=basis, at=d["date"], run_id=run.id,
+                         note=d["note"])
         if d.get("bindings"):
-            db.flush()
             _lots.bind(db, c, d)
         created += 1
     return {"created": created, "unpriced": unpriced, "volume": volume,

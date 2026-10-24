@@ -33,6 +33,7 @@ from app import models as M
 from app.db import engine
 from app.services import row_changes as rc
 from app.services import tracking
+from app.services.material_ledger import core as ledger
 
 
 @pytest.fixture
@@ -188,14 +189,12 @@ def test_a_user_undoes_their_own_requests_and_an_admin_anybodys(db, people):
 
 def test_an_undo_that_would_take_stock_below_zero_is_refused(db, people):
     act(db, "rc-t7-buy", people["alice"])
-    db.add(M.ComponentStockAdjustment(mpn="RC-TEST-PART", lcsc="", qty_delta=5, reason="opening_balance",
-                                      adjusted_at="2026-10-01", note="", actor="a"))
-    db.flush()
+    ledger.adjustment(db, mpn="RC-TEST-PART", qty=5, unit_cost_usd=None, reason="opening_balance",
+                      at="2026-10-01", actor="a")
     assert rc.undo(db, "rc-t7-buy")["refused"] == []      # nothing drew it yet
     act(db, "rc-t7-draw", people["alice"])
-    db.add(M.ComponentStockAdjustment(mpn="RC-TEST-PART", lcsc="", qty_delta=-5, reason="scrap",
-                                      adjusted_at="2026-10-02", note="", actor="a"))
-    db.flush()
+    ledger.adjustment(db, mpn="RC-TEST-PART", qty=-5, unit_cost_usd=None, reason="scrap",
+                      at="2026-10-02", actor="a")
     refused = rc.undo(db, "rc-t7-buy")["refused"]
     assert refused, "taking the purchase away would leave the part at -5"
 

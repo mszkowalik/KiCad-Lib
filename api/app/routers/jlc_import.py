@@ -590,8 +590,8 @@ def void_shop_draws(smt_order_code: str, dry_run: bool = True, db: Session = Dep
 
     victims = [c for c in run_actuals.live_consumption(db, run_id=dec.run_id).all()
                if (c.lcsc or "").strip().upper() in shop]
-    plan = [{"consumption_id": c.id, "lcsc": c.lcsc, "mpn": c.mpn, "qty": c.qty,
-             "value_usd": round((c.qty or 0) * (c.unit_cost_usd or 0), 2),
+    plan = [{"consumption_id": c.id, "lcsc": c.lcsc, "mpn": c.mpn, "qty": c.taken,
+             "value_usd": round(c.taken * (c.unit_cost_usd or 0), 2),
              "basis": c.basis} for c in victims]
     out = {"smt_order_code": smt_order_code, "run_id": dec.run_id,
            "shop_parts": sorted(shop), "would_void": plan,
@@ -631,8 +631,7 @@ def _legacy_movements(db: Session, plan: dict) -> list:
     write uncharged draws ON TOP and take the same stock out twice.
     """
     prefix = f"jlc:ext:{plan['smt_order_code']}:"
-    return [a for a in db.query(M.ComponentStockAdjustment)
-            .filter(M.ComponentStockAdjustment.import_ref.startswith(prefix)).all()]
+    return [a for a in db.query(M.Adjustment).filter(M.Adjustment.import_ref.startswith(prefix)).all()]
 
 
 def _stock_already_booked(db: Session, plan: dict) -> bool:
@@ -646,8 +645,8 @@ def _booked(db: Session, plan: dict) -> dict:
             "uncharged": sum(1 for c in rows if c.run_id is None),
             "legacy_adjustments": len(legacy),
             "value_usd": round(
-                sum((c.qty or 0) * (c.unit_cost_usd or 0) for c in rows)
-                + sum(abs(a.qty_delta or 0) * (a.unit_cost_usd or 0) for a in legacy), 2),
+                sum(c.taken * (c.unit_cost_usd or 0) for c in rows)
+                + sum(abs(a.qty or 0) * (a.unit_cost_usd or 0) for a in legacy), 2),
             "note": "stock left the pool when the invoice was imported; "
                     "an external order simply never gets charged to a run"}
 
@@ -683,8 +682,8 @@ def _charge_or_draw(db: Session, plan: dict, run_id: int, actor: str,
 def _book_external(db: Session, plan: dict, actor: str, dry_run: bool) -> dict:
     """Take an external order's stock out of the pool, charged to nobody.
 
-    An UNCHARGED DRAW, never a `ComponentStockAdjustment`. Before
-    `component_consumptions.run_id` became nullable this could not be expressed:
+    An UNCHARGED DRAW, never an adjustment. Before a draw's `run_id` became
+    nullable this could not be expressed:
     a draw required a batch, an external order has none, so the backfill wrote
     negative adjustments with `reason='external_project'` instead. That put
     another project's consumption on the same axis as attrition — a defect
@@ -707,9 +706,9 @@ def migrate_external_adjustments(dry_run: bool = True, db: Session = Depends(get
 
     One fact, one shape. Those 27 rows are the invoice's own consumption for
     orders that build projects this platform does not track — verified 27/27
-    against `presaleDetailResultVOList`. They are adjustments only because
-    `component_consumptions.run_id` used to be NOT NULL, so a draw could not
-    exist without a batch.
+    against `presaleDetailResultVOList`. They are adjustments only because a
+    draw's `run_id` used to be NOT NULL, so a draw could not exist without a
+    batch.
 
     The QUANTITIES do not move: the same pieces leave the pool either way, and
     each adjustment matches its order plan exactly, row for row. What changes is
@@ -720,8 +719,7 @@ def migrate_external_adjustments(dry_run: bool = True, db: Session = Depends(get
     this cannot re-derive is not one to rewrite; it is one to look at.
     """
     actor = acting_name()
-    rows = [a for a in db.query(M.ComponentStockAdjustment)
-            .filter(M.ComponentStockAdjustment.reason == "external_project").all()
+    rows = [a for a in db.query(M.Adjustment).filter(M.Adjustment.reason == "external_project").all()
             if (a.import_ref or "").startswith("jlc:ext:")]
     if not rows:
         return {"status": "nothing_to_migrate", "adjustments": 0}
@@ -737,7 +735,7 @@ def migrate_external_adjustments(dry_run: bool = True, db: Session = Depends(get
         if plan is None:
             problems.append({"smt_order_code": code, "why": "no staged invoice holds this order"})
             continue
-        aq = sum(abs(a.qty_delta or 0) for a in adjs)
+        aq = sum(abs(a.qty or 0) for a in adjs)
         pq = sum(c["qty"] for c in cons)
         if len(cons) != len(adjs) or abs(aq - pq) > 1e-6:
             problems.append({"smt_order_code": code, "why": "plan does not reproduce the adjustments",
@@ -754,8 +752,8 @@ def migrate_external_adjustments(dry_run: bool = True, db: Session = Depends(get
     plan_out = [{"smt_order_code": code,
                  "batch_num": plans[code]["batch_num"],
                  "adjustments": len(adjs),
-                 "qty": sum(abs(a.qty_delta or 0) for a in adjs),
-                 "value_usd": round(sum(abs(a.qty_delta or 0) * (a.unit_cost_usd or 0)
+                 "qty": sum(abs(a.qty or 0) for a in adjs),
+                 "value_usd": round(sum(abs(a.qty or 0) * (a.unit_cost_usd or 0)
                                         for a in adjs), 4)}
                 for code, adjs in sorted(by_code.items())]
     if dry_run:
@@ -777,7 +775,7 @@ def migrate_external_adjustments(dry_run: bool = True, db: Session = Depends(get
             res = jlc_apply.apply_draws(db, plan, None, lot_lines,
                                         actor=actor, dry_run=False)
             drawn.append({"smt_order_code": code, **res})
-    audit(db, "jlc.ext.to_draws", "component_stock_adjustment", None,
+    audit(db, "jlc.ext.to_draws", "adjustment", None,
           details={"adjustments": len(rows), "orders": len(by_code),
                    "batch_id": h["batch_id"]}, actor=actor)
     db.commit()

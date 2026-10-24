@@ -185,7 +185,7 @@ def test_transformation_moves_value_into_the_output_lot(db, world):
     glued = _pool(db, world["glued"])
     assert glued["qty"] == pytest.approx(10)
     assert glued["value_usd"] == pytest.approx(36.0)
-    draws = db.query(M.ComponentConsumption).filter_by(transformation_id=plan["transformation_id"]).all()
+    draws = db.query(M.Draw).filter_by(event_id=plan["transformation_id"]).all()
     assert draws and all(d.run_id is None for d in draws)
     pool = ra.pool_state(db)
     assert abs(sum(p["value_bought"] + p["value_adj"] - p["value_used"] - p["value_usd"]
@@ -193,9 +193,9 @@ def test_transformation_moves_value_into_the_output_lot(db, world):
 
 
 def test_a_dry_run_writes_nothing(db, world):
-    before = db.query(M.ComponentConsumption).count()
+    before = db.query(M.Draw).count()
     P.transform(db, world["project"].id, recipe_key="glue", qty=5, made_at="2026-02-01")
-    assert db.query(M.ComponentConsumption).count() == before
+    assert db.query(M.Draw).count() == before
 
 
 def test_a_shortage_refuses_the_write(db, world):
@@ -213,7 +213,7 @@ def test_a_zero_value_lot_is_drawn_at_zero(db, world):
            dry_run=False)
     P.transform(db, pid, recipe_key="glue", qty=1, made_at="2026-02-01", dry_run=False)
     lot0 = P.prepared_lots(db, {world["glued"].id})[0]
-    P.write_off(db, pid, lot_adjustment_id=lot0["adjustment_id"], qty=1, at="2026-02-03",
+    P.write_off(db, pid, lot_id=lot0["adjustment_id"], qty=1, at="2026-02-03",
                 note="broke", dry_run=False)
     p = _pool(db, world["glued"])
     assert p["qty"] == pytest.approx(2)
@@ -223,19 +223,22 @@ def test_a_zero_value_lot_is_drawn_at_zero(db, world):
 def test_void_removes_the_output_and_returns_the_inputs(db, world):
     pid = world["project"].id
     plan = P.transform(db, pid, recipe_key="glue", qty=2, made_at="2026-02-01", dry_run=False)
-    t = db.get(M.ProcessTransformation, plan["transformation_id"])
+    t = db.get(M.Make, plan["transformation_id"])
     P.void_transformation(db, t, reason="entered twice", actor="test")
     assert _pool(db, world["glued"]).get("qty", 0) == pytest.approx(0)
     assert _pool(db, world["enc"])["qty"] == pytest.approx(100)
-    assert db.get(M.ComponentStockAdjustment, plan["output"]["lot_adjustment_id"]) is None
+    # The output lot is gone, and the adjustment that made it.
+    lot_id = plan["output"]["lot_adjustment_id"]
+    assert db.get(M.MaterialLot, lot_id) is None
+    assert db.query(M.Adjustment).filter_by(lot_id=lot_id).first() is None
 
 
 def test_void_is_refused_once_the_output_was_drawn(db, world):
     pid = world["project"].id
     plan = P.transform(db, pid, recipe_key="glue", qty=2, made_at="2026-02-01", dry_run=False)
-    P.write_off(db, pid, lot_adjustment_id=plan["output"]["lot_adjustment_id"], qty=1,
+    P.write_off(db, pid, lot_id=plan["output"]["lot_adjustment_id"], qty=1,
                 at="2026-02-02", note="broke", dry_run=False)
-    t = db.get(M.ProcessTransformation, plan["transformation_id"])
+    t = db.get(M.Make, plan["transformation_id"])
     with pytest.raises(HTTPException) as e:
         P.void_transformation(db, t, reason="typo", actor="test")
     assert e.value.status_code == 409
@@ -312,7 +315,7 @@ def test_a_transformation_with_a_conversion_cost_cannot_be_voided(db, world):
     db.add(M.RunCostLine(document_id=doc.id, plan_key="final:enclosure_print", qty=1,
                          unit_price=1.0, transformation_id=plan["transformation_id"]))
     db.flush()
-    t = db.get(M.ProcessTransformation, plan["transformation_id"])
+    t = db.get(M.Make, plan["transformation_id"])
     with pytest.raises(HTTPException) as e:
         P.void_transformation(db, t, reason="x", actor="test")
     assert e.value.status_code == 409

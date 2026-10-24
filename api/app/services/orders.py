@@ -385,15 +385,15 @@ def _twin_holds(db: Session, rids: list[int] | None = None) -> list[tuple[int, i
 
     crafted = {rid for (rid,) in db.query(M.ProductionRun.id)
                .filter(M.ProductionRun.process_version_id.isnot(None)).all()}
-    q = (db.query(M.DeviceUnit.project_id, M.DeviceUnit.production_run_id, M.Twin.status,
+    q = (db.query(M.DeviceUnit.project_id, M.DeviceUnit.production_run_id, M.Unit.status,
                   func.count(M.DeviceUnit.id))
-         .outerjoin(M.Twin, M.Twin.device_unit_id == M.DeviceUnit.id)
+         .outerjoin(M.Unit, M.Unit.device_unit_id == M.DeviceUnit.id)
          .filter(M.DeviceUnit.state == "in_stock", func.coalesce(M.DeviceUnit.condition, "ok") == "ok"))
     if rids is not None:
         q = q.filter(M.DeviceUnit.production_run_id.in_(rids or [-1]))
     out = []
     for pid, rid, status, n in q.group_by(M.DeviceUnit.project_id, M.DeviceUnit.production_run_id,
-                                          M.Twin.status).all():
+                                          M.Unit.status).all():
         why = ("in process" if status == "active" else "scrapped" if status == "scrapped" else
                "gap" if status is None and rid in crafted else None)
         if why:

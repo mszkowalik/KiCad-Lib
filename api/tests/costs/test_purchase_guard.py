@@ -22,6 +22,7 @@ from sqlalchemy.orm import Session
 from app import models as M
 from app.db import engine
 from app.services import run_actuals as ra
+from app.services.material_ledger import core as ledger
 
 
 @pytest.fixture
@@ -59,10 +60,8 @@ def world(db: Session):
                          lcsc="CGUARD01", qty=1000, unit_price=0.1, position=1)
     db.add_all([early, late])
     db.flush()
-    db.add(M.ComponentConsumption(run_id=run.id, mpn="GUARD-PART-1", lcsc="CGUARD01",
-                                  qty=1200, unit_cost_usd=0.1, basis="bom",
-                                  consumed_at="2026-03-01"))
-    db.flush()
+    ledger.draw(db, run_id=run.id, mpn="GUARD-PART-1", lcsc="CGUARD01",
+                taken=1200, unit_cost_usd=0.1, basis="bom", at="2026-03-01")
     return {"doc": doc, "early": early, "late": late, "run": run}
 
 
@@ -149,13 +148,10 @@ def swap_world(db: Session):
                       qty=200, unit_price=1.0, position=1)
     db.add_all([a, b])
     db.flush()
-    db.add_all([
-        M.ComponentConsumption(run_id=run.id, mpn="SWAP-A", lcsc="CSWAPA", qty=100,
-                               unit_cost_usd=1.0, basis="bom", consumed_at="2026-03-01"),
-        M.ComponentConsumption(run_id=run.id, mpn="SWAP-B", lcsc="CSWAPB", qty=200,
-                               unit_cost_usd=1.0, basis="bom", consumed_at="2026-03-01"),
-    ])
-    db.flush()
+    ledger.draw(db, run_id=run.id, mpn="SWAP-A", lcsc="CSWAPA", taken=100,
+                unit_cost_usd=1.0, basis="bom", at="2026-03-01")
+    ledger.draw(db, run_id=run.id, mpn="SWAP-B", lcsc="CSWAPB", taken=200,
+                unit_cost_usd=1.0, basis="bom", at="2026-03-01")
     return {"a": a, "b": b}
 
 

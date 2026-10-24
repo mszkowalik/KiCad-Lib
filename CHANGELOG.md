@@ -1,5 +1,19 @@
 # Changelog
 
+## 2026-10-24 (material ledger cut-over)
+
+- **Stock, work and units are stored in the material ledger only** (decision 0098). Draws,
+  adjustments, lot bindings, transformations, clicks, twins and the positions linked to clicks
+  moved into the ledger's tables once, at startup, with their ids. The old tables are kept read
+  only as `legacy_<name>`. Every screen, bench and figure works as before: 13,777 read answers
+  on a copy of production are the same before and after, apart from the order of same-day lists.
+- **A write made before the switch can no longer be undone** on the Write log, by a request undo
+  or by "Undo rebuild". The refusal names decision 0098. On the batch screen, a click made before
+  the switch shows no Undo.
+- The phase-1 parity check and the rebuild of the shadow are gone: there is no shadow any more.
+  Administrators keep `GET /api/material-ledger/summary` and the state maps. Rules in
+  [docs/reference/material-ledger.md](docs/reference/material-ledger.md).
+
 ## 2026-10-23 (material ledger, phase 1)
 
 - **Decision 0097: stock, work and units move to one material ledger.** The design is in

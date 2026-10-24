@@ -8,7 +8,12 @@ invoice is issued and no money moves. Two rows say it:
   (`company_id`) and naming the SENDER (`counterparty_company_id`). Its stock
   positions are ordinary purchases in the receiver's stock — each is a lot;
 * one **draw** per position from the SENDER's stock, charged to no batch and
-  pointing at the position (`transfer_line_id`).
+  pointing at the position (`transfer_line_id`). The draws of one transfer
+  are one stock event of the material ledger (decision 0097).
+
+A transfer line names a lot by `lot_line_id` (a purchase lot) or by
+`lot_adjustment_id`, the API's key for a STORED lot (`A<id>`); the line dicts
+keep that key because they travel in and out of the API.
 
 The price is the sender's moving average on the transfer date, or the landed
 cost of the lot the units came from when that is known. While `lot_pricing`
@@ -44,6 +49,7 @@ from .. import models as M
 from . import companies as C
 from . import lots as L
 from . import run_actuals as RA
+from .material_ledger import core as _ledger
 
 BASIS_TRANSFER = "transfer"
 STEP = "parts:pool"
@@ -64,49 +70,43 @@ def number_for(db: Session, day: str) -> str:
     return f"MM {n + 1:04d}/{year}"
 
 
-def _lot_key(lot_line_id: int | None, lot_adjustment_id: int | None) -> str | None:
-    if lot_line_id:
-        return f"L{lot_line_id}"
-    return f"A{lot_adjustment_id}" if lot_adjustment_id else None
-
-
-def _lot_unit(db: Session, lot_line_id: int | None, lot_adjustment_id: int | None) -> float | None:
-    key = _lot_key(lot_line_id, lot_adjustment_id)
+def _lot_unit(db: Session, lot_line_id: int | None, lot_id: int | None) -> float | None:
+    key = L.key_of(lot_line_id, lot_id)
     if key is None:
         return None
     lot = L.lot_state(db)["lots"].get(key)
     return lot["unit_cost_usd"] if lot else None
 
 
-def lot_company(db: Session, lot_line_id: int | None, lot_adjustment_id: int | None) -> int | None:
+def lot_company(db: Session, lot_line_id: int | None, lot_id: int | None) -> int | None:
     """The company whose stock a lot is: the buyer of the purchase, or the
-    company stamped on a positive adjustment."""
+    company of the positive adjustment that made a stored lot."""
     if lot_line_id:
         li = db.get(M.RunCostLine, lot_line_id)
         doc = db.get(M.RunCostDocument, li.document_id) if li is not None else None
         return doc.company_id if doc is not None else None
-    if lot_adjustment_id:
-        a = db.get(M.ComponentStockAdjustment, lot_adjustment_id)
+    if lot_id:
+        a = db.query(M.Adjustment).filter(M.Adjustment.lot_id == lot_id, M.Adjustment.qty > 0).first()
         return a.company_id if a is not None else None
     return None
 
 
 def _auto_rebind(db: Session, receiver_id: int, day: str, lot_line_id: int | None,
-                 lot_adjustment_id: int | None, qty: float) -> list[dict]:
+                 lot_id: int | None, qty: float) -> list[dict]:
     """The receiver's draws bound to a lot that moves, oldest first, up to the
     moved quantity. Only draws on or after the transfer date: a draw before it
     took the lot while it was still the sender's."""
-    q = db.query(M.ComponentConsumptionLot)
-    q = (q.filter(M.ComponentConsumptionLot.lot_line_id == lot_line_id) if lot_line_id
-         else q.filter(M.ComponentConsumptionLot.lot_adjustment_id == lot_adjustment_id))
+    q = db.query(M.MaterialMoveLot)
+    q = (q.filter(M.MaterialMoveLot.lot_line_id == lot_line_id) if lot_line_id
+         else q.filter(M.MaterialMoveLot.lot_id == lot_id))
     picks, left = [], qty
     found = []
     for b in q.all():
-        c = db.get(M.ComponentConsumption, b.consumption_id)
+        c = db.get(M.Draw, b.move_id)
         if (c is None or c.voided_at is not None or c.transfer_line_id is not None
-                or c.company_id != receiver_id or (c.consumed_at or "9999") < day):
+                or c.company_id != receiver_id or (c.at or "9999") < day):
             continue
-        found.append((c.consumed_at or "9999", b.id, b))
+        found.append((c.at or "9999", b.id, b))
     for _d, _id, b in sorted(found, key=lambda e: (e[0], e[1])):
         if left <= EPS:
             break
@@ -136,14 +136,14 @@ def free_positions(db: Session, receiver_id: int, component_id, mpn: str, lcsc: 
             if li.voided_at is not None or not (set(RA._identity_keys(li.component_id, li.mpn or "",
                                                                        li.lcsc or "")) & want):
                 continue
-            sender = RA.live_consumption(db).filter(M.ComponentConsumption.transfer_line_id == li.id).first()
+            sender = RA.live_consumption(db).filter(M.Draw.transfer_line_id == li.id).first()
             if sender is None:
                 continue
-            sender_lots = {_lot_key(b.lot_line_id, b.lot_adjustment_id)
-                           for b in db.query(M.ComponentConsumptionLot).filter_by(consumption_id=sender.id)}
+            sender_lots = {L.key_of(b.lot_line_id, b.lot_id)
+                           for b in db.query(M.MaterialMoveLot).filter_by(move_id=sender.id)}
             if sender_lots and lot_key not in sender_lots:
                 continue   # it moved another lot
-            bound = sum(b.qty or 0.0 for b in db.query(M.ComponentConsumptionLot).filter_by(lot_line_id=li.id))
+            bound = sum(b.qty or 0.0 for b in db.query(M.MaterialMoveLot).filter_by(lot_line_id=li.id))
             free = (li.qty or 0.0) - bound
             if free > EPS:
                 out.append({"line_id": li.id, "free": free, "date": doc.doc_date or "",
@@ -152,7 +152,7 @@ def free_positions(db: Session, receiver_id: int, component_id, mpn: str, lcsc: 
     return sorted(out, key=lambda x: (not x["same_lot"], x["date"], x["line_id"]))
 
 
-def _absorb(db: Session, b: M.ComponentConsumptionLot, c: M.ComponentConsumption, receiver_id: int,
+def _absorb(db: Session, b: M.MaterialMoveLot, c: M.Draw, receiver_id: int,
             claimed: dict[int, float]) -> list[dict]:
     """How much of binding `b` (a receiver draw's binding to another company's
     lot) written transfers already moved: `[{line_id, qty, ...}]`. `claimed`
@@ -160,7 +160,7 @@ def _absorb(db: Session, b: M.ComponentConsumptionLot, c: M.ComponentConsumption
     position."""
     takes, left = [], b.qty or 0.0
     for pos in free_positions(db, receiver_id, c.component_id, c.mpn, c.lcsc,
-                              _lot_key(b.lot_line_id, b.lot_adjustment_id), (c.consumed_at or _today())[:10]):
+                              L.key_of(b.lot_line_id, b.lot_id), (c.at or _today())[:10]):
         if left <= EPS:
             break
         free = pos["free"] - claimed.get(pos["line_id"], 0.0)
@@ -176,24 +176,23 @@ def apply_absorb(db: Session, take: dict) -> None:
     """Move part of a binding onto a written transfer's position. When that
     transfer named no lot, its sender draw takes the lot the binding leaves,
     so the lot ledger counts the units once."""
-    b = db.get(M.ComponentConsumptionLot, take["binding_id"])
+    b = db.get(M.MaterialMoveLot, take["binding_id"])
     if b is None:
         return
     qty = min(take["qty"], b.qty or 0.0)
-    lot_line_id, lot_adjustment_id = b.lot_line_id, b.lot_adjustment_id
+    lot_line_id, lot_id = b.lot_line_id, b.lot_id
     if (b.qty or 0.0) - qty > EPS:
-        db.add(M.ComponentConsumptionLot(consumption_id=b.consumption_id, lot_line_id=take["line_id"], qty=qty,
-                                         unit_cost_usd=b.unit_cost_usd, source=b.source or "manual",
-                                         note=f"{b.note or ''} → {take['doc_number']}"[:500]))
+        db.add(M.MaterialMoveLot(move_id=b.move_id, lot_line_id=take["line_id"], qty=qty,
+                                 unit_cost_usd=b.unit_cost_usd, source=b.source or "manual",
+                                 note=f"{b.note or ''} → {take['doc_number']}"[:500]))
         b.qty = (b.qty or 0.0) - qty
     else:
-        b.lot_line_id, b.lot_adjustment_id = take["line_id"], None
+        b.lot_line_id, b.lot_id = take["line_id"], None
         b.note = f"{b.note or ''} → {take['doc_number']}"[:500]
     if not take["same_lot"]:
-        db.add(M.ComponentConsumptionLot(consumption_id=take["sender_draw_id"], lot_line_id=lot_line_id,
-                                         lot_adjustment_id=lot_adjustment_id, qty=qty,
-                                         unit_cost_usd=take["unit_cost_usd"], source="manual",
-                                         note=f"{take['doc_number']}: the lot it moved"[:500]))
+        db.add(M.MaterialMoveLot(move_id=take["sender_draw_id"], lot_line_id=lot_line_id, lot_id=lot_id, qty=qty,
+                                 unit_cost_usd=take["unit_cost_usd"], source="manual",
+                                 note=f"{take['doc_number']}: the lot it moved"[:500]))
     db.flush()
 
 
@@ -208,19 +207,19 @@ def _sender_picker(db: Session, sender_id: int, out_lines: list[dict], exclude_d
     state = L.lot_state(db)
     excl = {int(i) for i in exclude_draw_ids or ()}
     if excl:
-        for b in db.query(M.ComponentConsumptionLot).filter(M.ComponentConsumptionLot.consumption_id.in_(excl)):
-            lot = state["lots"].get(_lot_key(b.lot_line_id, b.lot_adjustment_id))
+        for b in db.query(M.MaterialMoveLot).filter(M.MaterialMoveLot.move_id.in_(excl)):
+            lot = state["lots"].get(L.key_of(b.lot_line_id, b.lot_id))
             if lot is not None:
                 lot["qty_remaining"] = lot["qty_remaining"] + (b.qty or 0.0)
     picker = L.FifoPicker(db, sender_id, state=state)
     for x in out_lines:
-        key = _lot_key(x["lot_line_id"], x["lot_adjustment_id"])
+        key = L.key_of(x["lot_line_id"], x["lot_adjustment_id"])
         if key is None:
             continue
         stay = 0.0
         for r in x["rebind"]:
-            b = db.get(M.ComponentConsumptionLot, r["binding_id"])
-            if b is not None and r.get("lot") == key and b.consumption_id not in excl:
+            b = db.get(M.MaterialMoveLot, r["binding_id"])
+            if b is not None and r.get("lot") == key and b.move_id not in excl:
                 stay += r["qty"] or 0.0
         picker.taken[key] += max(x["qty"] - stay, 0.0)
     return picker
@@ -262,45 +261,45 @@ def plan(db: Session, *, sender_id: int, receiver_id: int, day: str, lines: list
         if qty <= 0:
             problems.append({"line": i, "problem": "move at least one unit"})
             continue
-        lot_line_id, lot_adjustment_id = ln.get("lot_line_id"), ln.get("lot_adjustment_id")
-        if lot_line_id and lot_adjustment_id:
+        lot_line_id, lot_id = ln.get("lot_line_id"), ln.get("lot_adjustment_id")   # API key: a stored lot
+        if lot_line_id and lot_id:
             problems.append({"line": i, "problem": "name one lot, a purchase line or an adjustment"})
             continue
-        if _lot_key(lot_line_id, lot_adjustment_id):
-            owner = lot_company(db, lot_line_id, lot_adjustment_id)
+        if L.key_of(lot_line_id, lot_id):
+            owner = lot_company(db, lot_line_id, lot_id)
             if owner is not None and owner != sender.id:
                 problems.append({"line": i, "problem": f"that lot is not {sender.name}'s stock"})
                 continue
-            if _lot_key(lot_line_id, lot_adjustment_id) in lots_named:
+            if L.key_of(lot_line_id, lot_id) in lots_named:
                 problems.append({"line": i, "problem": "name each lot once in a transfer"})
                 continue
-            lots_named.add(_lot_key(lot_line_id, lot_adjustment_id))
+            lots_named.add(L.key_of(lot_line_id, lot_id))
         unit = ln.get("unit_cost_usd")
         source = "stated"
         if unit is None:
-            unit = _lot_unit(db, lot_line_id, lot_adjustment_id)
+            unit = _lot_unit(db, lot_line_id, lot_id)
             source = "the lot's landed cost"
         entry = RA.resolve_pool_identity(db, ln.get("component_id"), ln.get("mpn") or "",
                                          ln.get("lcsc") or "", as_of=day, company_id=sender.id)
         if unit is None:
             unit = (entry or {}).get("avg_usd")
             source = f"{sender.name}'s average on {day}"
-        if entry is None and not lot_line_id and not lot_adjustment_id:
+        if entry is None and not lot_line_id and not lot_id:
             problems.append({"line": i, "problem": f"{sender.name} never held this part",
                              "mpn": ln.get("mpn"), "component_id": ln.get("component_id")})
             continue
         rebind = _rebinds(ln)
         if (not rebind and "rebind_ids" not in ln and "rebind" not in ln
-                and _lot_key(lot_line_id, lot_adjustment_id)):
-            rebind = _auto_rebind(db, receiver.id, day, lot_line_id, lot_adjustment_id, qty)
+                and L.key_of(lot_line_id, lot_id)):
+            rebind = _auto_rebind(db, receiver.id, day, lot_line_id, lot_id, qty)
         for r in rebind:
-            b = db.get(M.ComponentConsumptionLot, r["binding_id"])
+            b = db.get(M.MaterialMoveLot, r["binding_id"])
             if b is None:
                 problems.append({"line": i, "problem": f"no lot binding {r['binding_id']}"})
                 continue
             if r["qty"] is None:
                 r["qty"] = b.qty or 0.0
-            r["lot"] = _lot_key(b.lot_line_id, b.lot_adjustment_id)
+            r["lot"] = L.key_of(b.lot_line_id, b.lot_id)
             claimed[b.id] += r["qty"]
             if claimed[b.id] > (b.qty or 0.0) + EPS:
                 problems.append({"line": i, "problem": f"binding {b.id} holds {b.qty}, "
@@ -313,10 +312,10 @@ def plan(db: Session, *, sender_id: int, receiver_id: int, day: str, lines: list
             "lcsc": (entry or {}).get("lcsc") or ln.get("lcsc") or "",
             "qty": qty, "unit_cost_usd": round(float(unit or 0.0), 8), "price_source": source,
             "value_usd": round(qty * float(unit or 0.0), 4),
-            "lot_line_id": lot_line_id, "lot_adjustment_id": lot_adjustment_id,
+            "lot_line_id": lot_line_id, "lot_adjustment_id": lot_id,
             "rebind": rebind, "label": ln.get("label") or "",
         })
-        if L.lot_pricing_on() and not _lot_key(lot_line_id, lot_adjustment_id):
+        if L.lot_pricing_on() and not L.key_of(lot_line_id, lot_id):
             fifo_lines.append((i, out_lines[-1]))
     if fifo_lines:
         # Decision 0073: after every named lot is taken, the lines that name
@@ -342,13 +341,13 @@ def plan(db: Session, *, sender_id: int, receiver_id: int, day: str, lines: list
     # draws already took from THAT lot and now move onto the new position.
     capacity_want = []
     for x in out_lines:
-        key = _lot_key(x["lot_line_id"], x["lot_adjustment_id"])
+        key = L.key_of(x["lot_line_id"], x["lot_adjustment_id"])
         if key is None:
             continue
         need = x["qty"] - sum(r["qty"] or 0.0 for r in x["rebind"] if r.get("lot") == key)
         if need > EPS:
-            capacity_want.append({"lot_line_id": x["lot_line_id"],
-                                  "lot_adjustment_id": x["lot_adjustment_id"], "qty": need})
+            capacity_want.append({"lot_line_id": x["lot_line_id"], "lot_id": x["lot_adjustment_id"],
+                                  "qty": need})
     capacity = L.check_lot_capacity(db, capacity_want)
     return {"sender_id": sender.id, "sender": sender.name, "receiver_id": receiver.id,
             "receiver": receiver.name, "date": day, "lines": out_lines,
@@ -386,6 +385,9 @@ def create(db: Session, *, sender_id: int, receiver_id: int, day: str, lines: li
                + (note or ""))[:2000])
     db.add(doc)
     db.flush()
+    # The sender's draws of one transfer are one operation: one stock event.
+    event = _ledger.stock_event(db, at=p["date"], actor=actor, company_id=sender_id,
+                                note=f"in-house transfer {doc.doc_number} to {p['receiver']}")
     for pos, x in enumerate(p["lines"]):
         li = M.RunCostLine(document_id=doc.id, plan_key=STEP, allocate=RA.POOLED,
                            component_id=x["component_id"], mpn=x["mpn"], lcsc=x["lcsc"],
@@ -394,23 +396,18 @@ def create(db: Session, *, sender_id: int, receiver_id: int, day: str, lines: li
                            notes=f"price: {x['price_source']}")
         db.add(li)
         db.flush()
-        out = M.ComponentConsumption(
-            run_id=None, component_id=x["component_id"], mpn=x["mpn"], lcsc=x["lcsc"],
-            qty=x["qty"], unit_cost_usd=x["unit_cost_usd"], basis=BASIS_TRANSFER,
-            consumed_at=p["date"], company_id=sender_id, transfer_line_id=li.id,
-            note=f"sent to {p['receiver']} on {doc.doc_number}"[:500])
-        db.add(out)
-        db.flush()
+        out = _ledger.draw(db, event=event, component_id=x["component_id"], mpn=x["mpn"], lcsc=x["lcsc"],
+                           taken=x["qty"], unit_cost_usd=x["unit_cost_usd"], basis=BASIS_TRANSFER,
+                           at=p["date"], company_id=sender_id, transfer_line_id=li.id, actor=actor,
+                           note=f"sent to {p['receiver']} on {doc.doc_number}")
         if x["lot_line_id"] or x["lot_adjustment_id"]:
-            db.add(M.ComponentConsumptionLot(
-                consumption_id=out.id, lot_line_id=x["lot_line_id"],
-                lot_adjustment_id=x["lot_adjustment_id"], qty=x["qty"],
-                unit_cost_usd=x["unit_cost_usd"], source="manual", note=doc.doc_number))
+            _ledger.bind(db, out, lot_line_id=x["lot_line_id"], lot_id=x["lot_adjustment_id"], qty=x["qty"],
+                         unit_cost_usd=x["unit_cost_usd"], source="manual", note=doc.doc_number)
         elif x.get("bindings"):
             # The sender's lots the line took, oldest first (decision 0073).
             L.bind(db, out, x)
         for r in x["rebind"]:
-            b = db.get(M.ComponentConsumptionLot, r["binding_id"])
+            b = db.get(M.MaterialMoveLot, r["binding_id"])
             if b is None:
                 continue
             take = r["qty"] if r["qty"] is not None else (b.qty or 0.0)
@@ -418,13 +415,13 @@ def create(db: Session, *, sender_id: int, receiver_id: int, day: str, lines: li
                 raise HTTPException(409, f"binding {b.id} holds {b.qty}, not {take}")
             if (b.qty or 0.0) - take > EPS:
                 # Part of the binding moves: the rest stays on the sender's lot.
-                db.add(M.ComponentConsumptionLot(
-                    consumption_id=b.consumption_id, lot_line_id=li.id, qty=take,
+                db.add(M.MaterialMoveLot(
+                    move_id=b.move_id, lot_line_id=li.id, qty=take,
                     unit_cost_usd=b.unit_cost_usd, source=b.source or "manual",
                     note=f"{b.note or ''} → {doc.doc_number}"[:500]))
                 b.qty = (b.qty or 0.0) - take
             else:
-                b.lot_line_id, b.lot_adjustment_id = li.id, None
+                b.lot_line_id, b.lot_id = li.id, None
                 b.note = f"{b.note or ''} → {doc.doc_number}"[:500]
         x["line_id"] = li.id
         x["sender_draw_id"] = out.id
@@ -439,7 +436,7 @@ def _short_text(rows: list[dict]) -> str:
                      f"short {x.get('short')}" for x in rows[:6]) + (" …" if len(rows) > 6 else "")
 
 
-def cover_draws(db: Session, draws: list[M.ComponentConsumption], receiver_id: int, *,
+def cover_draws(db: Session, draws: list[M.Draw], receiver_id: int, *,
                 actor: str = "", note: str = "", dry_run: bool = True,
                 extra: list[dict] | None = None) -> dict:
     """Make `draws` movements of the receiver's stock (decision 0064).
@@ -465,9 +462,9 @@ def cover_draws(db: Session, draws: list[M.ComponentConsumption], receiver_id: i
     claimed: dict[int, float] = {}
     for c in draws:
         moved = 0.0
-        day = (c.consumed_at or _today())[:10]
-        for b in db.query(M.ComponentConsumptionLot).filter_by(consumption_id=c.id).all():
-            src = lot_company(db, b.lot_line_id, b.lot_adjustment_id)
+        day = (c.at or _today())[:10]
+        for b in db.query(M.MaterialMoveLot).filter_by(move_id=c.id).all():
+            src = lot_company(db, b.lot_line_id, b.lot_id)
             if src is None or src == receiver.id or (b.qty or 0.0) <= EPS:
                 continue
             takes = _absorb(db, b, c, receiver.id, claimed)
@@ -476,7 +473,7 @@ def cover_draws(db: Session, draws: list[M.ComponentConsumption], receiver_id: i
             if rest > EPS:
                 line = {"component_id": c.component_id, "mpn": c.mpn or "", "lcsc": c.lcsc or "",
                         "qty": rest, "unit_cost_usd": b.unit_cost_usd, "lot_line_id": b.lot_line_id,
-                        "lot_adjustment_id": b.lot_adjustment_id, "label": c.lcsc or c.mpn or ""}
+                        "lot_adjustment_id": b.lot_id, "label": c.lcsc or c.mpn or ""}
                 if takes:
                     line["rebind"] = [{"binding_id": b.id, "qty": rest}]
                 else:
@@ -484,10 +481,10 @@ def cover_draws(db: Session, draws: list[M.ComponentConsumption], receiver_id: i
                 groups[(src, day)].append(line)
                 moved += rest
         # what a written transfer gave is in the receiver's stock already
-        rest = (c.qty or 0.0) - moved
+        rest = c.taken - moved
         if rest > EPS:
             remainder.append({"component_id": c.component_id, "mpn": c.mpn or "", "lcsc": c.lcsc or "",
-                              "qty": rest, "date": c.consumed_at or "", "label": c.lcsc or c.mpn or ""})
+                              "qty": rest, "date": c.at or "", "label": c.lcsc or c.mpn or ""})
     shortages = RA.check_shortages(db, remainder + list(extra or []), company_id=receiver.id,
                                    exclude_draw_ids=ids)
     plans = [plan(db, sender_id=src, receiver_id=receiver.id, day=day, lines=lines, exclude_draw_ids=ids)
@@ -535,27 +532,27 @@ def move_batch_stock(db: Session, run: M.ProductionRun, company_id: int, *, acto
     `cover_draws` — the new company must hold what the batch took, and units of
     the old company's lots move by in-house transfer — and a FOUND unit charged
     to the batch leaves the old company's stock, which must not strand a draw."""
-    step_ids = [sid for (sid,) in db.query(M.StepRun.id).filter(M.StepRun.run_id == run.id).all()]
+    click_ids = {sid for (sid,) in db.query(M.Click.id).filter(M.Click.run_id == run.id).all()}
     q = RA.live_consumption(db)
-    draws = [c for c in q.all() if c.run_id == run.id or (c.step_run_id and c.step_run_id in step_ids)]
-    adjs = db.query(M.ComponentStockAdjustment).filter_by(charge_run_id=run.id).all()
+    draws = [c for c in q.all() if c.run_id == run.id or c.event_id in click_ids]
+    adjs = db.query(M.Adjustment).filter_by(run_id=run.id).all()
     out = {"draws": len(draws), "adjustments": len(adjs), "transfers": []}
     if RA.stock_scope(db, company_id) is not None:
         def cand(a, qty, cid=None):
             return {"component_id": a.component_id, "mpn": a.mpn or "", "lcsc": a.lcsc or "", "qty": qty,
-                    "date": a.adjusted_at or "", "label": a.lcsc or a.mpn or "", "company_id": cid}
-        found = [cand(a, a.qty_delta, run.company_id) for a in adjs if (a.qty_delta or 0) > 0 and run.company_id]
+                    "date": a.at or "", "label": a.lcsc or a.mpn or "", "company_id": cid}
+        found = [cand(a, a.qty, run.company_id) for a in adjs if (a.qty or 0) > 0 and run.company_id]
         # The old company loses the found units — and the batch's own draws
         # and losses, which leave with it, so they are not in its replay.
         stranded = RA.check_shortages(db, found, exclude_draw_ids=[c.id for c in draws],
-                                      exclude_adjustment_ids=[a.id for a in adjs if (a.qty_delta or 0) < 0])
+                                      exclude_adjustment_ids=[a.id for a in adjs if (a.qty or 0) < 0])
         if stranded:
             raise HTTPException(409, {"error": f"{run.label}'s found stock would leave its company's stock "
                                                "under draws that need it", "shortages": stranded})
         res = cover_draws(db, draws, company_id, actor=actor, note=f"{run.label} moved to the other company",
                           dry_run=False,
-                          extra=[cand(a, -(a.qty_delta or 0), company_id) for a in adjs
-                                 if (a.qty_delta or 0) < 0])
+                          extra=[cand(a, -(a.qty or 0), company_id) for a in adjs
+                                 if (a.qty or 0) < 0])
         out["transfers"] = res.get("written", [])
     for x in [*draws, *adjs]:
         x.company_id = company_id
@@ -573,28 +570,26 @@ def reverse(db: Session, doc: M.RunCostDocument, *, reason: str, actor: str = ""
         raise HTTPException(422, "say why the transfer is reversed")
     live = [li for li in doc.lines if li.voided_at is None]
     ids = [li.id for li in live]
-    bound = (db.query(M.ComponentConsumptionLot)
-             .join(M.ComponentConsumption, M.ComponentConsumption.id == M.ComponentConsumptionLot.consumption_id)
-             .filter(M.ComponentConsumptionLot.lot_line_id.in_(ids or [0]),
-                     M.ComponentConsumption.voided_at.is_(None)).all())
-    sender_draws = {c.id for c in RA.live_consumption(db)
-                    .filter(M.ComponentConsumption.transfer_line_id.in_(ids or [0])).all()}
-    used = [b for b in bound if b.consumption_id not in sender_draws]
+    bound = (db.query(M.MaterialMoveLot)
+             .join(M.Draw, M.Draw.id == M.MaterialMoveLot.move_id)
+             .filter(M.MaterialMoveLot.lot_line_id.in_(ids or [0]), M.Draw.voided_at.is_(None)).all())
+    sender_draws = {c.id for c in RA.live_consumption(db).filter(M.Draw.transfer_line_id.in_(ids or [0])).all()}
+    used = [b for b in bound if b.move_id not in sender_draws]
     losses = [{"component_id": li.component_id, "mpn": li.mpn or "", "lcsc": li.lcsc or "",
                "qty": li.qty or 0.0, "date": doc.doc_date or "", "label": li.label or li.mpn,
                "company_id": doc.company_id} for li in live]
     short = RA.check_purchase_loss(db, losses)
     out = {"dry_run": dry_run, "document_id": doc.id, "doc_number": doc.doc_number,
            "lines": len(live), "shortages": short,
-           "used_by_draws": sorted({b.consumption_id for b in used})}
+           "used_by_draws": sorted({b.move_id for b in used})}
     if dry_run:
         return out
     if short or used:
         raise HTTPException(409, {"error": f"{doc.doc_number}: the receiver already used this stock "
                                            "— reverse those draws first", "plan": out})
     now = M.utcnow()
-    for c in RA.live_consumption(db).filter(M.ComponentConsumption.transfer_line_id.in_(ids or [0])):
-        for b in db.query(M.ComponentConsumptionLot).filter_by(consumption_id=c.id).all():
+    for c in RA.live_consumption(db).filter(M.Draw.transfer_line_id.in_(ids or [0])):
+        for b in db.query(M.MaterialMoveLot).filter_by(move_id=c.id).all():
             db.delete(b)
         c.voided_at, c.void_reason = now, "transfer_reversed"
     for li in live:
@@ -656,13 +651,13 @@ def plan_history(db: Session) -> dict:
     names = {c.id: c.name for c in companies}
     runs = {r.id: r for r in db.query(M.ProductionRun).all()}
     draws = {c.id: c for c in RA.live_consumption(db).all()}
-    bindings = db.query(M.ComponentConsumptionLot).all()
+    bindings = db.query(M.MaterialMoveLot).all()
     owner_cache: dict[str | None, int | None] = {}
 
     def lot_owner(b) -> int | None:
-        key = _lot_key(b.lot_line_id, b.lot_adjustment_id)
+        key = L.key_of(b.lot_line_id, b.lot_id)
         if key not in owner_cache:
-            owner_cache[key] = lot_company(db, b.lot_line_id, b.lot_adjustment_id) if key else None
+            owner_cache[key] = lot_company(db, b.lot_line_id, b.lot_id) if key else None
         return owner_cache[key]
 
     # 1. Lot evidence: a batch draw bound to the other company's lot. A
@@ -673,15 +668,14 @@ def plan_history(db: Session) -> dict:
     undated: list = []
     rebinds: list[dict] = []
     claimed: dict[int, float] = {}
-    for b in sorted(bindings, key=lambda b: ((draws.get(b.consumption_id) and
-                                             draws[b.consumption_id].consumed_at) or "9999", b.id)):
-        c = draws.get(b.consumption_id)
+    for b in sorted(bindings, key=lambda b: ((draws.get(b.move_id) and draws[b.move_id].at) or "9999", b.id)):
+        c = draws.get(b.move_id)
         if c is None or c.company_id is None or c.transfer_line_id:
             continue
         src = lot_owner(b)
         if src is None or src == c.company_id:
             continue
-        if not c.consumed_at:
+        if not c.at:
             # A transfer must be dated on or before its draw; with no date
             # there is nothing to date it by, so a person decides.
             undated.append(c)
@@ -691,12 +685,12 @@ def plan_history(db: Session) -> dict:
         qty = (b.qty or 0.0) - sum(t["qty"] for t in takes)
         if qty <= EPS:
             continue
-        key = (src, c.company_id, c.run_id, c.consumed_at)
+        key = (src, c.company_id, c.run_id, c.at)
         t = by_key.setdefault(key, {"sender_id": src, "receiver_id": c.company_id, "run_id": c.run_id,
-                                    "date": c.consumed_at, "lines": [], "evidence": "lot"})
+                                    "date": c.at, "lines": [], "evidence": "lot"})
         line = {"component_id": c.component_id, "mpn": c.mpn or "", "lcsc": c.lcsc or "",
                 "qty": qty, "unit_cost_usd": b.unit_cost_usd,
-                "lot_line_id": b.lot_line_id, "lot_adjustment_id": b.lot_adjustment_id,
+                "lot_line_id": b.lot_line_id, "lot_adjustment_id": b.lot_id,
                 "label": c.lcsc or c.mpn or "", "consumption_id": c.id}
         if not takes:
             line["rebind_ids"] = [b.id]
@@ -717,8 +711,7 @@ def plan_history(db: Session) -> dict:
         # (date, kind, identity, signed qty, the draw when it is one)
         timeline = []
         for d, kind, row in events:
-            q = (row.qty or 0.0) if kind == "buy" else \
-                (-(row.qty or 0.0) if kind == "use" else (row.qty_delta or 0.0))
+            q = row.qty or 0.0   # signed: a purchase adds, a draw takes, an adjustment either
             timeline.append(((d or "9999"), kind, RA._key(row), q, row if kind == "use" else None))
         for (cid, ident), v in moved.items():
             if cid == comp.id:
@@ -785,7 +778,7 @@ def plan_history(db: Session) -> dict:
         run = runs.get(c.run_id)
         unexplained.append({"company": names.get(c.company_id), "run_id": c.run_id,
                             "batch": run.label if run else None, "date": "",
-                            "part": c.lcsc or c.mpn or c.component_id, "short": c.qty,
+                            "part": c.lcsc or c.mpn or c.component_id, "short": c.taken,
                             "other_company_held": None, "why": "the draw has no date"})
     return {"transfers": transfers, "unexplained": unexplained,
             "rebinds": [{k: r[k] for k in ("binding_id", "qty", "line_id", "doc_number", "same_lot",

@@ -1,6 +1,6 @@
 # Material ledger: one model for stock, work and units
 
-**Status: accepted on 2026-10-23. Phase 1 is built and not deployed.** This
+**Status: accepted on 2026-10-23. Phase 1 is deployed (37424e3, 2026-10-23); phases 2, 3 and 5 are one cut-over (decision 0098), built and not deployed.** This
 document is the detail behind decision
 [0097](../decisions/0097-keep-stock-work-and-units-in-one-material-ledger.md).
 Phase 1 is described as built in
@@ -119,8 +119,11 @@ Rules:
 | `device_unit_id` | The device, for a programmed product unit |
 | `split_from_lot_id` | The lot that this lot was split from |
 | `created_event_id` | The event that made the lot |
-| `source_line_id`, `source_adjustment_id` | The purchase line or adjustment whose money the lot carries |
 | `label` | A name a person can use: the supplier's lot reference, `A675` |
+
+A purchase lot has no row: it is its invoice line (`L<line id>`), the one
+truth of what was bought (decision 0073). A stored lot (`A<lot id>`) is made
+by a positive adjustment: a count, found units, a make's output.
 
 Rules:
 
@@ -143,22 +146,25 @@ Rules:
 
 | Column | Meaning |
 |---|---|
-| `event_id`, `item_id`, `lot_id` | The operation, the item, and the lot whose quantity changes. Null lot: nobody recorded which lot |
-| `qty` | Signed: positive into the lot, negative out of it |
+| `event_id`, `item_id` | The operation and the item. A move is a `draw` or an `adjust` |
+| `qty` | Signed: positive into stock, negative out of it |
+| `unit_cost_usd` | Frozen at the move. Null on an adjustment: the moving average at the replay |
 | `company_id`, `run_id` | Whose stock moved, and the batch the move is charged to |
-| `value_usd` | What the move carried, signed like `qty`. Frozen at the move. Null on a receipt, which reads its value from its invoice line |
-| `lot_value_usd` | What the lot gave or got at the lot's own price. It differs from `value_usd` while `lot_pricing` is off |
-| `bind_source` | How the lot is known: `reported`, `scanned`, `stated`, `fifo`, `unallocated`, `legacy_average` |
-| `at`, `rank` | The day the quantity changed, and the pool's same-day order |
+| `lot_id` | On a positive adjustment: the stored lot it made |
+
+A move's LOTS are its move lots (`material_move_lots`): which lot it took
+from (a purchase line or a stored lot), how many, at the lot's own price, and
+how that is known (`reported`, `fifo`, `fifo_history`, `manual`,
+`unallocated`, `legacy_average`). What its move lots do not cover changed a
+lot nobody recorded. A purchase is not a move: it is its invoice line.
 
 Rules:
 
-1. **Only a move changes a quantity.** Each move row changes one lot, or one
-   item when the lot is not known. A split is two rows in one event: out of
-   the old lot and into the new one. A merge is several rows out and one in.
-2. **A move between two lots freezes its value** (0044, 0073). A receipt reads
-   its value from its purchase line, with its freight share, on every read, as
-   `run_actuals._buy_usd` does today.
+1. **Only a move changes a quantity.** A split is a move out of the old lot
+   and a move into a new stored lot, in one event.
+2. **A move freezes its value** (0044, 0073). A purchase reads its value from
+   its invoice line, with its freight share, on every read
+   (`run_actuals._buy_usd`).
 3. **A move of a part can name no lot** (`unallocated`). History has such
    draws, and `lot_pricing` is off. The item's balance still counts the move.
 4. **Value on hand = value in − value out**, for each lot and each item. This

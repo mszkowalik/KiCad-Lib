@@ -43,15 +43,15 @@ log = logging.getLogger("uvicorn.error")
 # Tables with no trigger. The record itself and the logs that already hold what
 # they describe; machine state rewritten all day (95.8 million presence updates,
 # 2.8 million bench log lines, a price cache replaced on every refresh, the
-# datasheet fetcher's host table, a computed conformance cache); the material
-# ledger's shadow, rebuilt whole from journalled tables (decision 0097, phase 1:
-# it takes the trigger when it takes the writes); and the tables whose rows ARE
-# credentials.
+# datasheet fetcher's host table, a computed conformance cache); the tables the
+# material ledger replaced, kept read only as `legacy_<name>` (decision 0098);
+# and the tables whose rows ARE credentials.
 SKIP = frozenset({
     "row_changes", "change_undos", "audit_log", "write_batches", "write_batch_rows",
     "device_presence", "programming_logs", "component_price_points", "fetch_hosts", "conformance",
-    "material_events", "material_lots", "material_moves", "material_event_lots", "material_links",
-    "material_properties", "material_cost_aims",
+    "legacy_component_consumptions", "legacy_component_consumption_lots", "legacy_component_stock_adjustments",
+    "legacy_process_transformations", "legacy_cost_line_steps", "legacy_cost_line_step_keys",
+    "legacy_step_runs", "legacy_twin_steps", "legacy_twins",
     "user_sessions", "login_attempts", "jlc_web_sessions", "api_tokens",
 })
 
@@ -336,8 +336,15 @@ def plan(db: Session, key: str) -> dict:
         by_row.setdefault((r.table_name, json.dumps(r.pk, sort_keys=True)), []).append(r)
     last_id = rows[-1].id
     actions, refused = [], []
+    from .journal import LEGACY_TABLES
+
     for (table, pkj), changes in by_row.items():
         pk = changes[0].pk
+        if table in LEGACY_TABLES:
+            refused.append({"table": table, "pk": pk,
+                            "why": "it was made before the switch to the material ledger (decision 0098); "
+                                   "that table is kept read only"})
+            continue
         first, last = changes[0], changes[-1]
         # What the request left: absent after a final delete, else the new images.
         expect: dict | None = None
@@ -357,7 +364,10 @@ def plan(db: Session, key: str) -> dict:
                             if later else "it no longer reads as this request left it"})
             continue
         if first.op == "I":
-            if last.op != "D":
+            # An item the material ledger made because a move named a part for
+            # the first time is reference data, not part of the request: later
+            # moves name it too (decision 0098).
+            if last.op != "D" and table != "material_items":
                 actions.append({"do": "delete", "table": table, "pk": pk})
             continue
         before: dict = {}

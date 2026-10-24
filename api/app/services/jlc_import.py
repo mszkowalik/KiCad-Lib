@@ -1240,12 +1240,11 @@ def stock_plans(inv: dict) -> list[dict]:
 
 # `external_stock_movements` has been REMOVED (decision 0034, completed
 # 2026-09-18). It turned an external order's invoice-reported consumption into
-# negative `ComponentStockAdjustment` rows with `reason='external_project'`,
-# because a draw could not exist without a batch and an external order has none.
-# `component_consumptions.run_id` is nullable now, so the same fact is written as
-# an UNCHARGED DRAW and this shape has no writer left. The 27 rows it already
-# wrote stay readable — `pool_state` counts them on `external`, apart from
-# attrition — until they are migrated.
+# negative adjustments with `reason='external_project'`, because a draw could
+# not exist without a batch and an external order has none. A draw's `run_id` is
+# nullable now, so the same fact is written as an UNCHARGED DRAW and this shape
+# has no writer left. The 27 rows it already wrote stay readable — `pool_state`
+# counts them on `external`, apart from attrition — until they are migrated.
 
 
 # --------------------------------------------------------- staging + queue

@@ -328,11 +328,12 @@ def test_a_write_batch_names_the_signed_in_person(db, as_alice):
     """`journal.batch` ignores the actor the caller passed when somebody is
     signed in — the Write log's `?actor=` was a claim anyone could make."""
     from app.services import journal
+    from app.services.material_ledger import core as ledger
 
     proj = M.Project(name="tracking-batch-test", git_url="https://example.invalid/t.git")
     db.add(proj)
     db.flush()
     with journal.batch(db, kind="test.batch", actor="mallory"):
-        db.add(M.ComponentStockAdjustment(project_id=proj.id, mpn="X", qty_delta=1, reason="count"))
+        ledger.adjustment(db, project_id=proj.id, mpn="X", qty=1, unit_cost_usd=None, reason="count")
     wb = db.query(M.WriteBatch).filter_by(kind="test.batch").order_by(M.WriteBatch.id.desc()).first()
     assert (wb.actor, wb.user_id, wb.request_id) == ("Alice Example", ALICE.id, as_alice.request_id)

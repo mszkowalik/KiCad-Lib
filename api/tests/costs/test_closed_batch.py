@@ -26,6 +26,7 @@ from sqlalchemy.orm import Session
 from app import models as M
 from app.db import engine
 from app.services import run_actuals as ra
+from app.services.material_ledger import core as ledger
 
 
 @pytest.fixture
@@ -215,12 +216,9 @@ def test_a_pinned_write_off_is_not_repriced_by_a_later_purchase(db: Session, wor
     """The bug: `unit_cost_usd IS NULL` resolved against the pool average as it
     stands ON EVERY READ, so a write-off kept moving as later invoices arrived."""
     run = world["run"]
-    loose = M.ComponentStockAdjustment(
-        project_id=world["proj"].id, mpn="CLOSE-PART-1", lcsc="CCLOSE01",
-        qty_delta=-100, unit_cost_usd=None, reason="attrition",
-        charge_run_id=run.id, adjusted_at="2026-02-01")
-    db.add(loose)
-    db.flush()
+    loose = ledger.adjustment(
+        db, project_id=world["proj"].id, mpn="CLOSE-PART-1", lcsc="CCLOSE01",
+        qty=-100, unit_cost_usd=None, reason="attrition", run_id=run.id, at="2026-02-01")
     drifting = ra.run_actuals(db, run)["attrition"]
 
     # A later, much dearer purchase of the same part.

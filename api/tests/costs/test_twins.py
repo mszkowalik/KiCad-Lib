@@ -44,6 +44,7 @@ from app.services import process as P
 from app.services import run_actuals as ra
 from app.services import twins as T
 from app.services.flasher import bench_checks
+from app.services.material_ledger import core
 
 
 @pytest.fixture
@@ -186,7 +187,7 @@ def _received(db, world, n=10):
 
 def test_receiving_makes_one_twin_per_board_in_one_stack(db, world):
     T.receive(db, world["b1"], qty=10, dry_run=True)
-    assert db.query(M.Twin).filter_by(origin_run_id=world["b1"].id).count() == 0
+    assert db.query(M.Unit).filter_by(origin_run_id=world["b1"].id).count() == 0
     stack = _received(db, world)
     assert [s["count"] for s in T.stacks(db, world["project"].id, run_id=world["b1"].id)] == [10]
     assert stack.endswith(":assembly|receive")
@@ -199,8 +200,8 @@ def test_a_step_on_a_stack_draws_its_parts_charged_to_the_batch(db, world):
     assert plan["units"] == 4
     # 4 glued enclosures from the $3 lot
     assert plan["value_usd"] == pytest.approx(12.0)
-    draws = db.query(M.ComponentConsumption).filter_by(step_run_id=plan["step_run_id"]).all()
-    assert [(d.qty, d.run_id) for d in draws] == [(4, world["b1"].id)]
+    draws = db.query(M.Draw).filter_by(event_id=plan["step_run_id"]).all()
+    assert [(d.taken, d.run_id) for d in draws] == [(4, world["b1"].id)]
     counts = sorted(s["count"] for s in T.stacks(db, world["project"].id, run_id=world["b1"].id))
     assert counts == [4, 6]
 
@@ -252,7 +253,7 @@ def test_no_stack_means_a_gap_and_a_merge_closes_it(db, world):
     assert [g.id for g in T.gaps(db, world["b1"])] == [d.id]
     T.merge(db, world["b1"], stack=stack, device_ids=[d.id], chosen="list", dry_run=False)
     assert T.gaps(db, world["b1"]) == []
-    assert db.query(M.Twin).filter_by(device_unit_id=d.id).one().origin_run_id == world["b1"].id
+    assert db.query(M.Unit).filter_by(device_unit_id=d.id).one().origin_run_id == world["b1"].id
 
 
 def test_the_bench_warns_when_the_stack_is_used_up(db, world):
@@ -306,7 +307,7 @@ def test_finish_refuses_a_missing_required_step_and_shipping_waits_for_it(db, wo
         T.apply_step(db, world["b1"], step_key=step, device_ids=[d.id], chosen="list", dry_run=False)
     T.finish(db, world["b1"], device_ids=[d.id], chosen="scanned", dry_run=False)
     T.refuse_unfinished(db, d)  # finished: ships
-    assert db.query(M.Twin).filter_by(device_unit_id=d.id).one().status == "finished"
+    assert db.query(M.Unit).filter_by(device_unit_id=d.id).one().status == "finished"
 
 
 def _crafted_devices(db, world, first, n):
@@ -318,9 +319,9 @@ def _crafted_devices(db, world, first, n):
 
 
 def _carton_links(db, device):
-    tw = db.query(M.Twin).filter_by(device_unit_id=device.id).one()
-    return (db.query(M.TwinStep).join(M.StepRun, M.StepRun.id == M.TwinStep.step_run_id)
-            .filter(M.TwinStep.twin_id == tw.id, M.StepRun.step_key == "carton").count())
+    tw = db.query(M.Unit).filter_by(device_unit_id=device.id).one()
+    return (db.query(M.MaterialEventLot).join(M.Click, M.Click.id == M.MaterialEventLot.event_id)
+            .filter(M.MaterialEventLot.lot_id == tw.id, M.Click.step_key == "carton").count())
 
 
 def test_a_step_on_named_devices_can_skip_the_units_that_cannot_take_it(db, world):
@@ -341,10 +342,10 @@ def test_a_step_on_named_devices_can_skip_the_units_that_cannot_take_it(db, worl
     assert done["units"] == 2
     # Never twice: the unit that had the step keeps one.
     assert [_carton_links(db, d) for d in (d1, d2, d3)] == [1, 1, 1]
-    sr = db.get(M.StepRun, done["step_run_id"])
-    assert (sr.qty, sr.note) == (2, "skipped 1 of 3 (refused): TW0021")
-    draws = db.query(M.ComponentConsumption).filter_by(step_run_id=sr.id).all()
-    assert [d.qty for d in draws] == [2]
+    sr = db.get(M.Click, done["step_run_id"])
+    assert (sr.units, sr.note) == (2, "skipped 1 of 3 (refused): TW0021")
+    draws = db.query(M.Draw).filter_by(event_id=sr.id).all()
+    assert [d.taken for d in draws] == [2]
 
 
 def test_skipping_refuses_a_click_no_unit_can_take(db, world):
@@ -382,7 +383,7 @@ def test_the_skipped_note_fits_its_column():
 def test_a_twin_costs_its_own_parts_plus_its_origin_share(db, world):
     stack = _received(db, world, 10)
     T.apply_step(db, world["b1"], step_key="enclose", stack=stack, qty=10, dry_run=False)
-    twins = db.query(M.Twin).filter_by(origin_run_id=world["b1"].id).all()
+    twins = db.query(M.Unit).filter_by(origin_run_id=world["b1"].id).all()
     pr = T.prices(db, twins)
     # own: one $3 glued enclosure, and 1/10 of the $100 assembly the step
     # recorded; origin: the $20 freight over 10 twins
@@ -401,7 +402,7 @@ def test_scrapped_twins_are_carried_by_the_others(db, world):
     sh = T.origin_shares(db, [world["b1"].id])[world["b1"].id]
     # ($20 freight + 2 x ($3 parts + $10 assembly) of the scrapped) over the 8 left
     assert sh["share_usd"] == pytest.approx(46.0 / 8)
-    alive = db.query(M.Twin).filter_by(origin_run_id=world["b1"].id, status="active").all()
+    alive = db.query(M.Unit).filter_by(origin_run_id=world["b1"].id, status="active").all()
     total = sum(p["total_usd"] for p in T.prices(db, alive).values())
     assert total == pytest.approx(150.0, abs=0.01)  # $100 + $20 + 10 x $3: nothing lost
 
@@ -424,7 +425,7 @@ def test_a_twin_programmed_in_another_batch_keeps_its_origin(db, world):
 def test_found_units_enter_at_zero(db, world):
     T.enter_found(db, world["b2"], qty=3, done=["enclose"], origin_run_id=world["b1"].id,
                   note="stock count", dry_run=False)
-    found = db.query(M.Twin).filter_by(found=True, project_id=world["project"].id).all()
+    found = db.query(M.Unit).filter_by(found=True, project_id=world["project"].id).all()
     assert len(found) == 3
     assert all(p["total_usd"] == 0.0 for p in T.prices(db, found).values())
     st = _stack(db, world, world["b2"], {"assembly", "receive", "enclose"})
@@ -448,7 +449,7 @@ def test_a_part_named_by_mpn_is_drawn_from_its_pool_key(db, world):
     d, tw = _crafted_device(db, world, 10)
     plan = T.apply_step(db, world["b1"], step_key="carton", device_ids=[d.id], chosen="scanned",
                         dry_run=False)
-    c = db.query(M.ComponentConsumption).filter_by(step_run_id=plan["step_run_id"]).one()
+    c = db.query(M.Draw).filter_by(event_id=plan["step_run_id"]).one()
     assert (c.component_id, c.mpn, c.unit_cost_usd) == (None, "TEST-TWIN-KARTON", pytest.approx(0.5))
     assert T.twin_json(db, tw)["steps"][-1]["parts"][0]["name"] == "TEST-TWIN-KARTON"
 
@@ -478,21 +479,18 @@ def test_receiving_no_longer_records_the_assembly(db, world):
 
 
 def test_the_assembly_records_what_the_person_ticked(db, world):
-    measured = M.ComponentConsumption(run_id=world["b1"].id, component_id=world["sticker"].id, mpn="",
-                                      lcsc="", qty=10, unit_cost_usd=0.2, basis="measured",
-                                      consumed_at="2026-01-30", import_ref="jlc:test:SMT-T:x")
-    db.add(measured)
-    db.flush()
+    measured = core.draw(db, run_id=world["b1"].id, component_id=world["sticker"].id, taken=10,
+                         unit_cost_usd=0.2, basis="measured", at="2026-01-30", import_ref="jlc:test:SMT-T:x")
     T.receive(db, world["b1"], qty=10, made_at="2026-02-01", dry_run=False)
     a = _assemble(db, world["b1"], assembler="JLCPCB", reference="SMT-T")
     assert (a["status"], a["units"], a["lines_linked"], a["draws_linked"]) == ("recorded", 10, 1, 1)
     sr = T.assembly_click(db, world["b1"])
     assert (sr.assembler, sr.reference) == ("JLCPCB", "SMT-T")
-    assert measured.step_run_id == sr.id
+    assert measured.event_id == sr.id
     freight = db.query(M.RunCostLine).filter_by(label="Freight").one()
     # freight is batch overhead: no step paid for it
-    assert db.query(M.CostLineStep).filter_by(line_id=freight.id).count() == 0
-    tw = db.query(M.Twin).filter_by(origin_run_id=world["b1"].id).first()
+    assert db.query(M.ClickCost).filter_by(line_id=freight.id).count() == 0
+    tw = db.query(M.Unit).filter_by(origin_run_id=world["b1"].id).first()
     p = T.prices(db, [tw])[tw.id]
     assert (p["own_parts_usd"], p["step_costs_usd"], p["origin_share_usd"]) == (0.2, 10.0, 2.0)
 
@@ -505,7 +503,7 @@ def test_a_position_imported_after_receipt_joins_the_assembly(db, world):
     assert [x["label"] for x in T.assembly_draft(db, world["b1"])["lines"]] == ["bare boards"]
     res = _assemble(db, world["b1"])
     assert (res["status"], res["lines_linked"], res["twins_added"]) == ("extended", 1, 0)
-    tw = db.query(M.Twin).filter_by(origin_run_id=world["b1"].id).first()
+    tw = db.query(M.Unit).filter_by(origin_run_id=world["b1"].id).first()
     assert T.prices(db, [tw])[tw.id]["step_costs_usd"] == pytest.approx(30.0)  # $150 / 5
 
 
@@ -515,9 +513,9 @@ def test_twins_received_later_join_the_same_assembly_click(db, world):
     T.receive(db, world["b1"], qty=6, dry_run=False)
     assert T.assembly_draft(db, world["b1"])["header"]["twins_not_in_step"] == 6
     _assemble(db, world["b1"])
-    clicks = db.query(M.StepRun).filter_by(run_id=world["b1"].id, kind="assembly").all()
-    assert [c.qty for c in clicks] == [10]
-    twins = db.query(M.Twin).filter_by(origin_run_id=world["b1"].id).all()
+    clicks = db.query(M.Click).filter_by(run_id=world["b1"].id, step_kind="assembly").all()
+    assert [c.units for c in clicks] == [10]
+    twins = db.query(M.Unit).filter_by(origin_run_id=world["b1"].id).all()
     assert {p["step_costs_usd"] for p in T.prices(db, twins).values()} == {10.0}
 
 
@@ -526,7 +524,7 @@ def test_a_position_can_be_linked_to_the_step_it_paid_for(db, world):
     plan = T.apply_step(db, world["b1"], step_key="enclose", stack=stack, qty=10, dry_run=False)
     assy = _line(db, world, world["b1"], "final:device", 30.0, "device assembly")
     T.link_costs(db, world["b1"], step_run_ids=[plan["step_run_id"]], line_ids=[assy.id], dry_run=False)
-    twins = db.query(M.Twin).filter_by(origin_run_id=world["b1"].id).all()
+    twins = db.query(M.Unit).filter_by(origin_run_id=world["b1"].id).all()
     pr = T.prices(db, twins)
     assert {p["step_costs_usd"] for p in pr.values()} == {13.0}  # $100 / 10 + $30 / 10
     assert {p["origin_share_usd"] for p in pr.values()} == {2.0}
@@ -597,12 +595,10 @@ def _legacy_batch(db, world, n_devices=4, run_date="2025-01-10", first=40):
         osvc.mark_produced(db, d, run.id, at=at, actor="test")
         devices.append(d)
     db.flush()
-    db.add(M.ComponentConsumption(run_id=run.id, component_id=world["sticker"].id, mpn="", lcsc="",
-                                  qty=n_devices, unit_cost_usd=0.2, basis="measured",
-                                  consumed_at="2025-01-05", import_ref=f"jlc:test:SMT-OLD{first}:x"))
-    db.add(M.ComponentConsumption(run_id=run.id, component_id=None, mpn="TEST-TWIN-KARTON", lcsc="",
-                                  qty=n_devices, unit_cost_usd=0.5, basis="bom",
-                                  consumed_at="2025-01-10"))
+    core.draw(db, run_id=run.id, component_id=world["sticker"].id, taken=n_devices, unit_cost_usd=0.2,
+              basis="measured", at="2025-01-05", import_ref=f"jlc:test:SMT-OLD{first}:x")
+    core.draw(db, run_id=run.id, component_id=None, mpn="TEST-TWIN-KARTON", taken=n_devices, unit_cost_usd=0.5,
+              basis="bom", at="2025-01-10")
     doc = M.RunCostDocument(project_id=world["project"].id, run_id=run.id, doc_type="invoice",
                             supplier="ASSY", doc_number=f"OLD-{first}", doc_date="2025-01-08", currency="USD",
                             total_amount=70.0)
@@ -624,7 +620,7 @@ def test_an_old_batch_is_rebuilt_into_twins_from_its_records(db, world):
     devices[3].state = "disposed"
     before = ra.invoice_register(db)["by_run_usd"][str(run.id)]["total_usd"]
     dry = R.rebuild(db, run, version_id=world["v"].id, costs={"final:device": "carton"})
-    assert dry["dry_run"] and db.query(M.Twin).filter_by(origin_run_id=run.id).count() == 0
+    assert dry["dry_run"] and db.query(M.Unit).filter_by(origin_run_id=run.id).count() == 0
     plan = R.rebuild(db, run, version_id=world["v"].id, costs={"final:device": "carton"}, dry_run=False)
     assert (plan["named"], plan["finished"], plan["scrapped"]) == (4, 3, 1)
     assert plan["carried_usd"] == pytest.approx(before, abs=0.01)
@@ -635,7 +631,7 @@ def test_an_old_batch_is_rebuilt_into_twins_from_its_records(db, world):
     assert "laser" in plan["finish_lacks"]
     assert [x["plan_key"] for x in plan["left_in_origin"]["lines"]] == ["logistics:inbound"]
     # every surviving device carries a third of the batch: nothing moved
-    alive = db.query(M.Twin).filter(M.Twin.origin_run_id == run.id, M.Twin.status != "scrapped").all()
+    alive = db.query(M.Unit).filter(M.Unit.origin_run_id == run.id, M.Unit.status != "scrapped").all()
     pr = T.prices(db, alive)
     assert sum(p["total_usd"] for p in pr.values()) == pytest.approx(before, abs=0.01)
     assert all(p["total_usd"] == pytest.approx(before / 3, abs=0.001) for p in pr.values())
@@ -655,10 +651,9 @@ def test_a_rebuild_takes_spares_and_can_be_undone(db, world):
     with pytest.raises(HTTPException):
         R.rebuild(db, run, version_id=world["v"].id, dry_run=False)
     R.undo(db, run, dry_run=False)
-    assert db.query(M.Twin).filter_by(origin_run_id=run.id).count() == 0
+    assert db.query(M.Unit).filter_by(origin_run_id=run.id).count() == 0
     assert run.process_version_id is None
-    assert db.query(M.ComponentConsumption).filter(M.ComponentConsumption.run_id == run.id,
-                                                   M.ComponentConsumption.step_run_id.isnot(None)).count() == 0
+    assert db.query(M.Draw).filter(M.Draw.run_id == run.id, T.of_click()).count() == 0
 
 
 # ------------------------------------------ deployments name bench steps (0060)
@@ -722,7 +717,7 @@ def test_a_crafted_batch_takes_no_hand_made_draw(db, world):
     assert e.value.status_code == 409 and "process steps" in str(e.value.detail)
     stack = _received(db, world, 1)
     plan = T.apply_step(db, world["b1"], step_key="enclose", stack=stack, qty=1, dry_run=False)
-    draw = db.query(M.ComponentConsumption).filter_by(step_run_id=plan["step_run_id"]).one()
+    draw = db.query(M.Draw).filter_by(event_id=plan["step_run_id"]).one()
     with pytest.raises(HTTPException):
         rc.delete_consumption(draw.id, db)
 
@@ -765,7 +760,7 @@ def test_one_position_can_pay_for_several_steps(db, world):
     assy = _line(db, world, world["b1"], "final:device", 50.0, "LIFTECH share")
     T.link_costs(db, world["b1"], step_run_ids=[a["step_run_id"], b["step_run_id"], c["step_run_id"]],
                  line_ids=[assy.id], dry_run=False)
-    twins = db.query(M.Twin).filter_by(origin_run_id=world["b1"].id).all()
+    twins = db.query(M.Unit).filter_by(origin_run_id=world["b1"].id).all()
     pr = T.prices(db, twins)
     # $100 assembly / 10 + $50 / the 10 twins of the three clicks
     assert {p["step_costs_usd"] for p in pr.values()} == {15.0}
@@ -809,8 +804,8 @@ def test_a_rebuild_links_one_invoice_to_several_steps_and_draws_stated_parts(db,
     assert plan["lines_whose_steps_were_not_recorded"] == []
     li = (db.query(M.RunCostLine).join(M.RunCostDocument, M.RunCostDocument.id == M.RunCostLine.document_id)
           .filter(M.RunCostLine.label == "device assembly", M.RunCostDocument.run_id == run.id).one())
-    linked = {sr.step_key for sr in db.query(M.StepRun).join(
-        M.CostLineStep, M.CostLineStep.step_run_id == M.StepRun.id).filter(M.CostLineStep.line_id == li.id)}
+    linked = {sr.step_key for sr in db.query(M.Click).join(
+        M.ClickCost, M.ClickCost.event_id == M.Click.id).filter(M.ClickCost.line_id == li.id)}
     assert linked == {"program", "label", "carton"}
     after = ra.invoice_register(db)["by_run_usd"][str(run.id)]["total_usd"]
     assert after == pytest.approx(before + 3 * 0.1, abs=0.001)  # three $0.10 labels added
@@ -853,19 +848,19 @@ def test_the_label_step_draws_a_label_and_says_when_there_is_none(db, world):
         inputs=[{"component_id": world["leaflet"].id, "qty": 1}]))
     d, tw = _crafted_device(db, world, 15)
     assert T.record_marking(db, d, laser=False, label=True) == ["label"]
-    sr = (db.query(M.StepRun).join(M.TwinStep, M.TwinStep.step_run_id == M.StepRun.id)
-          .filter(M.TwinStep.twin_id == tw.id, M.StepRun.step_key == "label").one())
-    drawn = db.query(M.ComponentConsumption).filter_by(step_run_id=sr.id).one()
-    assert (drawn.component_id, drawn.qty, drawn.run_id) == (world["leaflet"].id, 1, world["b1"].id)
+    sr = (db.query(M.Click).join(M.MaterialEventLot, M.MaterialEventLot.event_id == M.Click.id)
+          .filter(M.MaterialEventLot.lot_id == tw.id, M.Click.step_key == "label").one())
+    drawn = db.query(M.Draw).filter_by(event_id=sr.id).one()
+    assert (drawn.component_id, drawn.taken, drawn.run_id) == (world["leaflet"].id, 1, world["b1"].id)
     # the pool runs dry: the step is still recorded, and its note says so
-    db.add(M.ComponentConsumption(run_id=world["b2"].id, component_id=world["leaflet"].id, mpn="", lcsc="",
-                                  qty=99, unit_cost_usd=0.1, basis="manual", consumed_at="2026-01-02"))
+    core.draw(db, run_id=world["b2"].id, component_id=world["leaflet"].id, taken=99, unit_cost_usd=0.1,
+              basis="manual", at="2026-01-02")
     d2, tw2 = _crafted_device(db, world, 16)
     assert T.record_marking(db, d2, laser=False, label=True) == ["label"]
-    sr2 = (db.query(M.StepRun).join(M.TwinStep, M.TwinStep.step_run_id == M.StepRun.id)
-           .filter(M.TwinStep.twin_id == tw2.id, M.StepRun.step_key == "label").one())
+    sr2 = (db.query(M.Click).join(M.MaterialEventLot, M.MaterialEventLot.event_id == M.Click.id)
+           .filter(M.MaterialEventLot.lot_id == tw2.id, M.Click.step_key == "label").one())
     assert "not drawn" in sr2.note
-    assert db.query(M.ComponentConsumption).filter_by(step_run_id=sr2.id).count() == 0
+    assert db.query(M.Draw).filter_by(event_id=sr2.id).count() == 0
 
 
 def test_a_run_without_a_mac_finds_its_unit_by_the_topic(db, world):
@@ -890,8 +885,8 @@ def test_found_units_entered_first_never_take_the_assembly(db, world):
                   dry_run=False)
     T.receive(db, world["b1"], qty=10, dry_run=False)
     _assemble(db, world["b1"])
-    found = db.query(M.Twin).filter_by(origin_run_id=world["b2"].id, found=True).all()
-    received = db.query(M.Twin).filter_by(origin_run_id=world["b1"].id, found=False).all()
+    found = db.query(M.Unit).filter_by(origin_run_id=world["b2"].id, found=True).all()
+    received = db.query(M.Unit).filter_by(origin_run_id=world["b1"].id, found=False).all()
     assert {p["total_usd"] for p in T.prices(db, found).values()} == {0.0}
     assert {p["step_costs_usd"] for p in T.prices(db, received).values()} == {10.0}
     # and they are their own pile, named for where they came from
@@ -909,8 +904,8 @@ def test_a_recharged_position_is_seen_by_its_new_batch(db, world):
     T.receive(db, world["b2"], qty=5, dry_run=False)
     _assemble(db, world["b2"])
     assert T.assembly_click(db, world["b2"]) is not None
-    links = db.query(M.CostLineStep).filter_by(line_id=smt.id).all()
-    assert [db.get(M.StepRun, x.step_run_id).run_id for x in links] == [world["b2"].id]
+    links = db.query(M.ClickCost).filter_by(line_id=smt.id).all()
+    assert [db.get(M.Click, x.event_id).run_id for x in links] == [world["b2"].id]
 
 
 def test_a_split_child_charged_to_the_document_batch_keeps_its_links(db, world):
@@ -931,7 +926,7 @@ def test_a_split_child_charged_to_the_document_batch_keeps_its_links(db, world):
                                 rc.ChildIn(label="other half", qty=1, unit_price=20.0, plan_key="pcba:smt")])
     rc.split_line(li.id, body, db)
     kids = db.query(M.RunCostLine).filter_by(parent_line_id=li.id).all()
-    assert all(db.query(M.CostLineStep).filter_by(line_id=k.id).count() == 1 for k in kids)
+    assert all(db.query(M.ClickCost).filter_by(line_id=k.id).count() == 1 for k in kids)
 
 
 def test_a_scrapped_device_costs_nothing_on_its_order(db, world):
@@ -953,9 +948,9 @@ def test_whole_steps_link_every_click(db, world):
         _program(db, world, world["b1"], n)
     li = _line(db, world, world["b1"], "final:device", 30.0, "programming service")
     T.link_costs(db, world["b1"], step_run_ids=[], step_keys=["program"], line_ids=[li.id], dry_run=False)
-    assert db.query(M.CostLineStep).filter_by(line_id=li.id).count() == 3
-    named = db.query(M.Twin).filter(M.Twin.origin_run_id == world["b1"].id,
-                                    M.Twin.device_unit_id.isnot(None)).all()
+    assert db.query(M.ClickCost).filter_by(line_id=li.id).count() == 3
+    named = db.query(M.Unit).filter(M.Unit.origin_run_id == world["b1"].id,
+                                    M.Unit.device_unit_id.isnot(None)).all()
     # $100 assembly / 3 units + the $30 programming service / the 3 programmed units
     assert all(p["step_costs_usd"] == pytest.approx(100 / 3 + 10.0, abs=0.01)
                for p in T.prices(db, named).values())
@@ -1002,10 +997,10 @@ def test_label_copies_draw_one_label_each_and_marks_catch_up(db, world):
     db.add(run)
     db.flush()
     assert T.record_marking(db, d, laser=True, label=True, copies=2, actor="tester") == ["label"]
-    lab = (db.query(M.StepRun).join(M.TwinStep, M.TwinStep.step_run_id == M.StepRun.id)
-           .filter(M.TwinStep.twin_id == tw.id, M.StepRun.step_key == "label").one())
+    lab = (db.query(M.Click).join(M.MaterialEventLot, M.MaterialEventLot.event_id == M.Click.id)
+           .filter(M.MaterialEventLot.lot_id == tw.id, M.Click.step_key == "label").one())
     assert lab.actor == "tester"
-    assert db.query(M.ComponentConsumption).filter_by(step_run_id=lab.id).one().qty == 2
+    assert db.query(M.Draw).filter_by(event_id=lab.id).one().taken == 2
     # the laser mark waits for the enclosure, then the bench's run records it
     plan = T.apply_step(db, world["b1"], step_key="enclose", device_ids=[d.id], chosen="scanned", dry_run=False)
     assert plan["caught_up"] and "laser" in plan["caught_up"][0]["steps"]
@@ -1043,9 +1038,9 @@ def test_a_step_stated_since_a_date_goes_only_on_later_devices(db, world):
                      costs={"final:device": ["carton", "leaflet"]}, dry_run=False)
     got = {r["step"]: r["units"] for r in plan["recorded"]}
     assert got["leaflet"] == 2
-    with_leaflet = {db.get(M.Twin, ts.twin_id).device_unit_id for ts in db.query(M.TwinStep).join(
-        M.StepRun, M.StepRun.id == M.TwinStep.step_run_id).filter(M.StepRun.run_id == run.id,
-                                                                    M.StepRun.step_key == "leaflet")}
+    with_leaflet = {db.get(M.Unit, ts.lot_id).device_unit_id for ts in db.query(M.MaterialEventLot).join(
+        M.Click, M.Click.id == M.MaterialEventLot.event_id).filter(M.Click.run_id == run.id,
+                                                                    M.Click.step_key == "leaflet")}
     assert with_leaflet == {devices[1].id, devices[2].id}
 
 
@@ -1081,8 +1076,8 @@ def test_a_dry_run_writes_nothing_and_a_real_one_is_undone_whole(db, world):
     ledger.reverse_batch(res["batch_id"], dry_run=False, db=db)
     db.expire_all()
     assert T.assembly_click(db, world["b1"]) is None
-    assert db.query(M.CostLineStep).filter_by(line_id=smt.id).count() == 0
-    twins = db.query(M.Twin).filter_by(origin_run_id=world["b1"].id).all()
+    assert db.query(M.ClickCost).filter_by(line_id=smt.id).count() == 0
+    twins = db.query(M.Unit).filter_by(origin_run_id=world["b1"].id).all()
     assert {tw.stack_key for tw in twins} == {"receive"}
 
 
@@ -1095,8 +1090,8 @@ def test_another_house_draws_our_parts_through_the_step(db, world):
         parts=[{"component_id": world["sticker"].id, "qty": 10}]), db=db)
     sr = T.assembly_click(db, world["b1"])
     assert (res["draws_written"], sr.chosen) == (1, "manual")
-    d = db.query(M.ComponentConsumption).filter_by(step_run_id=sr.id).one()
-    assert (d.run_id, d.qty, d.unit_cost_usd) == (world["b1"].id, 10, pytest.approx(0.2))
+    d = db.query(M.Draw).filter_by(event_id=sr.id).one()
+    assert (d.run_id, d.taken, d.unit_cost_usd) == (world["b1"].id, 10, pytest.approx(0.2))
     with pytest.raises(HTTPException) as e:
         pr.craft_assembly(world["b1"].id, _assembly_body(
             dry_run=True, parts=[{"component_id": world["sticker"].id, "qty": 1000}]), db=db)
@@ -1120,7 +1115,7 @@ def test_the_parts_the_assembler_bought_split_their_total_onto_the_step(db, worl
     sr = T.assembly_click(db, world["b1"])
     kids = db.query(M.RunCostLine).filter_by(parent_line_id=lump.id).all()
     assert len(kids) == 2 and all(
-        db.query(M.CostLineStep).filter_by(line_id=k.id, step_run_id=sr.id).count() == 1 for k in kids)
+        db.query(M.ClickCost).filter_by(line_id=k.id, event_id=sr.id).count() == 1 for k in kids)
 
 
 def test_a_replacement_is_recorded_with_the_step(db, world):
@@ -1254,7 +1249,7 @@ def test_an_undo_puts_back_a_link_the_record_replaced(db, world):
     res = _record(db, world["b2"], line_ids=[smt.id])
     _undo(db, res["batch_id"])
     db.expire_all()
-    assert [x.step_run_id for x in db.query(M.CostLineStep).filter_by(line_id=smt.id)] == [first.id]
+    assert [x.event_id for x in db.query(M.ClickCost).filter_by(line_id=smt.id)] == [first.id]
 
 
 def test_the_bench_stack_survives_recording_the_assembly(db, world):
@@ -1346,19 +1341,19 @@ def test_every_crafting_click_is_undone_whole(db, world):
     step = pr.craft_step(world["b1"].id, pr.StepIn(step_key="enclose", stack=stack, qty=3, dry_run=False), db=db)
     clicks = {c["step"]: c["batch_id"] for c in T.craft_view(db, world["b1"])["clicks"]}
     assert (clicks["receive"], clicks["enclose"]) == (rec["batch_id"], step["batch_id"])
-    assert db.query(M.ComponentConsumption).filter_by(step_run_id=step["step_run_id"]).count()
+    assert db.query(M.Draw).filter_by(event_id=step["step_run_id"]).count()
     with pytest.raises(HTTPException) as e:   # later clicks stand on its twins
         _undo(db, rec["batch_id"], dry=True)
     assert e.value.status_code == 409
     _undo(db, step["batch_id"])
     db.expire_all()
-    assert db.query(M.ComponentConsumption).filter_by(step_run_id=step["step_run_id"]).count() == 0
-    twins = db.query(M.Twin).filter_by(origin_run_id=world["b1"].id).all()
+    assert db.query(M.Draw).filter_by(event_id=step["step_run_id"]).count() == 0
+    twins = db.query(M.Unit).filter_by(origin_run_id=world["b1"].id).all()
     assert {tw.stack_key for tw in twins} == {"assembly|receive"}
     _undo(db, asm["batch_id"])
     _undo(db, rec["batch_id"])
     db.expire_all()
-    assert db.query(M.Twin).filter_by(origin_run_id=world["b1"].id).count() == 0
+    assert db.query(M.Unit).filter_by(origin_run_id=world["b1"].id).count() == 0
 
 
 def test_a_click_the_bench_has_built_on_is_not_undone(db, world):
@@ -1441,7 +1436,7 @@ def test_a_bench_step_can_be_stated_on_named_devices_with_a_reason(db, world):
                      stated="done elsewhere", dry_run=True)
     res = T.apply_step(db, world["b1"], step_key="label", device_ids=[d.id], chosen="scanned",
                        stated="label printed by hand after a jam", dry_run=False)
-    sr = db.get(M.StepRun, res["step_run_id"])
+    sr = db.get(M.Click, res["step_run_id"])
     assert (sr.chosen, sr.note) == ("stated", "stated: label printed by hand after a jam")
     assert "label" in T.done_steps(db, [tw.id])[tw.id]
 
@@ -1464,7 +1459,7 @@ def test_scrapping_a_named_unit_disposes_of_it_and_the_undo_gives_it_back(db, wo
     assert (d.state, tw.status) == ("disposed", "scrapped")
     _undo(db, res["batch_id"])
     db.expire_all()
-    assert (db.get(M.DeviceUnit, d.id).state, db.get(M.Twin, tw.id).status) == ("in_stock", "active")
+    assert (db.get(M.DeviceUnit, d.id).state, db.get(M.Unit, tw.id).status) == ("in_stock", "active")
 
 
 def test_disposing_of_a_device_scraps_its_finished_twin(db, world):
@@ -1498,7 +1493,7 @@ def test_a_device_named_from_the_wrong_pile_swaps_its_twin(db, world):
     d, old = _program(db, world, world["b2"], 36)
     assert old.origin_run_id == world["b1"].id
     res = T.swap_twin(db, world["b2"], device_ids=[d.id], stack=right, dry_run=False)
-    new = db.get(M.Twin, res["to_twin"])
+    new = db.get(M.Unit, res["to_twin"])
     assert (new.device_unit_id, new.origin_run_id, "program" in T.done_steps(db, [new.id])[new.id]) == (
         d.id, world["b2"].id, True)
     assert (old.device_unit_id, old.run_id, old.stack_key) == (None, world["b1"].id, "assembly|receive")
@@ -1557,23 +1552,27 @@ def test_a_whole_step_link_pays_for_the_clicks_recorded_after_it(db, world):
                          db=db)
     _program(db, world, world["b1"], 42)
     _program(db, world, world["b1"], 43)
-    links = (db.query(M.CostLineStep).join(M.StepRun, M.StepRun.id == M.CostLineStep.step_run_id)
-             .filter(M.CostLineStep.line_id == fee.id, M.StepRun.step_key == "program").count())
+    links = (db.query(M.ClickCost).join(M.Click, M.Click.id == M.ClickCost.event_id)
+             .filter(M.ClickCost.line_id == fee.id, M.Click.step_key == "program").count())
     assert links == 2
     with pytest.raises(HTTPException) as e:
         _undo(db, res["batch_id"], dry=True)
     assert "linked 2 later click(s)" in str(e.value.detail)
 
 
-def test_a_column_added_later_does_not_block_an_older_undo(db, world):
+def test_a_column_added_later_does_not_block_an_older_undo(db, world, monkeypatch):
     from app.services import journal as J
 
+    # `material_event_lots` was born with both columns, so the journal lists no
+    # late column for it; declaring two here exercises the rule itself.
+    monkeypatch.setitem(J.LATE_COLUMNS, "material_event_lots",
+                        {"programming_run_id": None, "deployment_version_id": None})
     T.receive(db, world["b1"], qty=2, made_at="2026-02-01", dry_run=False)
     rec = _record(db, world["b1"])
-    rows = db.query(M.WriteBatchRow).filter_by(batch_id=rec["batch_id"], table_name="twin_steps").all()
+    rows = db.query(M.WriteBatchRow).filter_by(batch_id=rec["batch_id"], table_name="material_event_lots").all()
     assert rows
     for r in rows:   # as if the batch were written before the two columns existed
-        ts = db.get(M.TwinStep, r.row_id)
+        ts = db.get(M.MaterialEventLot, r.row_id)
         d = {k: v for k, v in J._row_dict(ts).items() if k not in ("programming_run_id", "deployment_version_id")}
         r.after_hash = J._hash(d)
     db.flush()
@@ -1591,12 +1590,12 @@ def test_a_spare_programmed_after_a_rebuild_shares_its_whole_step_position(db, w
     T.set_bench_stack(db, run, _stack(db, world, run, {"assembly", "receive"}))
     _d, tw = _program(db, world, run, 72)
     assert tw is not None
-    clicks = {sid for (sid,) in db.query(M.CostLineStep.step_run_id).filter_by(line_id=li.id)}
-    assert any(tw.id in {t for (t,) in db.query(M.TwinStep.twin_id).filter_by(step_run_id=c)} for c in clicks)
+    clicks = {sid for (sid,) in db.query(M.ClickCost.event_id).filter_by(line_id=li.id)}
+    assert any(tw.id in {t for (t,) in db.query(M.MaterialEventLot.lot_id).filter_by(event_id=c)} for c in clicks)
     R.undo(db, run, dry_run=False)
     db.expire_all()
-    assert db.query(M.CostLineStep).filter_by(line_id=li.id).count() == 0
-    assert db.query(M.CostLineStepKey).filter_by(line_id=li.id).count() == 0
+    assert db.query(M.ClickCost).filter_by(line_id=li.id).count() == 0
+    assert db.query(M.StepCost).filter_by(line_id=li.id).count() == 0
 
 
 # ------------------------------------------------ review fixes (decision 0074)
@@ -1618,11 +1617,11 @@ def test_a_swap_to_an_older_pile_and_its_undo_never_collide(db, world):
     T.set_bench_stack(db, world["b1"], b2_pile)   # the newer batch's boards, by mistake
     d, old = _program(db, world, world["b1"], 80)
     res = pr.craft_swap(world["b1"].id, pr.SwapIn(device_ids=[d.id], stack=b1_pile, dry_run=False), db=db)
-    new = db.get(M.Twin, res["to_twin"])
+    new = db.get(M.Unit, res["to_twin"])
     assert new.id < old.id and new.device_unit_id == d.id
     _undo(db, res["batch_id"])
     db.expire_all()
-    assert db.get(M.Twin, old.id).device_unit_id == d.id and db.get(M.Twin, new.id).device_unit_id is None
+    assert db.get(M.Unit, old.id).device_unit_id == d.id and db.get(M.Unit, new.id).device_unit_id is None
 
 
 def test_an_undo_never_unfinishes_a_unit_that_left(db, world):
@@ -1685,14 +1684,14 @@ def test_a_whole_step_link_reaches_the_assembly_click_and_stops_at_a_recharge(db
     fee = _line(db, world, world["b1"], "final:device", 5.0, "assembly handling")
     T.link_costs(db, world["b1"], step_run_ids=None, step_keys=["assembly"], line_ids=[fee.id], dry_run=False)
     sr, _res = T.apply_assembly(db, world["b1"])
-    assert db.query(M.CostLineStep).filter_by(line_id=fee.id, step_run_id=sr.id).count() == 1
+    assert db.query(M.ClickCost).filter_by(line_id=fee.id, event_id=sr.id).count() == 1
     other = _line(db, world, world["b1"], "final:device", 7.0, "program fee")
     T.link_costs(db, world["b1"], step_run_ids=None, step_keys=["program"], line_ids=[other.id], dry_run=False)
     other.run_id = world["b2"].id   # re-charged to another batch
     db.flush()
     T.set_bench_stack(db, world["b1"], _stack(db, world, world["b1"], {"assembly", "receive"}))
     _program(db, world, world["b1"], 85)
-    assert db.query(M.CostLineStep).filter_by(line_id=other.id).count() == 0
+    assert db.query(M.ClickCost).filter_by(line_id=other.id).count() == 0
 
 
 def test_a_merge_names_the_run_that_programmed_the_board(db, world):
@@ -1708,7 +1707,7 @@ def test_a_merge_names_the_run_that_programmed_the_board(db, world):
     db.add_all([erase, run])
     db.flush()
     T.merge(db, world["b1"], stack=stack, device_ids=[d.id], chosen="list", dry_run=False)
-    tw = db.query(M.Twin).filter_by(device_unit_id=d.id).one()
+    tw = db.query(M.Unit).filter_by(device_unit_id=d.id).one()
     j = T.twin_json(db, tw)
     assert next(s for s in j["steps"] if s["step"] == "program")["programming_run_id"] == run.id
     assert j["reflashes"] == []
@@ -1768,10 +1767,10 @@ def test_a_smaller_draw_gives_back_its_newest_lots_while_lot_pricing_is_off(db, 
                                db=db)
 
     def bound():
-        return [(x.lot_line_id, x.qty) for x in db.query(M.ComponentConsumptionLot)
-                .filter_by(consumption_id=c.id).order_by(M.ComponentConsumptionLot.id)]
+        return [(x.lot_line_id, x.qty) for x in db.query(M.MaterialMoveLot)
+                .filter_by(move_id=c.id).order_by(M.MaterialMoveLot.id)]
 
-    c = db.get(M.ComponentConsumption, used(120)["id"])
+    c = db.get(M.Draw, used(120)["id"])
     # bound oldest first, as the history job binds a draw made while the switch is off
     L.bind(db, c, L.FifoPicker(db).pick(st.id, "", "", 120, "2026-02-01"), source="fifo_history")
     unit = c.unit_cost_usd
@@ -1806,8 +1805,8 @@ def test_a_reopen_never_reuses_a_bench_run_from_before_it(db, world):
     T.reopen(db, b1, device_ids=[d.id], chosen="list", reason="new carton", dry_run=False)
     plan = T.apply_step(db, b1, step_key="carton", device_ids=[d.id], chosen="list", dry_run=False)
     assert plan["caught_up"] == []
-    marks = (db.query(M.StepRun).join(M.TwinStep, M.TwinStep.step_run_id == M.StepRun.id)
-             .filter(M.TwinStep.twin_id == tw.id, M.StepRun.step_key.in_(["laser", "label"])).count())
+    marks = (db.query(M.Click).join(M.MaterialEventLot, M.MaterialEventLot.event_id == M.Click.id)
+             .filter(M.MaterialEventLot.lot_id == tw.id, M.Click.step_key.in_(["laser", "label"])).count())
     assert marks == 2
 
 
@@ -1827,11 +1826,11 @@ def test_a_re_split_keeps_the_step_links_of_the_children_it_adds_to_or_replaces(
         return rc.ChildIn(label=label, amount=amount, plan_key="final:device", run_id=b1.id)
 
     def links(li):
-        return ({s for (s,) in db.query(M.CostLineStep.step_run_id).filter_by(line_id=li.id)},
-                [k.step_key for k in db.query(M.CostLineStepKey).filter_by(line_id=li.id)])
+        return ({s for (s,) in db.query(M.ClickCost.event_id).filter_by(line_id=li.id)},
+                [k.step_key for k in db.query(M.StepCost).filter_by(line_id=li.id)])
 
     def clicks():
-        return {sr.id for sr in db.query(M.StepRun).filter_by(run_id=b1.id, step_key="program")}
+        return {sr.id for sr in db.query(M.Click).filter_by(run_id=b1.id, step_key="program")}
 
     rc.split_line_core(fee.id, rc.SplitIn(children=[child("a", 50), child("b", 30)]), db)
     _program(db, world, b1, 95)   # recorded after the split: linked to the children only
@@ -1845,7 +1844,7 @@ def test_a_re_split_keeps_the_step_links_of_the_children_it_adds_to_or_replaces(
                                           M.RunCostLine.voided_at.is_(None)).all()
     assert sorted(li.label for li in live) == ["x", "y"] and len(clicks()) == 3
     assert all(links(li) == (clicks(), ["program"]) for li in live)
-    assert db.query(M.CostLineStepKey).filter(M.CostLineStepKey.line_id.in_(old)).count() == 0
+    assert db.query(M.StepCost).filter(M.StepCost.line_id.in_(old)).count() == 0
 
 
 def test_only_a_flash_pass_names_the_program_step_or_reads_as_a_reflash(db, world):
@@ -1884,7 +1883,7 @@ def test_only_a_flash_pass_names_the_program_step_or_reads_as_a_reflash(db, worl
     T.merge(db, world["b1"], stack=stack, device_ids=[d.id, e.id], chosen="list", dry_run=False)
 
     def program_run(dev):
-        j = T.twin_json(db, db.query(M.Twin).filter_by(device_unit_id=dev.id).one())
+        j = T.twin_json(db, db.query(M.Unit).filter_by(device_unit_id=dev.id).one())
         return next(s for s in j["steps"] if s["step"] == "program")["programming_run_id"], j["reflashes"]
 
     assert program_run(d) == (mine.id, [])
@@ -1943,13 +1942,13 @@ def test_a_whole_step_unlink_is_undone_and_a_click_made_while_unlinked_still_blo
     fee = _line(db, world, world["b1"], "final:device", 10.0, "enclose fee")
     pr.craft_costs(world["b1"].id, pr.CostsIn(step_keys=["enclose"], line_ids=[fee.id], dry_run=False), db=db)
     off = pr.craft_costs(world["b1"].id, pr.CostsIn(line_ids=[fee.id], unlink=True, dry_run=False), db=db)
-    assert db.query(M.CostLineStep).filter_by(line_id=fee.id).count() == 0
+    assert db.query(M.ClickCost).filter_by(line_id=fee.id).count() == 0
     # the click whose link this unlink removed is no gap: the undo puts the link back
     assert _undo(db, off["batch_id"], dry=True)["status"] == "would_reverse"
     assert _undo(db, off["batch_id"])["status"] == "reversed"
     db.expire_all()
-    assert [x.step_run_id for x in db.query(M.CostLineStep).filter_by(line_id=fee.id)] == [plan["step_run_id"]]
-    assert [(k.run_id, k.step_key) for k in db.query(M.CostLineStepKey).filter_by(line_id=fee.id)] == [
+    assert [x.event_id for x in db.query(M.ClickCost).filter_by(line_id=fee.id)] == [plan["step_run_id"]]
+    assert [(k.run_id, k.step_key) for k in db.query(M.StepCost).filter_by(line_id=fee.id)] == [
         (world["b1"].id, "enclose")]
     # a click recorded while the position is unlinked still is one
     again = pr.craft_costs(world["b1"].id, pr.CostsIn(line_ids=[fee.id], unlink=True, dry_run=False), db=db)
@@ -1977,7 +1976,7 @@ def test_an_undo_of_a_redo_on_a_closed_batch_is_refused(db, world):
     db.flush()
     blockers = J.check_reversible(db, db.get(M.WriteBatch, redone["reverse_batch_id"]))["blockers"]
     assert any("TB1 is closed" in b for b in blockers)
-    assert db.query(M.CostLineStep).filter_by(line_id=fee.id).count() == 1
+    assert db.query(M.ClickCost).filter_by(line_id=fee.id).count() == 1
 
 
 def test_an_undo_that_would_put_back_a_link_to_a_removed_click_is_refused(db, world):
@@ -1991,13 +1990,13 @@ def test_an_undo_that_would_put_back_a_link_to_a_removed_click_is_refused(db, wo
     off = pr.craft_costs(world["b1"].id, pr.CostsIn(line_ids=[fee.id], unlink=True, dry_run=False), db=db)
     _undo(db, step["batch_id"])   # nothing points at the click any more, so it goes
     db.expire_all()
-    assert db.get(M.StepRun, step["step_run_id"]) is None
+    assert db.get(M.Click, step["step_run_id"]) is None
     # the dry run and the real call agree: a 409 naming the missing click, never a 500
     for dry in (True, False):
         with pytest.raises(HTTPException) as e:
             _undo(db, off["batch_id"], dry=dry)
         assert e.value.status_code == 409
-        assert f"pointed at step_runs#{step['step_run_id']}, which no longer exists" in str(e.value.detail)
+        assert f"pointed at material_events#{step['step_run_id']}, which no longer exists" in str(e.value.detail)
 
 
 def test_the_ledger_never_redoes_an_undone_rebuild(db, world):
@@ -2013,7 +2012,7 @@ def test_the_ledger_never_redoes_an_undone_rebuild(db, world):
         with pytest.raises(HTTPException) as e:
             _undo(db, redo.id, dry=dry)
         assert e.value.status_code == 409 and "Undo rebuild" in str(e.value.detail)
-    assert db.query(M.Twin).filter_by(origin_run_id=run.id).count() == 0
+    assert db.query(M.Unit).filter_by(origin_run_id=run.id).count() == 0
 
 
 # ------------------------------------------ the final check's regressions (0074)
@@ -2035,7 +2034,7 @@ def test_the_run_named_in_the_produced_note_produced_the_device(db, world):
     osvc.mark_produced(db, d, world["b1"].id, actor="test", note=f"passed programming run #{ours.id}")
     assert T.production_pass(db, d.id).id == ours.id
     T.merge(db, world["b1"], stack=stack, device_ids=[d.id], chosen="list", dry_run=False)
-    j = T.twin_json(db, db.query(M.Twin).filter_by(device_unit_id=d.id).one())
+    j = T.twin_json(db, db.query(M.Unit).filter_by(device_unit_id=d.id).one())
     assert next(s for s in j["steps"] if s["step"] == "program")["programming_run_id"] == ours.id
     assert j["reflashes"] == []
 
@@ -2051,7 +2050,7 @@ def test_a_scrap_is_undone_after_the_bench_read_the_unit_again(db, world):
     _undo(db, res["batch_id"])
     db.expire_all()
     d = db.get(M.DeviceUnit, d.id)
-    assert (d.state, d.chip, db.get(M.Twin, tw.id).status) == ("in_stock", "ESP32-C6 (rev 0.1)", "active")
+    assert (d.state, d.chip, db.get(M.Unit, tw.id).status) == ("in_stock", "ESP32-C6 (rev 0.1)", "active")
 
 
 def test_a_whole_step_link_split_since_is_unlinked_not_undone(db, world):
@@ -2071,7 +2070,7 @@ def test_a_whole_step_link_split_since_is_unlinked_not_undone(db, world):
     # the header follows its children: unlinked on the batch screen, all of it goes
     T.link_costs(db, b1, step_run_ids=None, line_ids=[fee.id], unlink=True, dry_run=False)
     kids = [li.id for li in db.query(M.RunCostLine).filter_by(parent_line_id=fee.id)]
-    assert db.query(M.CostLineStepKey).filter(M.CostLineStepKey.line_id.in_(kids + [fee.id])).count() == 0
+    assert db.query(M.StepCost).filter(M.StepCost.line_id.in_(kids + [fee.id])).count() == 0
 
 
 def test_a_split_header_keeps_every_click_and_carries_no_share(db, world):
@@ -2087,7 +2086,7 @@ def test_a_split_header_keeps_every_click_and_carries_no_share(db, world):
     _program(db, world, b1, 122)
     _program(db, world, b1, 123)
     clicks = set(T.step_clicks(db, b1.id, "program"))
-    header = {s for (s,) in db.query(M.CostLineStep.step_run_id).filter_by(line_id=fee.id)}
+    header = {s for (s,) in db.query(M.ClickCost.event_id).filter_by(line_id=fee.id)}
     assert len(clicks) == 2 and header == clicks
     kids = {li.id for li in db.query(M.RunCostLine).filter_by(parent_line_id=fee.id)}
     shares = {sh["line"].id: sh["usd"] for sh in T.line_shares(db, [b1.id])}
@@ -2159,7 +2158,7 @@ def test_a_redo_puts_back_a_keyed_click_and_its_links(db, world):
     assert "not redone here" in str(e.value.detail)
     J.reverse(db, undo["reverse_batch_id"], dry_run=False)   # the journal itself puts it back, parents first
     db.expire_all()
-    assert db.query(M.CostLineStep).filter_by(line_id=fee.id, step_run_id=step["step_run_id"]).count() == 1
+    assert db.query(M.ClickCost).filter_by(line_id=fee.id, event_id=step["step_run_id"]).count() == 1
 
 
 def test_a_redo_keeps_the_split_copies_of_a_click_s_links(db, world):
@@ -2175,11 +2174,11 @@ def test_a_redo_keeps_the_split_copies_of_a_click_s_links(db, world):
         rc.ChildIn(label="b", amount=4, plan_key="final:device", run_id=world["b1"].id)]), db)
     from app.services import journal as J
 
-    before = db.query(M.CostLineStep).filter_by(step_run_id=step["step_run_id"]).count()
+    before = db.query(M.ClickCost).filter_by(event_id=step["step_run_id"]).count()
     undo = _undo(db, step["batch_id"])
     J.reverse(db, undo["reverse_batch_id"], dry_run=False)
     db.expire_all()
-    assert db.query(M.CostLineStep).filter_by(step_run_id=step["step_run_id"]).count() == before == 3
+    assert db.query(M.ClickCost).filter_by(event_id=step["step_run_id"]).count() == before == 3
 
 
 def test_unlink_by_the_top_header_reaches_a_two_level_split(db, world):
@@ -2202,8 +2201,8 @@ def test_unlink_by_the_top_header_reaches_a_two_level_split(db, world):
     T.link_costs(db, b1, step_run_ids=None, line_ids=[fee.id], unlink=True, dry_run=False)
     tree = [fee.id] + [li.id for li in db.query(M.RunCostLine).filter(M.RunCostLine.document_id == fee.document_id,
                                                                       M.RunCostLine.id > fee.id)]
-    assert db.query(M.CostLineStep).filter(M.CostLineStep.line_id.in_(tree)).count() == 0
-    assert db.query(M.CostLineStepKey).filter(M.CostLineStepKey.line_id.in_(tree)).count() == 0
+    assert db.query(M.ClickCost).filter(M.ClickCost.line_id.in_(tree)).count() == 0
+    assert db.query(M.StepCost).filter(M.StepCost.line_id.in_(tree)).count() == 0
 
 
 def test_a_whole_step_link_with_no_click_yet_is_listed(db, world):
@@ -2241,11 +2240,11 @@ def test_a_redo_of_a_draw_the_stock_no_longer_holds_is_refused(db, world):
     db.add(plain)
     db.flush()
     with J.batch(db, kind="test.draw", source_ref=f"run:{plain.id}") as h:
-        db.add(M.ComponentConsumption(run_id=plain.id, component_id=world["sticker"].id, mpn="", lcsc="", qty=60,
-                                      unit_cost_usd=0.2, basis="hand", consumed_at="2026-02-01"))
+        core.draw(db, run_id=plain.id, component_id=world["sticker"].id, taken=60, unit_cost_usd=0.2,
+                  basis="hand", at="2026-02-01")
     undo = J.reverse(db, h["batch_id"], dry_run=False)
-    db.add(M.ComponentConsumption(run_id=plain.id, component_id=world["sticker"].id, mpn="", lcsc="", qty=60,
-                                  unit_cost_usd=0.2, basis="hand", consumed_at="2026-02-02"))
+    core.draw(db, run_id=plain.id, component_id=world["sticker"].id, taken=60, unit_cost_usd=0.2,
+              basis="hand", at="2026-02-02")
     db.flush()
     blockers = J.check_reversible(db, db.get(M.WriteBatch, undo["reverse_batch_id"]))["blockers"]
     assert any("no longer holds" in b for b in blockers)
@@ -2266,12 +2265,12 @@ def test_an_unlink_by_this_batch_s_share_clears_the_header_above_it(db, world):
     rows = {r["line_id"] for r in T.craft_view(db, b1)["linked"]}
     assert fee.id not in rows and ours.id in rows
     T.link_costs(db, b1, step_run_ids=None, line_ids=[ours.id], unlink=True, dry_run=False)
-    assert db.query(M.CostLineStepKey).filter_by(line_id=fee.id, run_id=b1.id).count() == 0
+    assert db.query(M.StepCost).filter_by(line_id=fee.id, run_id=b1.id).count() == 0
     # a child added later gets nothing from the header
     rc.split_line_core(fee.id, rc.SplitIn(children=[
         rc.ChildIn(label="more", amount=0, plan_key="final:device", run_id=b1.id)]), db)
     more = db.query(M.RunCostLine).filter_by(parent_line_id=fee.id, label="more").one()
-    assert db.query(M.CostLineStepKey).filter_by(line_id=more.id).count() == 0
+    assert db.query(M.StepCost).filter_by(line_id=more.id).count() == 0
 
 
 def test_an_unlink_by_the_header_clears_its_voided_children(db, world):
@@ -2289,7 +2288,7 @@ def test_an_unlink_by_the_header_clears_its_voided_children(db, world):
     rc.split_line_core(fee.id, rc.SplitIn(replace=True, children=[
         rc.ChildIn(label="all", amount=100, plan_key="final:device", run_id=b1.id)]), db)
     T.link_costs(db, b1, step_run_ids=None, line_ids=[fee.id], unlink=True, dry_run=False)
-    assert db.query(M.CostLineStep).filter(M.CostLineStep.line_id.in_(old)).count() == 0
+    assert db.query(M.ClickCost).filter(M.ClickCost.line_id.in_(old)).count() == 0
 
 
 # --------------------------------------------- loop-until-dry round 3 (0074)
@@ -2328,13 +2327,13 @@ def test_a_header_keeps_only_the_links_another_share_still_holds(db, world):
     T.link_costs(db, b1, step_run_ids=None, line_ids=[kid["ours1"].id], unlink=True, dry_run=False)
     T.link_costs(db, b1, step_run_ids=None, step_keys=["enclose"], line_ids=[kid["ours1"].id], dry_run=False)
     T.link_costs(db, b1, step_run_ids=None, line_ids=[kid["ours2"].id], unlink=True, dry_run=False)
-    assert db.query(M.CostLineStepKey).filter_by(line_id=fee.id, run_id=b1.id).count() == 0
-    assert db.query(M.CostLineStep).filter_by(line_id=fee.id).count() == 0
+    assert db.query(M.StepCost).filter_by(line_id=fee.id, run_id=b1.id).count() == 0
+    assert db.query(M.ClickCost).filter_by(line_id=fee.id).count() == 0
     rc.split_line_core(fee.id, rc.SplitIn(children=[
         rc.ChildIn(label="extra", amount=0, plan_key="final:device", run_id=b1.id)]), db)
     extra = db.query(M.RunCostLine).filter_by(parent_line_id=fee.id, label="extra").one()
-    assert db.query(M.CostLineStepKey).filter_by(line_id=extra.id).count() == 0
-    assert db.query(M.CostLineStep).filter_by(line_id=extra.id).count() == 0
+    assert db.query(M.StepCost).filter_by(line_id=extra.id).count() == 0
+    assert db.query(M.ClickCost).filter_by(line_id=extra.id).count() == 0
 
 
 def test_a_relink_without_an_unlink_leaves_the_header_nothing_stale(db, world):
@@ -2345,11 +2344,11 @@ def test_a_relink_without_an_unlink_leaves_the_header_nothing_stale(db, world):
     b1, fee, kid = _shared_split(db, world, 131)
     T.link_costs(db, b1, step_run_ids=None, step_keys=["enclose"],
                  line_ids=[kid["ours1"].id, kid["ours2"].id], dry_run=False)
-    assert db.query(M.CostLineStepKey).filter_by(line_id=fee.id, run_id=b1.id).count() == 0
-    assert db.query(M.CostLineStep).filter_by(line_id=fee.id).count() == 0
+    assert db.query(M.StepCost).filter_by(line_id=fee.id, run_id=b1.id).count() == 0
+    assert db.query(M.ClickCost).filter_by(line_id=fee.id).count() == 0
     rows = {r["line_id"]: r for r in T.craft_view(db, b1)["linked"]}
     assert rows[kid["ours1"].id]["steps"] == ["Enclose"] and rows[kid["ours2"].id]["steps"] == ["Enclose"]
     rc.split_line_core(fee.id, rc.SplitIn(children=[
         rc.ChildIn(label="extra", amount=0, plan_key="final:device", run_id=b1.id)]), db)
     extra = db.query(M.RunCostLine).filter_by(parent_line_id=fee.id, label="extra").one()
-    assert db.query(M.CostLineStepKey).filter_by(line_id=extra.id).count() == 0
+    assert db.query(M.StepCost).filter_by(line_id=extra.id).count() == 0

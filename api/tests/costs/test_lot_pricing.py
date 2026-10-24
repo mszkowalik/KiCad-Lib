@@ -44,6 +44,7 @@ from app.services import process as P
 from app.services import run_actuals as ra
 from app.services import transfers as TR
 from app.services import twins as T
+from app.services.material_ledger import core as ledger
 
 PART, LCSC = "LP-BOX-1", "CLPBOX1"
 
@@ -110,11 +111,9 @@ def world(db):
 def _starve(db, w, qty, day="2025-01-20"):
     """A 9Sigma draw JLC bound to 7Sigma's lots, oldest first, with no transfer
     yet: 7Sigma's stock still holds the units, its lots do not."""
-    c = M.ComponentConsumption(run_id=None, component_id=w.box.id, mpn=PART, lcsc=LCSC, qty=qty,
-                               unit_cost_usd=1.0, basis="measured", consumed_at=day, company_id=w.s9.id,
-                               import_ref=f"jlc:LPX:SMT-LP-{qty}:{LCSC}")
-    db.add(c)
-    db.flush()
+    c = ledger.draw(db, run_id=None, component_id=w.box.id, mpn=PART, lcsc=LCSC, taken=qty,
+                    unit_cost_usd=1.0, basis="measured", at=day, company_id=w.s9.id,
+                    import_ref=f"jlc:LPX:SMT-LP-{qty}:{LCSC}")
     picked = L.FifoPicker(db, w.s7.id).pick(w.box.id, PART, LCSC, qty, day)
     assert picked["uncovered"] == 0
     L.bind(db, c, picked, source="reported")
@@ -123,19 +122,16 @@ def _starve(db, w, qty, day="2025-01-20"):
 
 def _bindings(db, c):
     """`[(lot key, qty, unit)]` of one draw, oldest binding first."""
-    rows = (db.query(M.ComponentConsumptionLot).filter_by(consumption_id=c.id)
-            .order_by(M.ComponentConsumptionLot.id).all())
-    return [(f"L{b.lot_line_id}" if b.lot_line_id else f"A{b.lot_adjustment_id}", b.qty, b.unit_cost_usd)
+    rows = (db.query(M.MaterialMoveLot).filter_by(move_id=c.id)
+            .order_by(M.MaterialMoveLot.id).all())
+    return [(f"L{b.lot_line_id}" if b.lot_line_id else f"A{b.lot_id}", b.qty, b.unit_cost_usd)
             for b in rows]
 
 
 def _draw(db, run, qty, day, unit=1.5, **kw):
-    c = M.ComponentConsumption(run_id=run.id if run else None, component_id=kw.pop("component_id", None),
-                               mpn=kw.pop("mpn", PART), lcsc=kw.pop("lcsc", LCSC), qty=qty, unit_cost_usd=unit,
-                               basis=kw.pop("basis", "manual"), consumed_at=day, **kw)
-    db.add(c)
-    db.flush()
-    return c
+    return ledger.draw(db, run_id=run.id if run else None, component_id=kw.pop("component_id", None),
+                       mpn=kw.pop("mpn", PART), lcsc=kw.pop("lcsc", LCSC), taken=qty, unit_cost_usd=unit,
+                       basis=kw.pop("basis", "manual"), at=day, **kw)
 
 
 def _process_run(db, w, label="LPC", qty=20):
@@ -188,7 +184,7 @@ def test_a_step_draw_is_bound_oldest_first_at_the_lots_cost(db, world, lp):
     run, stack = _process_run(db, world)
     plan = T.apply_step(db, run, step_key="pack", stack=stack, qty=15, made_at="2025-02-01", dry_run=False)
     assert plan["value_usd"] == pytest.approx(20.0)
-    c = db.query(M.ComponentConsumption).filter_by(step_run_id=plan["step_run_id"]).one()
+    c = db.query(M.Draw).filter_by(event_id=plan["step_run_id"]).one()
     assert c.unit_cost_usd == pytest.approx(20 / 15)
     assert _bindings(db, c) == [(f"L{world.a.id}", 10, 1.0), (f"L{world.b.id}", 5, 2.0)]
 
@@ -222,7 +218,7 @@ def test_a_bom_draw_is_bound_oldest_first(db, world, lp):
     run = _bom_run(db, world)
     res = ra.consume_from_bom(db, run)
     assert res.get("error") is None, res
-    c = db.query(M.ComponentConsumption).filter_by(run_id=run.id).one()
+    c = db.query(M.Draw).filter_by(run_id=run.id).one()
     assert c.unit_cost_usd == pytest.approx(20 / 15)
     assert [b[1] for b in _bindings(db, c)] == [10, 5]
 
@@ -232,7 +228,7 @@ def test_a_bom_draw_the_lots_cannot_cover_is_refused(db, world, lp, split):
     _starve(db, world, 10)
     res = ra.consume_from_bom(db, run)
     assert res["created"] == 0 and res["uncovered"][0]["uncovered"] == pytest.approx(5)
-    assert db.query(M.ComponentConsumption).filter_by(run_id=run.id).count() == 0
+    assert db.query(M.Draw).filter_by(run_id=run.id).count() == 0
 
 
 def test_a_hand_draw_takes_the_lots_cost_not_a_typed_price(db, world, lp):
@@ -241,7 +237,7 @@ def test_a_hand_draw_takes_the_lots_cost_not_a_typed_price(db, world, lp):
     out = rc.add_consumption(world.r7.id, rc.ConsumptionIn(component_id=world.box.id, qty=15, unit_cost_usd=9.99,
                                                            consumed_at="2025-02-01"), db=db)
     assert out["unit_cost_usd"] == pytest.approx(20 / 15)
-    assert [b[1] for b in _bindings(db, db.get(M.ComponentConsumption, out["id"]))] == [10, 5]
+    assert [b[1] for b in _bindings(db, db.get(M.Draw, out["id"]))] == [10, 5]
 
 
 def test_a_hand_draw_the_lots_cannot_cover_is_refused(db, world, lp, split):
@@ -261,7 +257,7 @@ def test_a_smaller_used_qty_gives_back_the_newest_binding_first(db, world, lp):
         return rc.set_used_qty(world.r7.id, rc.ConsumptionIn(component_id=world.box.id, qty=q,
                                                              consumed_at="2025-02-01"), db=db)
 
-    c = db.get(M.ComponentConsumption, used(15)["id"])
+    c = db.get(M.Draw, used(15)["id"])
     assert _bindings(db, c) == [(f"L{world.a.id}", 10, 1.0), (f"L{world.b.id}", 5, 2.0)]
     used(12)
     assert _bindings(db, c) == [(f"L{world.a.id}", 10, 1.0), (f"L{world.b.id}", 2, 2.0)]
@@ -302,7 +298,7 @@ def test_a_warehouse_pick_takes_its_lots_oldest_first(db, world, lp, split):
     assert res["refused"] == []
     w = res["written"][0]
     assert w["unit_cost_usd"] == pytest.approx(20 / 15) and w["usd"] == pytest.approx(20.0)
-    assert [b[1] for b in _bindings(db, db.get(M.ComponentConsumption, w["consumption_id"]))] == [10, 5]
+    assert [b[1] for b in _bindings(db, db.get(M.Draw, w["consumption_id"]))] == [10, 5]
 
 
 def test_a_warehouse_pick_the_lots_cannot_cover_is_refused(db, world, lp, split):
@@ -322,7 +318,7 @@ def test_a_transfer_moves_the_sender_s_lots_oldest_first(db, world, lp, split):
     x = res["lines"][0]
     assert x["unit_cost_usd"] == pytest.approx(20 / 15)
     assert "lots, oldest first" in x["price_source"]
-    sender = db.get(M.ComponentConsumption, x["sender_draw_id"])
+    sender = db.get(M.Draw, x["sender_draw_id"])
     assert _bindings(db, sender) == [(f"L{world.a.id}", 10, 1.0), (f"L{world.b.id}", 5, 2.0)]
     pos = db.get(M.RunCostLine, x["line_id"])
     assert pos.unit_price == pytest.approx(20 / 15)
@@ -376,8 +372,7 @@ def test_a_charge_still_moves_the_other_company_s_lot(db, world, lp, split):
 
     c = _draw(db, None, 10, "2025-02-01", unit=1.0, component_id=world.box.id, basis="measured",
               company_id=world.s7.id, import_ref=f"jlc:BLP1:SMT-LP-1:{LCSC}")
-    db.add(M.ComponentConsumptionLot(consumption_id=c.id, lot_line_id=world.a.id, qty=10, unit_cost_usd=1.0,
-                                     source="reported"))
+    ledger.bind(db, c, qty=10, unit_cost_usd=1.0, lot_line_id=world.a.id, source="reported")
     db.flush()
     res = jlc_apply.charge_draws(db, {"smt_order_code": "SMT-LP-1", "batch_num": "BLP1"}, world.r9.id,
                                  dry_run=False)
@@ -464,7 +459,7 @@ def test_the_register_identities_hold_before_and_after_the_history(db, world, of
 def test_with_the_switch_off_a_step_draw_takes_the_average(db, world, off):
     run, stack = _process_run(db, world)
     plan = T.apply_step(db, run, step_key="pack", stack=stack, qty=15, made_at="2025-02-01", dry_run=False)
-    c = db.query(M.ComponentConsumption).filter_by(step_run_id=plan["step_run_id"]).one()
+    c = db.query(M.Draw).filter_by(event_id=plan["step_run_id"]).one()
     assert c.unit_cost_usd == pytest.approx(1.5)
     assert _bindings(db, c) == []
 
@@ -545,7 +540,7 @@ def test_a_redo_that_collides_with_a_record_written_again_names_it(db, world, of
     _draw(db, world.r7, 2, "2025-01-15", component_id=world.box.id, import_ref="jlc:TEST:COLLIDE")
     redo = J.reverse(db, undo["reverse_batch_id"])
     assert redo["status"] == "refused"
-    assert any("collides with the present data" in b and "uq_consumption_import" in b for b in redo["blockers"])
+    assert any("collides with the present data" in b and "uq_material_draw_import" in b for b in redo["blockers"])
 
 
 def test_a_lot_priced_draw_that_shrinks_keeps_its_lots_price_with_the_switch_off(db, world, off):
@@ -558,7 +553,7 @@ def test_a_lot_priced_draw_that_shrinks_keeps_its_lots_price_with_the_switch_off
         return rc.set_used_qty(world.r7.id, rc.ConsumptionIn(component_id=world.box.id, qty=q,
                                                              consumed_at="2025-02-01"), db=db)
 
-    c = db.get(M.ComponentConsumption, used(15)["id"])
+    c = db.get(M.Draw, used(15)["id"])
     L.bind_history(db, dry_run=False)
     assert c.unit_cost_usd == pytest.approx(20 / 15)
     used(8)
@@ -582,7 +577,7 @@ def test_an_undo_that_takes_a_lot_away_under_a_live_draw_is_refused(db, world, o
         db.add(lot_c)
         db.flush()
     d = _draw(db, world.r7, 15, "2025-01-20", component_id=world.box.id)
-    L.bind(db, d, {"bindings": [{"lot_line_id": lot_c.id, "lot_adjustment_id": None, "qty": 15,
+    L.bind(db, d, {"bindings": [{"lot_line_id": lot_c.id, "lot_id": None, "qty": 15,
                                  "unit_cost_usd": 3.0}]})
     res = J.reverse(db, h["batch_id"])
     assert res["status"] == "refused"
@@ -610,12 +605,12 @@ def test_a_lot_priced_draw_corrected_back_takes_its_lots_again_with_the_switch_o
         return rc.set_used_qty(world.r7.id, rc.ConsumptionIn(component_id=world.box.id, qty=q,
                                                              consumed_at="2025-02-01"), db=db)
 
-    c = db.get(M.ComponentConsumption, used(15)["id"])
+    c = db.get(M.Draw, used(15)["id"])
     L.bind_history(db, dry_run=False)
     used(8)
     used(15)
     assert _bindings(db, c) == [(f"L{world.a.id}", 8, 1.0), (f"L{world.a.id}", 2, 1.0), (f"L{world.b.id}", 5, 2.0)]
-    assert c.unit_cost_usd * c.qty == pytest.approx(20.0)
+    assert c.unit_cost_usd * c.taken == pytest.approx(20.0)
     assert L.untraced(db) == [] or all(x[0].id != c.id for x in L.untraced(db))
 
 
@@ -645,20 +640,16 @@ def test_an_invoice_edit_that_takes_a_lot_from_its_draws_is_refused(db, world, o
 def test_deleting_an_adjustment_its_draws_hold_is_refused(db, world, off):
     from app.routers import run_costs as rc
 
-    a = M.ComponentStockAdjustment(component_id=world.box.id, mpn=PART, lcsc=LCSC, qty_delta=20, unit_cost_usd=0.5,
-                                   reason="opening_balance", adjusted_at="2025-01-02", company_id=world.s7.id)
-    db.add(a)
-    db.flush()
+    a = ledger.adjustment(db, component_id=world.box.id, mpn=PART, lcsc=LCSC, qty=20, unit_cost_usd=0.5,
+                          reason="opening_balance", at="2025-01-02", company_id=world.s7.id)
     d = _draw(db, world.r7, 5, "2025-01-20", component_id=world.box.id)
-    L.bind(db, d, {"bindings": [{"lot_line_id": None, "lot_adjustment_id": a.id, "qty": 5, "unit_cost_usd": 0.5}]})
+    L.bind(db, d, {"bindings": [{"lot_line_id": None, "lot_id": a.lot_id, "qty": 5, "unit_cost_usd": 0.5}]})
     with pytest.raises(HTTPException) as e:
         rc.delete_adjustment(a.id, db=db)
     assert e.value.status_code == 409 and f"#{d.id}" in str(e.value.detail)
-    free = M.ComponentStockAdjustment(component_id=world.box.id, mpn=PART, lcsc=LCSC, qty_delta=30,
-                                      unit_cost_usd=0.5, reason="opening_balance", adjusted_at="2025-01-02",
-                                      company_id=world.s7.id)
-    db.add(free)
-    db.flush()
+    free = ledger.adjustment(db, component_id=world.box.id, mpn=PART, lcsc=LCSC, qty=30,
+                             unit_cost_usd=0.5, reason="opening_balance", at="2025-01-02",
+                             company_id=world.s7.id)
     _draw(db, world.r7, 40, "2025-01-25", component_id=world.box.id)   # the pool needs that stock now
     with pytest.raises(HTTPException) as e:
         rc.delete_adjustment(free.id, db=db)
@@ -702,7 +693,7 @@ def test_a_re_split_that_voids_a_bound_child_is_refused(db, world, off):
     rc.split_line_core(world.a.id, rc.SplitIn(allow_parts=True, children=[child("c1", 6), child("c2", 4)]), db)
     c1, c2 = (db.query(M.RunCostLine).filter_by(parent_line_id=world.a.id, label=x).one() for x in ("c1", "c2"))
     d = _draw(db, world.r7, 5, "2025-02-05", component_id=world.box.id)
-    L.bind(db, d, {"bindings": [{"lot_line_id": c1.id, "lot_adjustment_id": None, "qty": 5, "unit_cost_usd": 1.0}]})
+    L.bind(db, d, {"bindings": [{"lot_line_id": c1.id, "lot_id": None, "qty": 5, "unit_cost_usd": 1.0}]})
     with pytest.raises(HTTPException) as e:
         rc.split_line_core(world.a.id, rc.SplitIn(allow_parts=True, replace=True,
                                                   children=[child("c2", 4, c2.id), child("c3", 6)]), db)
@@ -743,7 +734,7 @@ def test_a_jlc_refresh_ignores_the_lots_of_a_voided_draw(db, world, off):
     db.add(lot)
     db.flush()
     d = _draw(db, world.r7, 5, "2025-02-05", component_id=world.box.id)
-    L.bind(db, d, {"bindings": [{"lot_line_id": lot.id, "lot_adjustment_id": None, "qty": 5, "unit_cost_usd": 1.0}]})
+    L.bind(db, d, {"bindings": [{"lot_line_id": lot.id, "lot_id": None, "qty": 5, "unit_cost_usd": 1.0}]})
     d.voided_at = datetime.now(UTC)
     db.flush()
     base = {"lot_ref": "testj8-1", "plan_key": "parts:pool", "label": "J8 box", "unit_price": 1.0, "lcsc": LCSC,

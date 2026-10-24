@@ -20,6 +20,7 @@ from ..services import (cost_steps, customs, doc_kinds, document_files, journal,
                         substitutions, supplier_parts)
 from ..services import companies as company_svc
 from ..services.invoicing.amounts import d2
+from ..services.material_ledger import core as ledger
 from .util import acting_name, audit, part_display_name
 
 router = APIRouter(prefix="/api", tags=["run-costs"])
@@ -783,8 +784,8 @@ def _check_destination(db: Session, run_id: int | None, project_id: int | None) 
 def _check_transformation(db: Session, step: str | None, transformation_id: int | None,
                           run_id: int | None, project_id: int | None,
                           allocate: str | None) -> None:
-    """A conversion cost (decision 0058 §4) goes to exactly one live
-    transformation and nowhere else.
+    """A conversion cost (decision 0058 §4) goes to exactly one live make (a
+    transformation; `transformation_id` names the make event) and nowhere else.
 
     It may not be a STOCK position: stickers bought by the roll are an ordinary
     pooled purchase that the sticker transformation draws, and a stock line
@@ -792,7 +793,7 @@ def _check_transformation(db: Session, step: str | None, transformation_id: int 
     lot's conversion value."""
     if transformation_id is None:
         return
-    t = db.get(M.ProcessTransformation, transformation_id)
+    t = db.get(M.Make, transformation_id)
     if t is None:
         raise HTTPException(404, f"no transformation {transformation_id}")
     if t.voided_at is not None:
@@ -1537,7 +1538,7 @@ def split_line_core(line_id: int, body: SplitIn, db: Session) -> dict:
             for d in gone[1:]:
                 d.voided_at = utcnow()
             # A voided line pays for nothing: its whole-step links go with it.
-            for k in db.query(M.CostLineStepKey).filter(M.CostLineStepKey.line_id.in_([x.id for x in gone])).all():
+            for k in db.query(M.StepCost).filter(M.StepCost.line_id.in_([x.id for x in gone])).all():
                 db.delete(k)
         existing = [c for c in existing if c.id in named]
 
@@ -1632,12 +1633,12 @@ def split_line_core(line_id: int, body: SplitIn, db: Session) -> dict:
     db.flush()
     # Decisions 0060/0061: a child keeps the step clicks its parent paid for,
     # unless it is charged to another batch than the parent.
-    parent_links = [srid for (srid,) in db.query(M.CostLineStep.step_run_id).filter_by(line_id=parent.id).all()]
+    parent_links = [srid for (srid,) in db.query(M.ClickCost.event_id).filter_by(line_id=parent.id).all()]
     parent_dest = run_actuals.line_destination(parent, doc)
     # So does a whole-step link (decision 0074). The parent keeps its own: a
     # header is valued at zero, so its links move no money, and it stays the
     # one source for a later re-split, at any depth.
-    parent_keys = [(k.run_id, k.step_key) for k in db.query(M.CostLineStepKey).filter_by(line_id=parent.id).all()]
+    parent_keys = [(k.run_id, k.step_key) for k in db.query(M.StepCost).filter_by(line_id=parent.id).all()]
     # A whole-step link means every click of the step, the ones recorded since
     # the parent became a header too (a header is no charged line, so it was
     # never linked to them).
@@ -1649,9 +1650,9 @@ def split_line_core(line_id: int, body: SplitIn, db: Session) -> dict:
     for ch in made:
         if (parent_links or parent_keys) and run_actuals.line_destination(ch, doc) == parent_dest:
             for srid in parent_links:
-                db.add(M.CostLineStep(line_id=ch.id, step_run_id=srid))
+                db.add(M.ClickCost(line_id=ch.id, event_id=srid))
             for rid, key in parent_keys:
-                db.add(M.CostLineStepKey(line_id=ch.id, run_id=rid, step_key=key))
+                db.add(M.StepCost(line_id=ch.id, run_id=rid, step_key=key))
     db.flush()
     audit(db, "run.cost_line.split", "run_cost_line", parent.id, {
         "document_id": doc.id, "label": parent.label, "parent_amount": round(parent_amount, 4),
@@ -1839,8 +1840,8 @@ def get_actuals(run_id: int, db: Session = Depends(get_db)):
 @router.get("/runs/{run_id}/consumption")
 def list_consumption(run_id: int, db: Session = Depends(get_db)):
     _run(db, run_id)
-    rows = run_actuals.live_consumption(db, run_id=run_id).order_by(
-        M.ComponentConsumption.id).all()
+    rows = run_actuals.live_consumption(db, run_id=run_id).order_by(M.Draw.id).all()
+    kinds = ledger.event_kinds(db, [c.event_id for c in rows])
     # Lot children, so the UI can render one averaged row OR one row per lot from
     # a single fetch. The parent's `unit_cost_usd` is the qty-weighted average of
     # these, so both views total the same figure and switching cannot change a
@@ -1853,11 +1854,11 @@ def list_consumption(run_id: int, db: Session = Depends(get_db)):
             .join(M.RunCostDocument, M.RunCostDocument.id == M.RunCostLine.document_id)
             .filter(M.RunCostLine.lot_ref != "").all()
         }
-        for b in (db.query(M.ComponentConsumptionLot)
-                  .filter(M.ComponentConsumptionLot.consumption_id.in_([c.id for c in rows]))
-                  .order_by(M.ComponentConsumptionLot.id).all()):
+        for b in (db.query(M.MaterialMoveLot)
+                  .filter(M.MaterialMoveLot.move_id.in_([c.id for c in rows]))
+                  .order_by(M.MaterialMoveLot.id).all()):
             ref, order = line_labels.get(b.lot_line_id or -1, ("", ""))
-            lots_by_cons.setdefault(b.consumption_id, []).append({
+            lots_by_cons.setdefault(b.move_id, []).append({
                 "id": b.id, "qty": b.qty, "unit_cost_usd": b.unit_cost_usd,
                 "total_usd": round((b.qty or 0) * (b.unit_cost_usd or 0), 4),
                 "source": b.source, "ext_ref": b.ext_ref or ref,
@@ -1865,11 +1866,13 @@ def list_consumption(run_id: int, db: Session = Depends(get_db)):
             })
     return [
         {"id": c.id, "component_id": c.component_id, "mpn": c.mpn, "lcsc": c.lcsc,
-         "qty": c.qty, "unit_cost_usd": c.unit_cost_usd, "basis": c.basis,
-         "consumed_at": c.consumed_at, "note": c.note,
-         "total_usd": round((c.qty or 0) * (c.unit_cost_usd or 0), 4),
+         "qty": c.taken, "unit_cost_usd": c.unit_cost_usd, "basis": c.basis,
+         "consumed_at": c.at, "note": c.note,
+         "total_usd": round(c.taken * (c.unit_cost_usd or 0), 4),
          # A step's draw goes with its step, and cannot be removed on its own.
-         "step_run_id": c.step_run_id, "transformation_id": c.transformation_id,
+         # The API's keys: the click or the make the draw belongs to.
+         "step_run_id": c.event_id if kinds.get(c.event_id) == "step" else None,
+         "transformation_id": c.event_id if kinds.get(c.event_id) == "make" else None,
          "lots": lots_by_cons.get(c.id, [])}
         for c in rows
     ]
@@ -1942,21 +1945,18 @@ def add_consumption(run_id: int, body: ConsumptionIn, db: Session = Depends(get_
                                            "(decision 0073)", "uncovered": uncovered})
     if want.get("bindings"):
         unit = want["unit_cost_usd"]
-    c = M.ComponentConsumption(
-        run_id=run_id,
+    c = ledger.draw(
+        db, run_id=run_id,
         component_id=(pool or {}).get("component_id") or body.component_id,
         mpn=(pool or {}).get("mpn") or body.mpn,
         lcsc=(pool or {}).get("lcsc") or body.lcsc,
-        qty=body.qty, unit_cost_usd=unit, basis=body.basis,
-        consumed_at=body.consumed_at or run.run_date or "", note=body.note,
-    )
-    db.add(c)
+        taken=body.qty, unit_cost_usd=unit, basis=body.basis,
+        at=body.consumed_at or run.run_date or "", note=body.note, actor=acting_name())
     if want.get("bindings"):
-        db.flush()
         lots_svc.bind(db, c, want)
     db.flush()
-    audit(db, "run.consumption.add", "component_consumption", c.id, {
-        "run_id": run_id, "qty": c.qty, "unit_cost_usd": c.unit_cost_usd, "basis": c.basis,
+    audit(db, "run.consumption.add", "draw", c.id, {
+        "run_id": run_id, "qty": c.taken, "unit_cost_usd": c.unit_cost_usd, "basis": c.basis,
     })
     db.commit()
     return {"id": c.id, "unit_cost_usd": c.unit_cost_usd, "basis": c.basis}
@@ -1996,7 +1996,7 @@ def set_used_qty(run_id: int, body: ConsumptionIn, db: Session = Depends(get_db)
         raise HTTPException(409, {
             "error": "JLC reported this draw itself — it is a measurement, not ours to retype",
             "consumption_ids": [c.id for c in measured],
-            "qty": sum(c.qty or 0 for c in measured),
+            "qty": sum(c.taken for c in measured),
             "hint": "correct it by reversing the import that wrote it"})
     mine = [c for c in live if c.basis != "measured"]
     if len(mine) > 1:
@@ -2007,7 +2007,7 @@ def set_used_qty(run_id: int, body: ConsumptionIn, db: Session = Depends(get_db)
             "hint": "delete the extras, then set the quantity once"})
 
     row = mine[0] if mine else None
-    was = row.qty if row else 0.0
+    was = row.taken if row else 0.0
     if qty > was:
         # Only the INCREASE can overdraw; shrinking a draw always gives back.
         short = run_actuals.check_shortages(db, [{
@@ -2020,8 +2020,8 @@ def set_used_qty(run_id: int, body: ConsumptionIn, db: Session = Depends(get_db)
     if qty <= 0:
         if row is None:
             return {"status": "unchanged", "qty": 0.0}
-        audit(db, "run.consumption.delete", "component_consumption", row.id,
-              {"run_id": run_id, "qty": row.qty, "reason": "used qty set to zero"})
+        audit(db, "run.consumption.delete", "draw", row.id,
+              {"run_id": run_id, "qty": row.taken, "reason": "used qty set to zero"})
         db.delete(row)
         db.commit()
         return {"status": "removed", "qty": 0.0}
@@ -2051,16 +2051,14 @@ def set_used_qty(run_id: int, body: ConsumptionIn, db: Session = Depends(get_db)
                                                "(decision 0073)", "uncovered": uncovered})
         if want.get("bindings"):
             unit = want["unit_cost_usd"]
-        row = M.ComponentConsumption(
-            run_id=run_id, component_id=pool.get("component_id"),
+        row = ledger.draw(
+            db, run_id=run_id, component_id=pool.get("component_id"),
             mpn=pool.get("mpn") or body.mpn, lcsc=pool.get("lcsc") or body.lcsc,
-            qty=qty, unit_cost_usd=unit, basis="manual",
-            consumed_at=body.consumed_at or run.run_date or "", note=body.note)
-        db.add(row)
-        db.flush()
+            taken=qty, unit_cost_usd=unit, basis="manual",
+            at=body.consumed_at or run.run_date or "", note=body.note, actor=acting_name())
         if want.get("bindings"):
             lots_svc.bind(db, row, want)
-        audit(db, "run.consumption.add", "component_consumption", row.id,
+        audit(db, "run.consumption.add", "draw", row.id,
               {"run_id": run_id, "qty": qty, "unit_cost_usd": row.unit_cost_usd,
                "basis": "manual", "note": "counted at end of production"})
         db.commit()
@@ -2078,17 +2076,17 @@ def set_used_qty(run_id: int, body: ConsumptionIn, db: Session = Depends(get_db)
 
     # Decision 0073: a bound draw that grows takes the next lots oldest first,
     # one that shrinks gives back its newest bindings, and it is priced again.
-    uncovered = lots_svc.resize_bound(db, row, qty, as_of=row.consumed_at or run.run_date or "",
+    uncovered = lots_svc.resize_bound(db, row, qty, as_of=row.at or run.run_date or "",
                                       company_id=run_actuals.run_scope(db, run))
     if uncovered:
         raise HTTPException(409, {"error": f"{lots_svc.short_text(uncovered)} — enter the missing purchase "
                                            "(decision 0073)", "uncovered": uncovered})
-    row.qty = qty
+    row.taken = qty
     was_basis = row.basis
     row.basis = "manual"
     if body.note:
         row.note = body.note[:500]
-    audit(db, "run.consumption.update", "component_consumption", row.id,
+    audit(db, "run.consumption.update", "draw", row.id,
           {"run_id": run_id, "before": {"qty": was, "basis": was_basis},
            "after": {"qty": qty, "basis": row.basis}})
     db.commit()
@@ -2115,10 +2113,10 @@ def consume_bom(run_id: int, db: Session = Depends(get_db)):
 
 @router.delete("/consumption/{cons_id}")
 def delete_consumption(cons_id: int, db: Session = Depends(get_db)):
-    c = db.get(M.ComponentConsumption, cons_id)
+    c = db.get(M.Draw, cons_id)
     if c is None:
         raise HTTPException(404, "consumption not found")
-    if c.step_run_id or c.transformation_id:
+    if ledger.event_kinds(db, [c.event_id]).get(c.event_id) in ("step", "make"):
         # A step that happened is history (decision 0059): its draw goes with it.
         raise HTTPException(409, "this draw belongs to a process step or a prepared part — "
                                  "correct the step, not the draw")
@@ -2127,8 +2125,8 @@ def delete_consumption(cons_id: int, db: Session = Depends(get_db)):
         # would hand the receiver stock the sender never gave.
         raise HTTPException(409, "this draw is the sender's side of an in-house transfer — "
                                  "reverse the transfer on the Transfers page")
-    audit(db, "run.consumption.delete", "component_consumption", cons_id,
-          {"run_id": c.run_id, "qty": c.qty, "unit_cost_usd": c.unit_cost_usd})
+    audit(db, "run.consumption.delete", "draw", cons_id,
+          {"run_id": c.run_id, "qty": c.taken, "unit_cost_usd": c.unit_cost_usd})
     db.delete(c)
     db.commit()
     return {"deleted": cons_id}
@@ -2151,10 +2149,11 @@ def set_draw_company(cons_id: int, body: DrawCompanyIn, db: Session = Depends(ge
     the rest must be in the named company's stock on the draw's date."""
     from ..services import transfers
 
-    c = db.get(M.ComponentConsumption, cons_id)
+    c = db.get(M.Draw, cons_id)
     if c is None or c.voided_at is not None:
         raise HTTPException(404, "consumption not found")
-    if c.run_id or c.step_run_id or c.transformation_id or c.transfer_line_id:
+    if (c.run_id or c.transfer_line_id
+            or ledger.event_kinds(db, [c.event_id]).get(c.event_id) in ("step", "make")):
         raise HTTPException(409, "only an uncharged draw is given a company by hand — a batch's "
                                  "draw takes the batch's company")
     company_svc.get(db, body.company_id)
@@ -2174,17 +2173,19 @@ def set_draw_company(cons_id: int, body: DrawCompanyIn, db: Session = Depends(ge
             c.company_id = body.company_id
             db.flush()
             res = {"dry_run": False, "receiver_id": body.company_id, "transfers": [], "shortages": []}
-    audit(db, "run.consumption.company", "component_consumption", c.id,
+    audit(db, "run.consumption.company", "draw", c.id,
           {"company_id": body.company_id, "transfers": res.get("written", []), "batch_id": h["batch_id"]})
     db.commit()
     return {**res, "batch_id": h["batch_id"]}
 
 
-def _adjustment_json(a: M.ComponentStockAdjustment) -> dict:
+def _adjustment_json(a: M.Adjustment) -> dict:
+    """An adjustment, in the API's words (`qty_delta`, `charge_run_id`,
+    `adjusted_at`)."""
     return {"id": a.id, "project_id": a.project_id, "component_id": a.component_id,
-            "mpn": a.mpn, "lcsc": a.lcsc, "qty_delta": a.qty_delta,
+            "mpn": a.mpn, "lcsc": a.lcsc, "qty_delta": a.qty,
             "unit_cost_usd": a.unit_cost_usd, "reason": a.reason,
-            "charge_run_id": a.charge_run_id, "adjusted_at": a.adjusted_at,
+            "charge_run_id": a.run_id, "adjusted_at": a.at,
             "import_ref": a.import_ref or "", "actor": a.actor or "", "note": a.note}
 
 
@@ -2199,22 +2200,22 @@ def list_all_adjustments(reason: str = "", db: Session = Depends(get_db)):
     (2026-07-28). An adjustment moves stock without an invoice behind it, so it is
     the least evidenced write in the system and must be the easiest to audit.
     """
-    q = db.query(M.ComponentStockAdjustment)
+    q = db.query(M.Adjustment)
     if reason:
-        q = q.filter(M.ComponentStockAdjustment.reason == reason)
-    rows = q.order_by(M.ComponentStockAdjustment.id.desc()).all()
+        q = q.filter(M.Adjustment.reason == reason)
+    rows = q.order_by(M.Adjustment.id.desc()).all()
     return {
         "adjustments": [_adjustment_json(a) for a in rows],
         "totals": {
             "count": len(rows),
-            "qty_added": sum(a.qty_delta for a in rows if (a.qty_delta or 0) > 0),
-            "qty_removed": sum(a.qty_delta for a in rows if (a.qty_delta or 0) < 0),
+            "qty_added": sum(a.qty for a in rows if (a.qty or 0) > 0),
+            "qty_removed": sum(a.qty for a in rows if (a.qty or 0) < 0),
             "by_reason": {r: sum(1 for a in rows if a.reason == r)
                           for r in sorted({a.reason for a in rows})},
             # Stock conjured with no cost attached. Legitimate for a genuine opening
             # balance; otherwise it is quantity with no money behind it, which no
             # value identity can ever notice.
-            "zero_cost_positive": sum(1 for a in rows if (a.qty_delta or 0) > 0
+            "zero_cost_positive": sum(1 for a in rows if (a.qty or 0) > 0
                                       and not a.unit_cost_usd),
         },
     }
@@ -2222,12 +2223,11 @@ def list_all_adjustments(reason: str = "", db: Session = Depends(get_db)):
 
 @router.get("/projects/{project_id}/stock-adjustments")
 def list_adjustments(project_id: int, db: Session = Depends(get_db)):
-    rows = db.query(M.ComponentStockAdjustment).filter_by(project_id=project_id).order_by(
-        M.ComponentStockAdjustment.id).all()
+    rows = db.query(M.Adjustment).filter_by(project_id=project_id).order_by(M.Adjustment.id).all()
     return [
         {"id": a.id, "component_id": a.component_id, "mpn": a.mpn, "lcsc": a.lcsc,
-         "qty_delta": a.qty_delta, "unit_cost_usd": a.unit_cost_usd, "reason": a.reason,
-         "charge_run_id": a.charge_run_id, "adjusted_at": a.adjusted_at, "note": a.note,
+         "qty_delta": a.qty, "unit_cost_usd": a.unit_cost_usd, "reason": a.reason,
+         "charge_run_id": a.run_id, "adjusted_at": a.at, "note": a.note,
          "company_id": a.company_id}
         for a in rows
     ]
@@ -2240,35 +2240,42 @@ def add_adjustment(project_id: int, body: AdjustmentIn, db: Session = Depends(ge
     if body.reason not in REASONS:
         raise HTTPException(422, f"reason must be one of {sorted(REASONS)}")
     charged = _run(db, body.charge_run_id) if body.charge_run_id is not None else None
-    a = M.ComponentStockAdjustment(project_id=project_id, **body.model_dump())
-    a.actor = acting_name()
-    # Whose stock moves (decision 0064): stated, else derived — and fixed now,
-    # because the pinned price below is read from that company's stock.
-    if a.company_id is not None:
-        company_svc.get(db, a.company_id)
-        if charged is not None and charged.company_id and charged.company_id != a.company_id:
+    # Whose stock moves (decision 0064): stated, else derived — the charged
+    # batch's company, else the project's owner on the day
+    # (`companies.stock_company_for`) — and fixed now, because the pinned price
+    # below is read from that company's stock.
+    company_id = body.company_id
+    if company_id is not None:
+        company_svc.get(db, company_id)
+        if charged is not None and charged.company_id and charged.company_id != company_id:
             # A batch's loss is a loss of the stock the batch draws from.
             raise HTTPException(422, f"{charged.label} draws from its own company's stock; "
                                      "a loss charged to it is that company's")
+    elif charged is not None:
+        company_id = charged.company_id
     else:
-        a.company_id = company_svc.stock_company_for(db, a)
+        owner = company_svc.owner_on(db, project_id, body.adjusted_at or None)
+        company_id = owner.id if owner else None
     # PIN the unit cost when the loss is charged to a batch (decision 0044).
     # NULL means "price it from the pool", and `run_actuals` resolved that
     # against the average as it stands ON EVERY READ — so a write-off kept being
     # re-priced by purchases made after it, and a 2024 attrition row was carrying
     # a 2026 average. The average AT THE ADJUSTMENT'S OWN DATE is what it should
     # always have been, and pinning it is what makes it stay.
-    if a.unit_cost_usd is None and a.charge_run_id is not None:
+    unit = body.unit_cost_usd
+    if unit is None and body.charge_run_id is not None:
         entry = run_actuals.resolve_pool_identity(
-            db, a.component_id, a.mpn or "", a.lcsc or "",
-            as_of=a.adjusted_at or None,
-            company_id=run_actuals.stock_scope(db, a.company_id))
-        a.unit_cost_usd = float((entry or {}).get("avg_usd") or 0.0)
-    db.add(a)
-    db.flush()
-    audit(db, "run.stock_adjustment.add", "component_stock_adjustment", a.id, {
-        "project_id": project_id, "qty_delta": a.qty_delta, "reason": a.reason,
-        "charge_run_id": a.charge_run_id,
+            db, body.component_id, body.mpn or "", body.lcsc or "",
+            as_of=body.adjusted_at or None,
+            company_id=run_actuals.stock_scope(db, company_id))
+        unit = float((entry or {}).get("avg_usd") or 0.0)
+    a = ledger.adjustment(
+        db, component_id=body.component_id, mpn=body.mpn, lcsc=body.lcsc, qty=body.qty_delta,
+        unit_cost_usd=unit, reason=body.reason, run_id=body.charge_run_id, project_id=project_id,
+        company_id=company_id, at=body.adjusted_at, note=body.note, actor=acting_name())
+    audit(db, "run.stock_adjustment.add", "adjustment", a.id, {
+        "project_id": project_id, "qty_delta": a.qty, "reason": a.reason,
+        "charge_run_id": a.run_id,
     })
     db.commit()
     return {"id": a.id}
@@ -2279,35 +2286,40 @@ def delete_adjustment(adj_id: int, db: Session = Depends(get_db)):
     """Adjustments are corrections, and corrections themselves get corrected —
     a reconciliation pass that re-derives opening balances must be able to
     retract its own earlier rows. Audited like every money mutation."""
-    a = db.get(M.ComponentStockAdjustment, adj_id)
+    a = db.get(M.Adjustment, adj_id)
     if a is None:
         raise HTTPException(404, "adjustment not found")
-    if (a.qty_delta or 0.0) > 0:
+    lot = None
+    if (a.qty or 0.0) > 0:
         # A positive adjustment is stock and a lot (decision 0073): deleting
         # it is a purchase loss, and the draws bound to it would hold a lot
-        # that no longer exists. A transformation's output goes with its void.
+        # that no longer exists. A make's output goes with its void.
         from ..services import lots as lots_svc
 
-        if a.transformation_id or db.query(M.ProcessTransformation.id).filter(
-                M.ProcessTransformation.output_adjustment_id == a.id,
-                M.ProcessTransformation.voided_at.is_(None)).first():
+        if ledger.event_kinds(db, [a.event_id]).get(a.event_id) == "make" or (
+                a.lot_id and db.query(M.Make.id).filter(M.Make.output_lot_id == a.lot_id,
+                                                        M.Make.voided_at.is_(None)).first()):
             raise HTTPException(409, "this adjustment is a transformation's output — void the transformation "
                                      "instead (Stock → Prepared parts)")
-        q, draws = lots_svc.bound_on(db, adjustment_ids=[a.id]).get(lots_svc._lot_key("A", a.id), (0.0, []))
-        if q > lots_svc.CLOSED_EPS:
-            raise HTTPException(409, f"draws {', '.join(f'#{d}' for d in draws[:4])} hold {q:g} of this "
-                                     "adjustment's stock — reduce or void those draws first")
+        if a.lot_id:
+            q, draws = lots_svc.bound_on(db, lot_ids=[a.lot_id]).get(lots_svc._lot_key("A", a.lot_id), (0.0, []))
+            if q > lots_svc.CLOSED_EPS:
+                raise HTTPException(409, f"draws {', '.join(f'#{d}' for d in draws[:4])} hold {q:g} of this "
+                                         "adjustment's stock — reduce or void those draws first")
+            lot = db.get(M.MaterialLot, a.lot_id)
         _guard_purchase_loss(db, [{"component_id": a.component_id, "mpn": a.mpn or "", "lcsc": a.lcsc or "",
-                                   "qty": a.qty_delta, "date": a.adjusted_at or "",
+                                   "qty": a.qty, "date": a.at or "",
                                    "label": a.mpn or a.lcsc or f"adjustment {a.id}",
                                    "company_id": run_actuals.stock_scope(db, a.company_id)}],
                              "deleting this adjustment")
-    audit(db, "run.stock_adjustment.delete", "component_stock_adjustment", adj_id, {
+    audit(db, "run.stock_adjustment.delete", "adjustment", adj_id, {
         "project_id": a.project_id, "component_id": a.component_id, "mpn": a.mpn,
-        "qty_delta": a.qty_delta, "reason": a.reason, "charge_run_id": a.charge_run_id,
+        "qty_delta": a.qty, "reason": a.reason, "charge_run_id": a.run_id,
         "note": (a.note or "")[:200],
     })
     db.delete(a)
+    if lot is not None:
+        db.delete(lot)   # the stored lot it made goes with it
     db.commit()
     return {"deleted": adj_id}
 

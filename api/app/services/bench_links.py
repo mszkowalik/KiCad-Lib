@@ -68,8 +68,8 @@ def link_by_topic(db: Session, project_id: int, *, dry_run: bool = True) -> dict
             r.attempt_no = attempts[d.id]
     if not dry_run:
         db.flush()
-    twins = ({tw.device_unit_id: tw.status for tw in db.query(M.Twin)
-              .filter(M.Twin.device_unit_id.in_({x["device_id"] for x in linked})).all()} if linked else {})
+    twins = ({tw.device_unit_id: tw.status for tw in db.query(M.Unit)
+              .filter(M.Unit.device_unit_id.in_({x["device_id"] for x in linked})).all()} if linked else {})
     return {"dry_run": dry_run, "project_id": project_id, "runs": len(rows), "linked": linked,
             "by_batch": dict(sorted(batches.items())),
             "devices_with_an_active_twin": sorted({did for did, st in twins.items() if st == "active"}),

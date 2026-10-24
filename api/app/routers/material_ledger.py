@@ -1,7 +1,7 @@
-"""The material ledger's shadow and its parity checks (decision 0097, phase 1).
+"""The material ledger's admin surface (decisions 0097, 0098): its size, and
+the state maps that say an internal part is a state of another item.
 
-Admin only: the shadow is rebuilt archive-wide, like the datasheet jobs, and
-a state map rewrites how every lot of a part is read. Rules in
+Admin only: a state map changes how every lot of a part will be read. Rules in
 docs/reference/material-ledger.md.
 """
 from __future__ import annotations
@@ -13,44 +13,21 @@ from sqlalchemy.orm import Session
 
 from .. import models as M
 from ..db import get_db
-from ..services.material_ledger import parity, project
 from .users import require_admin
 from .util import acting_name, audit, col_cap
 
 router = APIRouter(prefix="/api/material-ledger", tags=["material-ledger"])
 
 _COUNTED = (M.MaterialItem, M.MaterialStateMap, M.MaterialEvent, M.MaterialLot, M.MaterialMove,
-            M.MaterialEventLot, M.MaterialLink, M.MaterialProperty, M.MaterialCostAim)
+            M.MaterialMoveLot, M.MaterialEventLot, M.MaterialLink, M.MaterialProperty, M.MaterialCostAim)
 
 
 @router.get("/summary")
 def summary(db: Session = Depends(get_db), _admin: M.User = Depends(require_admin)):
-    """Row counts of the shadow, and the items by tracking level."""
+    """Row counts of the ledger, and the items by tracking level."""
     return {"rows": {m.__tablename__: db.query(func.count(m.id)).scalar() for m in _COUNTED},
             "tracking": dict(db.query(M.MaterialItem.tracking, func.count(M.MaterialItem.id))
                              .group_by(M.MaterialItem.tracking).all())}
-
-
-@router.post("/rebuild")
-def rebuild(db: Session = Depends(get_db), _admin: M.User = Depends(require_admin)):
-    """Empty the shadow and project it again from today's tables."""
-    out = project.rebuild(db)
-    db.commit()
-    return out
-
-
-class ParityIn(BaseModel):
-    rebuild: bool = True
-
-
-@router.post("/parity")
-def check(body: ParityIn | None = None, db: Session = Depends(get_db),
-          _admin: M.User = Depends(require_admin)):
-    """Rebuild the shadow (unless `rebuild` is false) and compare it with
-    today's figures: stock, lots, clicks, batches, units, devices."""
-    out = parity.check(db, rebuild=(body.rebuild if body else True))
-    db.commit()
-    return out
 
 
 @router.get("/state-maps")

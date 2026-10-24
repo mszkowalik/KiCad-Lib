@@ -3372,7 +3372,7 @@ def get_shipment(shipment_id: int, check_steps: bool = True) -> str:
                            "order_line_id": d.get("order_line_id")} for d in devs]
         if check_steps and devs:
             ids = [d["device_id"] for d in devs]
-            twins = db.query(M.Twin).filter(M.Twin.device_unit_id.in_(ids)).all()
+            twins = db.query(M.Unit).filter(M.Unit.device_unit_id.in_(ids)).all()
             done = T.done_steps(db, [t.id for t in twins])
             serial = {d["device_id"]: d.get("serial") for d in devs}
             keys: dict[str, str] = {}
@@ -3458,7 +3458,7 @@ def find_device(code: str) -> str:
         d = _device_by_code(db, code)
         if d is None or not _caller_owns(db, "device_ids", d.id):
             return json.dumps({"error": f"no device for {code!r}"})
-        tw = db.query(M.Twin).filter_by(device_unit_id=d.id).first()
+        tw = db.query(M.Unit).filter_by(device_unit_id=d.id).first()
         twin = None
         if tw is not None:
             done = T.done_steps(db, [tw.id])[tw.id]
@@ -3616,7 +3616,7 @@ def row_history(table: str, row_id: int) -> str:
     made it: how to find what a deleted record held and which request to undo.
 
     Args:
-        table: The table, e.g. "run_cost_lines", "comments", "twins".
+        table: The table, e.g. "run_cost_lines", "comments", "material_lots".
         row_id: The row's id.
     """
     from . import row_changes as rc

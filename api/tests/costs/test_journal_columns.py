@@ -23,23 +23,33 @@ from app.db import Base
 from app.services import journal as J
 
 FROZEN: dict[str, set[str]] = {
-    "component_consumption_lots": {
-        "consumption_id", "created_at", "ext_ref", "id", "lot_adjustment_id", "lot_line_id", "note",
-        "qty", "source", "unit_cost_usd"
+    # The material ledger's tables (decisions 0097, 0098), whole, as they were
+    # when the cut-over made them the only storage of stock, work and units.
+    "material_cost_aims": {
+        "created_at", "event_id", "id", "kind", "line_id", "run_id", "step_key"
     },
-    "component_consumptions": {
-        "basis", "component_id", "consumed_at", "created_at", "id", "import_ref", "lcsc", "mpn",
-        "note", "qty", "run_id", "unit_cost_usd", "void_reason", "voided_at"
+    "material_event_lots": {
+        "created_at", "deployment_version_id", "event_id", "id", "lot_id", "programming_run_id"
     },
-    "component_stock_adjustments": {
-        "actor", "adjusted_at", "charge_run_id", "component_id", "created_at", "id", "import_ref",
-        "lcsc", "mpn", "note", "project_id", "qty_delta", "reason", "unit_cost_usd"
+    "material_events": {
+        "actor", "assembler", "at", "chosen", "company_id", "created_at", "id", "input_value_usd", "kind",
+        "note", "output_component_id", "output_lot_id", "process_version_id", "project_id", "qty",
+        "reference", "run_id", "scrap", "step_key", "step_kind", "step_label", "units", "void_reason",
+        "voided_at"
     },
-    "cost_line_step_keys": {
-        "created_at", "id", "line_id", "run_id", "step_key"
+    "material_lots": {
+        "at", "company_id", "created_at", "created_event_id", "device_unit_id", "finished_at", "found", "id",
+        "identifier", "item_id", "kind", "label", "named_at", "note", "origin_run_id", "process_version_id",
+        "project_id", "run_id", "scrapped_at", "split_from_lot_id", "stack_key", "status"
     },
-    "cost_line_steps": {
-        "created_at", "id", "line_id", "step_run_id"
+    "material_move_lots": {
+        "created_at", "ext_ref", "id", "lot_id", "lot_line_id", "move_id", "note", "qty", "source",
+        "unit_cost_usd"
+    },
+    "material_moves": {
+        "actor", "at", "basis", "company_id", "component_id", "created_at", "event_id", "id", "import_ref",
+        "item_id", "kind", "lcsc", "lot_id", "mpn", "note", "project_id", "qty", "reason", "run_id",
+        "transfer_line_id", "unit_cost_usd", "void_reason", "voided_at"
     },
     "device_events": {
         "actor", "at", "auto", "created_at", "device_id", "id", "kind", "note", "order_line_id",
@@ -58,11 +68,6 @@ FROZEN: dict[str, set[str]] = {
     "jlc_order_decisions": {
         "applied_at", "batch_num", "confidence", "created_at", "decided_by", "id", "note", "outcome",
         "panel_factor", "run_id", "smt_order_code"
-    },
-    "process_transformations": {
-        "actor", "created_at", "id", "input_value_usd", "made_at", "note", "output_adjustment_id",
-        "output_component_id", "process_version_id", "production_run_id", "project_id", "qty",
-        "recipe_key", "recipe_label", "scrap", "void_reason", "voided_at"
     },
     "programming_runs": {
         "action", "attempt_no", "chip_read", "client_info", "deployment_version_id", "device_unit_id",
@@ -92,18 +97,6 @@ FROZEN: dict[str, set[str]] = {
         "fitted_component_id", "fitted_lcsc", "fitted_mpn", "id", "note", "qty_per_device", "run_id",
         "source", "specified_component_id", "specified_lcsc", "specified_mpn", "supplied_by",
         "supplier_designator", "supplier_source", "variant"
-    },
-    "step_runs": {
-        "actor", "chosen", "created_at", "id", "kind", "made_at", "note", "process_version_id",
-        "project_id", "qty", "run_id", "step_key", "step_label"
-    },
-    "twin_steps": {
-        "created_at", "id", "step_run_id", "twin_id"
-    },
-    "twins": {
-        "created_at", "device_unit_id", "finished_at", "found", "id", "named_at", "note",
-        "origin_run_id", "process_version_id", "project_id", "run_id", "scrapped_at", "stack_key",
-        "status"
     },
 }
 

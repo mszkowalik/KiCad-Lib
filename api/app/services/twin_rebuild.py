@@ -56,6 +56,13 @@ from . import cost_steps, jlc_import, journal, run_actuals
 from . import lots as L
 from . import process as P
 from . import twins as T
+from .material_ledger import core
+
+
+def _in_click(db: Session, c: M.Draw) -> bool:
+    """Is this draw a click's? Every draw has an event; a click is one kind."""
+    ev = db.get(M.MaterialEvent, c.event_id) if c.event_id else None
+    return ev is not None and ev.kind == "step"
 
 CHOSEN = "rebuilt"
 #: Device conditions whose twin stays active: built, but not sellable as it is.
@@ -117,7 +124,7 @@ def _key_of_input(inp: dict) -> tuple[str, object]:
     return _canon(cid, mpn)
 
 
-def _key_of_draw(c: M.ComponentConsumption) -> tuple[str, object]:
+def _key_of_draw(c: M.Draw) -> tuple[str, object]:
     return _canon(c.component_id, c.mpn or "", c.lcsc or "")
 
 
@@ -346,12 +353,12 @@ def _carried(db: Session, batch_ids: set[int], reg: dict) -> tuple[float, float,
     those batches (their origin, or a click done in them), less what those
     prices hold from OTHER batches (a click done elsewhere, another batch's
     origin share). Returns (carried, from other batches, twins carrying)."""
-    ids = {tid for (tid,) in db.query(M.Twin.id).filter(M.Twin.origin_run_id.in_(batch_ids),
-                                                         M.Twin.found.is_(False)).all()}
-    ids |= {tid for (tid,) in db.query(M.TwinStep.twin_id)
-            .join(M.StepRun, M.StepRun.id == M.TwinStep.step_run_id)
-            .filter(M.StepRun.run_id.in_(batch_ids)).all()}
-    twins = db.query(M.Twin).filter(M.Twin.id.in_(ids or {-1})).all()
+    ids = {tid for (tid,) in db.query(M.Unit.id).filter(M.Unit.origin_run_id.in_(batch_ids),
+                                                         M.Unit.found.is_(False)).all()}
+    ids |= {tid for (tid,) in db.query(M.MaterialEventLot.lot_id)
+            .join(M.Click, M.Click.id == M.MaterialEventLot.event_id)
+            .filter(M.Click.run_id.in_(batch_ids)).all()}
+    twins = db.query(M.Unit).filter(M.Unit.id.in_(ids or {-1})).all()
     alive = [tw for tw in twins if tw.status != "scrapped"]
     pr = T.prices(db, alive, reg)
     carried = sum(p["total_usd"] for p in pr.values())
@@ -360,9 +367,9 @@ def _carried(db: Session, batch_ids: set[int], reg: dict) -> tuple[float, float,
     carriers = alive + [tw for tw in twins if tw.status == "scrapped"
                         and (tw.origin_run_id in batch_ids if not tw.found else tw.run_id in batch_ids)]
     cids = [tw.id for tw in carriers]
-    links = db.query(M.TwinStep.twin_id, M.TwinStep.step_run_id).filter(M.TwinStep.twin_id.in_(cids or [-1])).all()
-    click_run = {sid: rid for sid, rid in db.query(M.StepRun.id, M.StepRun.run_id)
-                 .filter(M.StepRun.id.in_({s for _t, s in links} or {-1})).all()}
+    links = db.query(M.MaterialEventLot.lot_id, M.MaterialEventLot.event_id).filter(M.MaterialEventLot.lot_id.in_(cids or [-1])).all()
+    click_run = {sid: rid for sid, rid in db.query(M.Click.id, M.Click.run_id)
+                 .filter(M.Click.id.in_({s for _t, s in links} or {-1})).all()}
     elsewhere = {s for s, rid in click_run.items() if rid not in batch_ids}
     outside = 0.0
     if elsewhere:
@@ -468,10 +475,10 @@ def rebuild(db: Session, run: M.ProductionRun, *, version_id: int | None = None,
     if not append:
         if run.process_version_id not in (None, v.id):
             raise HTTPException(409, f"batch {run.label} already runs another process version")
-        if db.query(M.Twin).filter(M.Twin.origin_run_id == run.id, M.Twin.found.is_(False)).count():
+        if db.query(M.Unit).filter(M.Unit.origin_run_id == run.id, M.Unit.found.is_(False)).count():
             raise HTTPException(409, f"batch {run.label} already has twins — undo the rebuild first, "
                                      "or append the devices that joined it since")
-        if db.query(M.StepRun).filter_by(run_id=run.id).count():
+        if db.query(M.Click).filter_by(run_id=run.id).count():
             raise HTTPException(409, f"batch {run.label} already has process steps")
     else:
         for kind in ("assembly", "receive"):
@@ -482,7 +489,7 @@ def rebuild(db: Session, run: M.ProductionRun, *, version_id: int | None = None,
             # Another batch's rebuild joined these clicks (`origins`): editing
             # them would leave neither rebuild undoable.
             for (src,) in (db.query(M.WriteBatch.source_ref).join(M.WriteBatchRow, M.WriteBatchRow.batch_id == M.WriteBatch.id)
-                           .filter(M.WriteBatchRow.table_name == "step_runs", M.WriteBatchRow.row_id == sr.id,
+                           .filter(M.WriteBatchRow.table_name == "material_events", M.WriteBatchRow.row_id == sr.id,
                                    M.WriteBatchRow.op == "update", M.WriteBatch.kind == "craft.rebuild",
                                    M.WriteBatch.reversed_at.is_(None), M.WriteBatch.source_ref != f"run:{run.id}")
                            .distinct().all()):
@@ -530,9 +537,9 @@ def rebuild(db: Session, run: M.ProductionRun, *, version_id: int | None = None,
     return plan
 
 
-def _rebuilt_click(db: Session, run: M.ProductionRun, kind: str) -> M.StepRun | None:
-    return (db.query(M.StepRun).filter_by(run_id=run.id, kind=kind, chosen=CHOSEN)
-            .order_by(M.StepRun.id).first())
+def _rebuilt_click(db: Session, run: M.ProductionRun, kind: str) -> M.Click | None:
+    return (db.query(M.Click).filter_by(run_id=run.id, step_kind=kind, chosen=CHOSEN)
+            .order_by(M.Click.id).first())
 
 
 class _Build:
@@ -553,8 +560,8 @@ class _Build:
         self.done: dict[int, set[str]] = defaultdict(set)
         self.when: dict[int, dict[str, dict]] = defaultdict(dict)
         self.last_at: dict[int, datetime] = {}
-        self.new_clicks: dict[str, list[M.StepRun]] = defaultdict(list)
-        self.old_clicks: dict[str, list[M.StepRun]] = defaultdict(list)
+        self.new_clicks: dict[str, list[M.Click]] = defaultdict(list)
+        self.old_clicks: dict[str, list[M.Click]] = defaultdict(list)
         self.info: dict[int, dict] = {}
         self.refusals: list[dict] = []
         self.added: list[dict] = []
@@ -569,34 +576,34 @@ class _Build:
 
     # ---------------------------------------------------------------- clicks
 
-    def click(self, step: dict, members: list[tuple[M.Twin, dict]], made_at: str, note: str,
-              source: str, *, consumes: bool = False, auto: bool = False) -> M.StepRun | None:
+    def click(self, step: dict, members: list[tuple[M.Unit, dict]], made_at: str, note: str,
+              source: str, *, consumes: bool = False, auto: bool = False) -> M.Click | None:
         """One rebuilt click. `members`: (twin, {"run", "dv", "at", "factor"}) —
         each twin's own bench run and deployment version (decision 0074)."""
         if not members:
             return None
         db = self.db
         sr = T._new_run(db, self.run, self.v, step, len(members), CHOSEN, made_at or self.d0, self.actor, note)
-        db.add_all([M.TwinStep(twin_id=tw.id, step_run_id=sr.id, programming_run_id=x.get("run"),
-                               deployment_version_id=x.get("dv")) for tw, x in members])
+        db.add_all([M.MaterialEventLot(lot_id=tw.id, event_id=sr.id, programming_run_id=x.get("run"),
+                                       deployment_version_id=x.get("dv")) for tw, x in members])
         for tw, x in members:
-            self._did(tw, step["key"], sr.made_at, source, x)
+            self._did(tw, step["key"], sr.at, source, x)
         self.new_clicks[step["key"]].append(sr)
         self.info[sr.id] = {"source": source, "consumes": consumes, "auto": auto,
                             "factor": sum(float(x.get("factor") or 1) for _tw, x in members)}
         return sr
 
-    def join(self, sr: M.StepRun, twins: list[M.Twin], source: str = "batch") -> None:
+    def join(self, sr: M.Click, twins: list[M.Unit], source: str = "batch") -> None:
         """Add twins to an existing rebuilt click (the assembly and receipt of
         the boards they were built on)."""
         if not twins:
             return
-        self.db.add_all([M.TwinStep(twin_id=tw.id, step_run_id=sr.id) for tw in twins])
-        sr.qty = (sr.qty or 0) + len(twins)
+        self.db.add_all([M.MaterialEventLot(lot_id=tw.id, event_id=sr.id) for tw in twins])
+        sr.units = (sr.units or 0) + len(twins)
         for tw in twins:
-            self._did(tw, sr.step_key, sr.made_at, source, {})
+            self._did(tw, sr.step_key, sr.at, source, {})
 
-    def _did(self, tw: M.Twin, key: str, on: str, source: str, x: dict) -> None:
+    def _did(self, tw: M.Unit, key: str, on: str, source: str, x: dict) -> None:
         self.done[tw.id].add(key)
         row = {"on": on, "by": SOURCE_TEXT.get(source, source)}
         if x.get("run"):
@@ -609,7 +616,7 @@ class _Build:
         if x.get("at") and (tw.id not in self.last_at or x["at"] > self.last_at[tw.id]):
             self.last_at[tw.id] = x["at"]
 
-    def grouped(self, step: dict, rows: list[tuple[M.Twin, dict, str, str]], note: str) -> int:
+    def grouped(self, step: dict, rows: list[tuple[M.Unit, dict, str, str]], note: str) -> int:
         """Clicks for (twin, extra, day, source) rows: one per day, deployment
         version and source. Returns the units recorded."""
         groups: dict[tuple, list] = defaultdict(list)
@@ -649,8 +656,8 @@ class _Build:
         self.produced = {did: _day(ev.at) for did, ev in produced_ev.items()}
         first = min((p for p in self.produced.values() if p), default="")
         self.d0 = min([x for x in (_iso(run.run_date), first) if x] or [T._today()])
-        has_twin = {d for (d,) in db.query(M.Twin.device_unit_id)
-                    .filter(M.Twin.device_unit_id.in_(allowed or {-1})).all()}
+        has_twin = {d for (d,) in db.query(M.Unit.device_unit_id)
+                    .filter(M.Unit.device_unit_id.in_(allowed or {-1})).all()}
         skipped = [d for d in all_devices if d.id in has_twin]
         devices = [d for d in all_devices if d.id not in has_twin]
         self.dev = {d.id: d for d in devices}
@@ -672,17 +679,26 @@ class _Build:
 
         # ---- twins
         named = []
+        item = core.product_item(db, run.project_id)
+
+        def company_of(origin_id: int | None) -> int | None:
+            o = db.get(M.ProductionRun, origin_id) if origin_id else None
+            return (o.company_id if o is not None else None) or run.company_id
+
         for d in devices:
             origin, note = self._origin_of(d)
             ev = produced_ev.get(d.id)
-            named.append(M.Twin(project_id=run.project_id, origin_run_id=origin, run_id=run.id,
-                                process_version_id=self.v.id, device_unit_id=d.id, status=self._status(d),
-                                named_at=(ev.at if ev is not None else utcnow()), note=note[:500]))
-        shelf: list[tuple[M.Twin, set[str]]] = []
+            named.append(M.Unit(item_id=item.id, company_id=company_of(origin), project_id=run.project_id,
+                                origin_run_id=origin, run_id=run.id, process_version_id=self.v.id,
+                                device_unit_id=d.id, identifier=d.mac, status=self._status(d),
+                                at=self.d0 or "", named_at=(ev.at if ev is not None else utcnow()),
+                                note=note[:500]))
+        shelf: list[tuple[M.Unit, set[str]]] = []
         for spare in self.spares_in:
             for _ in range(int(spare.get("qty") or 0)):
-                shelf.append((M.Twin(project_id=run.project_id, origin_run_id=run.id, run_id=run.id,
-                                     process_version_id=self.v.id, status="active",
+                shelf.append((M.Unit(item_id=item.id, company_id=run.company_id, project_id=run.project_id,
+                                     origin_run_id=run.id, run_id=run.id, process_version_id=self.v.id,
+                                     status="active", at=self.d0 or "",
                                      note=(spare.get("note") or "spare found at a stock count")[:500]),
                               set(spare.get("done") or [])))
         if shelf and found["unnamed_active"]:
@@ -696,10 +712,10 @@ class _Build:
 
         # ---- the batch's draws and positions
         owner = _input_owner(self.graph)
-        self.draws_for: dict[str, list[M.ComponentConsumption]] = defaultdict(list)
-        loose_draws: list[M.ComponentConsumption] = []
+        self.draws_for: dict[str, list[M.Draw]] = defaultdict(list)
+        loose_draws: list[M.Draw] = []
         for c in (run_actuals.live_consumption(db, run_id=run.id)
-                  .filter(M.ComponentConsumption.step_run_id.is_(None)).order_by(M.ComponentConsumption.id).all()):
+                  .filter(~T.of_click()).order_by(M.Draw.id).all()):
             if c.basis == "measured":
                 self.draws_for[self.akey].append(c)
             elif _key_of_draw(c) in owner:
@@ -708,11 +724,11 @@ class _Build:
                 loose_draws.append(c)
         self.linked_draw_steps: set[str] = set()
         if self.append:
-            for sr in db.query(M.StepRun).filter_by(run_id=run.id, chosen=CHOSEN).order_by(M.StepRun.id):
+            for sr in db.query(M.Click).filter_by(run_id=run.id, chosen=CHOSEN).order_by(M.Click.id):
                 self.old_clicks[sr.step_key].append(sr)
             linked = {sid for (sid,) in run_actuals.live_consumption(db, run_id=run.id)
-                      .filter(M.ComponentConsumption.step_run_id.isnot(None))
-                      .with_entities(M.ComponentConsumption.step_run_id).distinct().all()}
+                      .filter(T.of_click())
+                      .with_entities(M.Draw.event_id).distinct().all()}
             self.linked_draw_steps = {k for k, cs in self.old_clicks.items() if any(c.id in linked for c in cs)}
 
         # ---- the board's assembly and receipt
@@ -748,17 +764,17 @@ class _Build:
         orders = T.assembly_orders(db, run)
         panels = jlc_import.effective_panels(db) if orders else {}
         boards = sum((panels.get(code) or {}).get("devices") or 0 for code in orders)
-        mine = db.query(func.count(M.Twin.id)).filter(M.Twin.origin_run_id == run.id,
-                                                       M.Twin.found.is_(False)).scalar() or 0
+        mine = db.query(func.count(M.Unit.id)).filter(M.Unit.origin_run_id == run.id,
+                                                       M.Unit.found.is_(False)).scalar() or 0
         produced_count = run_actuals.produced_counts(db, [run.id]).get(run.id, 0)
         alive_named = [tw for tw in named if tw.status != "scrapped"]
         reg_after = check.pop("_register")
         pr = T.prices(db, alive_named, reg_after) if alive_named else {}
         unit_prices = sorted({p["total_usd"] for p in pr.values()})
-        loss = [{"consumption_id": c.id, "step": k, "part": _ref(_key_of_draw(c)), "qty": c.qty,
-                 "usd": round((c.qty or 0) * (c.unit_cost_usd or 0), 4)}
+        loss = [{"consumption_id": c.id, "step": k, "part": _ref(_key_of_draw(c)), "qty": c.taken,
+                 "usd": round(c.taken * (c.unit_cost_usd or 0), 4)}
                 for k, cs in self.draws_for.items() for c in cs
-                if c.step_run_id is None and c.voided_at is None and k != self.akey]
+                if not _in_click(db, c) and c.voided_at is None and k != self.akey]
         return {
             "run_id": run.id, "batch": run.label, "process_version": self.v.version_no, "append": self.append,
             "twins": len(everyone), "named": len(named), "spares": len(shelf),
@@ -822,9 +838,9 @@ class _Build:
     def _found_naming_this_batch(self) -> dict:
         """Found twins (entered at a stock count, at zero) that name this batch
         as their origin. Counted spares enter one way only."""
-        rows = (self.db.query(M.Twin.run_id, M.Twin.status, M.Twin.device_unit_id.is_(None), func.count(M.Twin.id))
-                .filter(M.Twin.origin_run_id == self.run.id, M.Twin.found.is_(True))
-                .group_by(M.Twin.run_id, M.Twin.status, M.Twin.device_unit_id.is_(None)).all())
+        rows = (self.db.query(M.Unit.run_id, M.Unit.status, M.Unit.device_unit_id.is_(None), func.count(M.Unit.id))
+                .filter(M.Unit.origin_run_id == self.run.id, M.Unit.found.is_(True))
+                .group_by(M.Unit.run_id, M.Unit.status, M.Unit.device_unit_id.is_(None)).all())
         labels = {r.id: r.label for r in self.db.query(M.ProductionRun)
                   .filter(M.ProductionRun.id.in_({r for r, *_x in rows} or {-1})).all()}
         return {"twins": sum(n for *_x, n in rows),
@@ -853,10 +869,10 @@ class _Build:
 
     # ------------------------------------------------------------ the steps
 
-    def _assembly_and_receive(self, everyone: list[M.Twin], doc_lines: list) -> None:
+    def _assembly_and_receive(self, everyone: list[M.Unit], doc_lines: list) -> None:
         db, run = self.db, self.run
         mine = [tw for tw in everyone if tw.origin_run_id == run.id]
-        moved: dict[int, list[M.Twin]] = defaultdict(list)
+        moved: dict[int, list[M.Unit]] = defaultdict(list)
         for tw in everyone:
             if tw.origin_run_id != run.id:
                 moved[tw.origin_run_id].append(tw)
@@ -867,7 +883,7 @@ class _Build:
             self.join(asr, mine)
             self.join(rsr, mine)
             for c in self.draws_for.get(self.akey, []):
-                c.step_run_id = asr.id
+                c.event_id = asr.id
             self.old_clicks[self.akey] = [asr]
             evidence = "joined the batch's rebuilt assembly"
         else:
@@ -881,7 +897,7 @@ class _Build:
                              else "rebuilt: the batch's board and assembly invoices", "batch")
             if asr is not None:
                 for c in self.draws_for.get(self.akey, []):
-                    c.step_run_id = asr.id
+                    c.event_id = asr.id
             self.click(rstep, [(tw, {}) for tw in mine], self.d0, "rebuilt: the batch's records", "batch")
             evidence = ("invoices" if doc_lines else
                         "the supplier's measured draws" if self.draws_for.get(self.akey) else "the batch")
@@ -893,7 +909,7 @@ class _Build:
                               "from_other_batches": sum(len(x) for x in moved.values())})
         self.recorded.append({"step": self.rkey, "units": len(everyone), "evidence": "the batch"})
 
-    def _after_day(self, tw: M.Twin) -> str:
+    def _after_day(self, tw: M.Unit) -> str:
         """The day a step after programming is dated on a device without a
         bench record: its programming day."""
         return self.produced.get(tw.device_unit_id or 0) or self.d0
@@ -906,7 +922,7 @@ class _Build:
         clicks = self.new_clicks.get(key, [])
         self.recorded.append({"step": key, "label": s.get("label") or key, "units": len(rows),
                               "evidence": " + ".join(sorted(by)), "by": dict(by), "clicks": len(clicks),
-                              "days": len({c.made_at for c in clicks}), **(extra or {})})
+                              "days": len({c.at for c in clicks}), **(extra or {})})
 
     def _program(self, s: dict) -> None:
         rows = []
@@ -1019,10 +1035,10 @@ class _Build:
                 by_key[_key_of_draw(c)].append(c)
             clicks = [sr for sr in self.new_clicks.get(key, []) if self.info[sr.id]["consumes"]]
             for pk in sorted(set(per_unit) | set(by_key), key=str):
-                mine = sorted(by_key.get(pk, []), key=lambda c: (c.consumed_at or "", c.id))
+                mine = sorted(by_key.get(pk, []), key=lambda c: (c.at or "", c.id))
                 needs = [(sr, self.info[sr.id]["factor"] * per_unit.get(pk, 0.0), self.info[sr.id]["auto"])
                          for sr in clicks]
-                drawn = sum(c.qty or 0 for c in mine)
+                drawn = sum(c.taken for c in mine)
                 need = sum(n for _sr, n, _a in needs)
                 if drawn <= EPS and need <= EPS:
                     continue
@@ -1040,7 +1056,7 @@ class _Build:
                     if r > EPS and ((a and how != "short") or how == "draw"):
                         missing[sr.id].append((s, pk, r, inputs.get(pk)))
                         to_draw += r
-                left = sum(c.qty or 0 for c in mine if c.step_run_id is None)
+                left = sum(c.taken for c in mine if not _in_click(self.db, c))
                 row = {"step": key, "part": _ref(pk), "name": self._name(pk, inputs.get(pk), mine),
                        "per_unit": per_unit.get(pk, 0.0), "units": sum(self.info[sr.id]["factor"] for sr in clicks),
                        "need": round(need, 6), "drawn": round(drawn, 6), "surplus": round(surplus, 6),
@@ -1062,64 +1078,63 @@ class _Build:
                         f"statement (first: {self.unsettled[0]['step']} {self.unsettled[0]['part']}: "
                         f"{self.unsettled[0]['why']})")
         for srid, items in missing.items():
-            self._draw_missing(self.db.get(M.StepRun, srid), items)
+            self._draw_missing(self.db.get(M.Click, srid), items)
 
     def _name(self, pk, inp, mine) -> str:
         if pk[0] == "c":
             return (P._part_names(self.db, {pk[1]}).get(pk[1]) or {}).get("name") or _ref(pk)
         return (inp or {}).get("mpn") or (mine[0].mpn if mine else "") or _ref(pk)
 
-    def _pour(self, draws: list[M.ComponentConsumption], clicks: list[M.StepRun],
+    def _pour(self, draws: list[M.Draw], clicks: list[M.Click],
               needs: list[float]) -> list[float]:
         """Link `draws` to `clicks` in order until each click holds what it
         needs; what is left stays unlinked. Returns what each click still lacks."""
         rem = list(needs)
         i = 0
         for c in draws:
-            q = c.qty or 0.0
+            q = c.taken
             while q > EPS and i < len(rem):
                 if rem[i] <= EPS:
                     i += 1
                     continue
                 if rem[i] >= q - EPS:
-                    c.step_run_id = clicks[i].id
+                    c.event_id = clicks[i].id
                     rem[i] -= q
                     q = 0.0
                 else:
                     piece = self._split(c, rem[i])
-                    piece.step_run_id = clicks[i].id
+                    piece.event_id = clicks[i].id
                     q -= rem[i]
                     rem[i] = 0.0
         return [max(r, 0.0) for r in rem]
 
-    def _split(self, c: M.ComponentConsumption, qty: float) -> M.ComponentConsumption:
+    def _split(self, c: M.Draw, qty: float) -> M.Draw:
         """A piece of `qty` cut off draw `c`, at the same unit cost, with its
         share of each lot binding: the value of the two adds up to the draw's."""
         db = self.db
-        whole = c.qty or 0.0
-        piece = M.ComponentConsumption(
-            run_id=c.run_id, component_id=c.component_id, mpn=c.mpn or "", lcsc=c.lcsc or "", qty=round(qty, 6),
-            unit_cost_usd=c.unit_cost_usd, basis=c.basis, import_ref="", consumed_at=c.consumed_at,
+        whole = c.taken
+        piece = M.Draw(
+            event_id=c.event_id, item_id=c.item_id, run_id=c.run_id, component_id=c.component_id,
+            mpn=c.mpn or "", lcsc=c.lcsc or "", qty=-round(qty, 6), unit_cost_usd=c.unit_cost_usd,
+            basis=c.basis, import_ref="", at=c.at,
             note=(f"rebuilt: piece of draw #{c.id}" + (f" — {c.note}" if c.note else ""))[:500],
-            company_id=c.company_id, transformation_id=c.transformation_id)
+            company_id=c.company_id)
         db.add(piece)
         db.flush()
         share = qty / whole if whole else 0.0
-        for b in db.query(M.ComponentConsumptionLot).filter_by(consumption_id=c.id).order_by(
-                M.ComponentConsumptionLot.id).all():
+        for b in db.query(M.MaterialMoveLot).filter_by(move_id=c.id).order_by(M.MaterialMoveLot.id).all():
             q = round((b.qty or 0.0) * share, 6)
             if q <= 0:
                 continue
-            db.add(M.ComponentConsumptionLot(consumption_id=piece.id, lot_line_id=b.lot_line_id,
-                                             lot_adjustment_id=b.lot_adjustment_id, qty=q,
-                                             unit_cost_usd=b.unit_cost_usd, source=b.source, ext_ref=b.ext_ref,
-                                             note=b.note))
+            db.add(M.MaterialMoveLot(move_id=piece.id, lot_line_id=b.lot_line_id, lot_id=b.lot_id, qty=q,
+                                     unit_cost_usd=b.unit_cost_usd, source=b.source, ext_ref=b.ext_ref,
+                                     note=b.note))
             b.qty = round((b.qty or 0.0) - q, 6)
-        c.qty = round(whole - qty, 6)
+        c.taken = round(whole - qty, 6)
         db.flush()
         return piece
 
-    def _return(self, key: str, pk, draws: list[M.ComponentConsumption], surplus: float) -> float:
+    def _return(self, key: str, pk, draws: list[M.Draw], surplus: float) -> float:
         """Give the surplus back to the stock, newest draw first: a draw is made
         smaller (its newest lot bindings go back, `lots.resize_bound`, whatever
         the lot pricing switch says), or voided when all of it goes back.
@@ -1143,7 +1158,7 @@ class _Build:
                 if ek & keys:
                     keys |= ek
             cs = run_actuals.stock_scope(db, draws[0].company_id)
-            since = min((d.consumed_at or "") for d in draws)
+            since = min((d.at or "") for d in draws)
             self.returned_low[ref] = {"keys": sorted(keys), "company": cs, "since": since,
                                       "series": run_actuals.pool_series(run_actuals._pool_events(db, cs)[0], keys, since)}
         # The same for each lot the return gives units back to: the undo may
@@ -1151,31 +1166,30 @@ class _Build:
         # the return leaves alone keeps the undo's own floor.
         def bound_by_lot() -> dict[str, float]:
             out: dict[str, float] = defaultdict(float)
-            for b in db.query(M.ComponentConsumptionLot).filter(
-                    M.ComponentConsumptionLot.consumption_id.in_([d.id for d in draws] or [-1])).all():
-                out[L._lot_key("L", b.lot_line_id) if b.lot_line_id else L._lot_key("A", b.lot_adjustment_id)] += \
-                    b.qty or 0.0
+            for b in db.query(M.MaterialMoveLot).filter(
+                    M.MaterialMoveLot.move_id.in_([d.id for d in draws] or [-1])).all():
+                out[L.key_of(b.lot_line_id, b.lot_id)] += b.qty or 0.0
             return out
 
         held_before = bound_by_lot()
         state_before = L.lot_state(db)["lots"] if set(held_before) - set(self.returned_lots) else {}
-        for c in sorted(draws, key=lambda c: (c.consumed_at or "", c.id), reverse=True):
+        for c in sorted(draws, key=lambda c: (c.at or "", c.id), reverse=True):
             if left <= EPS:
                 break
-            take = min(c.qty or 0.0, left)
-            before = (c.qty or 0.0) * (c.unit_cost_usd or 0.0)
-            new = round((c.qty or 0.0) - take, 6)
+            take = min(c.taken, left)
+            before = c.taken * (c.unit_cost_usd or 0.0)
+            new = round(c.taken - take, 6)
             if new <= EPS:
-                for b in db.query(M.ComponentConsumptionLot).filter_by(consumption_id=c.id).all():
+                for b in db.query(M.MaterialMoveLot).filter_by(move_id=c.id).all():
                     db.delete(b)
                 c.voided_at = utcnow()
                 c.void_reason = RETURNED
                 after = 0.0
             else:
-                problems = L.resize_bound(db, c, new, as_of=c.consumed_at or run.run_date or "", company_id=scope)
+                problems = L.resize_bound(db, c, new, as_of=c.at or run.run_date or "", company_id=scope)
                 if problems:   # only an increase can fail; this is a decrease
                     raise HTTPException(409, f"{run.label}: returning the surplus failed: {problems[0]['problem']}")
-                c.qty = new
+                c.taken = new
                 after = new * (c.unit_cost_usd or 0.0)
             value += before - after
             left -= take
@@ -1188,7 +1202,7 @@ class _Build:
                 self.returned_lots[k] = state_before[k]["qty_remaining"]
         return value
 
-    def _draw_missing(self, sr: M.StepRun, items: list[tuple]) -> None:
+    def _draw_missing(self, sr: M.Click, items: list[tuple]) -> None:
         """Write a click's missing parts from the stock at the click's date,
         bound to lots like every step draw; refused when the stock did not hold
         them then."""
@@ -1201,22 +1215,22 @@ class _Build:
             ref = {"component_id": cid} if cid else {"mpn": mpn or str(pk[1])}
             inputs.append({**ref, "qty": qty})
         pseudo = {"key": s["key"], "label": label, "kind": s.get("kind") or "step", "inputs": inputs}
-        planned, problems, _tok = T._plan_draws(db, run, pseudo, 1, sr.made_at, None)
+        planned, problems, _tok = T._plan_draws(db, run, pseudo, 1, sr.at, None)
         short = run_actuals.check_shortages(db, [
             {"component_id": d["component_id"], "mpn": d.get("mpn", ""), "lcsc": "", "qty": d["qty"],
-             "date": sr.made_at, "label": d["name"]} for d in planned if not d["internal"]],
+             "date": sr.at, "label": d["name"]} for d in planned if not d["internal"]],
             company_id=run_actuals.run_scope(db, run))
         if problems or short:
             what = problems[0]["problem"] if problems else ", ".join(
                 f"{x.get('label') or x.get('mpn')} short {x.get('short')}" for x in short[:4])
-            self.refuse(f"{run.label}: {label!r} cannot draw its parts on {sr.made_at} ({what}) — book the "
-                        "purchase first, or state 'short'", step=s["key"], click_date=sr.made_at,
+            self.refuse(f"{run.label}: {label!r} cannot draw its parts on {sr.at} ({what}) — book the "
+                        "purchase first, or state 'short'", step=s["key"], click_date=sr.at,
                         shortages=short, problems=problems)
             return
-        T.write_draws(db, run, sr, planned, f"rebuilt: {sr.step_label} x {sr.qty}, from our stock")
+        T.write_draws(db, run, sr, planned, f"rebuilt: {sr.step_label} x {sr.units}, from our stock")
         for d in planned:
             self.added.append({"step": s["key"], "part": d["name"], "qty": d["qty"], "usd": d["value_usd"],
-                               "made_at": sr.made_at})
+                               "made_at": sr.at})
 
     # ------------------------------------------------------------ positions
 
@@ -1234,7 +1248,7 @@ class _Build:
         unpaid = []
         for li, keys in line_steps:
             clicks = [c for k in keys for c in self.old_clicks.get(k, []) + self.new_clicks.get(k, [])
-                      if c.qty and c.kind != "scrap"]
+                      if c.units and c.step_kind != "scrap"]
             if clicks:
                 T.link_line(db, li, clicks)
                 # A whole step: the clicks of it recorded later pay too (0074).
@@ -1247,8 +1261,8 @@ class _Build:
             # clicks of that step too (decision 0061: every click of the step).
             mine = {sr.id: sr for cs in self.old_clicks.values() for sr in cs}
             for li in T.charged_lines(db, run):
-                have = [db.get(M.StepRun, sid) for (sid,) in
-                        db.query(M.CostLineStep.step_run_id).filter_by(line_id=li.id).all()]
+                have = [db.get(M.Click, sid) for (sid,) in
+                        db.query(M.ClickCost.event_id).filter_by(line_id=li.id).all()]
                 keys = {sr.step_key for sr in have if sr is not None and sr.id in mine}
                 add = [c for k in keys if k not in (self.akey, self.rkey) for c in self.new_clicks.get(k, [])]
                 if add:
@@ -1263,13 +1277,13 @@ class _Build:
         terms = P.required_terms(self.graph)
         groups = P.groups_of(self.graph)
 
-        def lacks(tw: M.Twin) -> list[str]:
+        def lacks(tw: M.Unit) -> list[str]:
             got = self.done[tw.id]
             return [t for t in terms if t not in got and not any(m in got for m in groups.get(t, []))]
 
         fstep = P.step_of_kind(self.graph, "finish")
         finished = [tw for tw in self.named if tw.status == "finished"]
-        by_day: dict[str, list[M.Twin]] = defaultdict(list)
+        by_day: dict[str, list[M.Unit]] = defaultdict(list)
         for tw in finished:
             days = [x["on"] for x in self.when[tw.id].values() if x.get("on")]
             by_day[max(days + [self.produced.get(tw.device_unit_id, "")]) or self.d0].append(tw)
@@ -1328,7 +1342,7 @@ class _Build:
 
     # -------------------------------------------------------- the per-device plan
 
-    def _device_plan(self, named: list[M.Twin], prices: dict) -> list[dict]:
+    def _device_plan(self, named: list[M.Unit], prices: dict) -> list[dict]:
         dvs = _dv_labels(self.db, {x["dv"] for tw in named for x in self.when[tw.id].values() if x.get("dv")})
         order = {k: i for i, k in enumerate([self.akey, self.rkey] + self.route + ["scrap"])}
         labels = {r.id: r.label for r in self.db.query(M.ProductionRun)
@@ -1414,13 +1428,26 @@ def _link_undo(db: Session, batch_id: int | None) -> bool:
     live link stays. Such an undo is never itself redone here: it acts on a
     whole position, not on what stands on the rebuild."""
     wb = db.get(M.WriteBatch, batch_id) if batch_id else None
-    if wb is None or wb.kind != "reverse" or any(
-            r.table_name not in ("cost_line_steps", "cost_line_step_keys") for r in wb.rows):
+    if wb is None or wb.kind != "reverse" or any(r.table_name != "material_cost_aims" for r in wb.rows):
         return False
     fwd = wb
     while fwd is not None and fwd.kind == "reverse":
         fwd = db.get(M.WriteBatch, (fwd.summary or {}).get("reverses") or 0)
     return fwd is not None and fwd.kind == "craft.costs"
+
+
+def _aim_kind(db: Session, r: M.WriteBatchRow) -> str | None:
+    """`click` or `step` for a journal row of `material_cost_aims`: its before
+    image, else the live row."""
+    if r.before:
+        return r.before.get("kind")
+    x = db.get(M.MaterialCostAim, r.row_id)
+    return x.kind if x is not None else None
+
+
+def _step_cost(db: Session, row_id: int) -> M.MaterialCostAim | None:
+    x = db.get(M.MaterialCostAim, row_id)
+    return x if x is not None and x.kind == "step" else None
 
 
 def _line_and_below(db: Session, line_id: int) -> set[int]:
@@ -1434,10 +1461,10 @@ def _line_and_below(db: Session, line_id: int) -> set[int]:
 
 
 def _undo(db: Session, run: M.ProductionRun, actor: str) -> dict:
-    clicks = db.query(M.StepRun).filter_by(run_id=run.id, chosen=CHOSEN).all()
+    clicks = db.query(M.Click).filter_by(run_id=run.id, chosen=CHOSEN).all()
     ids = [c.id for c in clicks]
-    twins = (db.query(M.Twin).join(M.TwinStep, M.TwinStep.twin_id == M.Twin.id)
-             .filter(M.TwinStep.step_run_id.in_(ids or [-1]), M.Twin.found.is_(False)).distinct().all())
+    twins = (db.query(M.Unit).join(M.MaterialEventLot, M.MaterialEventLot.lot_id == M.Unit.id)
+             .filter(M.MaterialEventLot.event_id.in_(ids or [-1]), M.Unit.found.is_(False)).distinct().all())
     tids = {tw.id for tw in twins}
     plan: dict = {"run_id": run.id, "clicks": len(ids), "twins": len(tids), "takes_back": [],
                   "rebuild_batches": [], "before_the_journal": False, "refused": []}
@@ -1449,7 +1476,8 @@ def _undo(db: Session, run: M.ProductionRun, actor: str) -> dict:
     # Every other batch it touched — an `origins` batch's rebuilt clicks, a
     # moved twin's origin — must be open too: their shares are frozen at close.
     touched = {sr.run_id for b in rebuild_batches for r in db.get(M.WriteBatch, b).rows
-               if r.table_name == "step_runs" and (sr := db.get(M.StepRun, r.row_id)) is not None}
+               if r.table_name == "material_events" and (sr := db.get(M.MaterialEvent, r.row_id)) is not None
+               and sr.kind == "step"}
     touched |= {tw.origin_run_id for tw in twins}
     for rid in sorted(touched - {run.id}):
         other = db.get(M.ProductionRun, rid)
@@ -1458,9 +1486,9 @@ def _undo(db: Session, run: M.ProductionRun, actor: str) -> dict:
                                    "twins — reopen it first")
     # The live clicks on the rebuilt twins: a bench click (no journal batch)
     # and every crafting write that depends on the rebuild.
-    live = (db.query(M.StepRun).join(M.TwinStep, M.TwinStep.step_run_id == M.StepRun.id)
-            .filter(M.TwinStep.twin_id.in_(tids or {-1}), M.StepRun.chosen != CHOSEN).distinct().all())
-    live_batch = _live_batches(db, "step_runs", [sr.id for sr in live])
+    live = (db.query(M.Click).join(M.MaterialEventLot, M.MaterialEventLot.event_id == M.Click.id)
+            .filter(M.MaterialEventLot.lot_id.in_(tids or {-1}), M.Click.chosen != CHOSEN).distinct().all())
+    live_batch = _live_batches(db, "material_events", [sr.id for sr in live])
     items: list[tuple] = []          # (when, kind, object)
     for sr in live:
         if sr.id in live_batch:
@@ -1473,7 +1501,7 @@ def _undo(db: Session, run: M.ProductionRun, actor: str) -> dict:
                 continue
             items.append((sr.created_at, "bench", sr))
         else:
-            plan["refused"].append(f"click #{sr.id} ({sr.step_label}, {sr.chosen}, {sr.made_at}) is no bench "
+            plan["refused"].append(f"click #{sr.id} ({sr.step_label}, {sr.chosen}, {sr.at}) is no bench "
                                    "click and has no live journal batch to reverse — take it back first "
                                    "(a scrap from a disposal is one)")
     deps: set[int] = set(live_batch.values())
@@ -1509,9 +1537,9 @@ def _undo(db: Session, run: M.ProductionRun, actor: str) -> dict:
     # A cost link a crafting write made on a bench click it takes back: that
     # write is reversed first (newest first), not left with its row gone.
     queued = {obj.id for _w, k, obj in items if k == "batch"} | set(rebuild_batches)
-    bench_link_ids = [x for (x,) in db.query(M.CostLineStep.id).filter(M.CostLineStep.step_run_id.in_(
+    bench_link_ids = [x for (x,) in db.query(M.ClickCost.id).filter(M.ClickCost.event_id.in_(
         [obj.id for _w, k, obj in items if k == "bench"] or [-1])).all()]
-    for b in sorted(set(_live_batches(db, "cost_line_steps", bench_link_ids).values()) - queued):
+    for b in sorted(set(_live_batches(db, "material_cost_aims", bench_link_ids).values()) - queued):
         if _link_undo(db, b):
             continue   # what it put back on the click goes with the click; it is never redone here
         wb = db.get(M.WriteBatch, b)
@@ -1532,24 +1560,24 @@ def _undo(db: Session, run: M.ProductionRun, actor: str) -> dict:
     reversed_ids = rebuild_batches + [obj.id for _w, k, obj in items if k == "batch"]
     lots_before = _bound_lots(db, reversed_ids)
     own_links = {r.row_id for b in rebuild_batches for r in db.get(M.WriteBatch, b).rows
-                 if r.table_name == "cost_line_steps"}
+                 if r.table_name == "material_cost_aims" and _aim_kind(db, r) == "click"}
     for b in rebuild_batches:
         wb = db.get(M.WriteBatch, b)
         for r in wb.rows:
-            if r.table_name != "cost_line_step_keys" or r.op != "insert":
+            if r.table_name != "material_cost_aims" or r.op != "insert":
                 continue
-            k = db.get(M.CostLineStepKey, r.row_id)
+            k = _step_cost(db, r.row_id)
             if k is None:
                 continue
             # The position and the children a split gave it: they carry its key.
-            for x, sr in (db.query(M.CostLineStep, M.StepRun).join(M.StepRun, M.StepRun.id == M.CostLineStep.step_run_id)
-                          .filter(M.CostLineStep.line_id.in_(_line_and_below(db, k.line_id)),
-                                  M.StepRun.run_id == k.run_id,
-                                  M.StepRun.step_key == k.step_key, M.CostLineStep.created_at > wb.created_at)
-                          .order_by(M.CostLineStep.id).all()):
+            for x, sr in (db.query(M.ClickCost, M.Click).join(M.Click, M.Click.id == M.ClickCost.event_id)
+                          .filter(M.ClickCost.line_id.in_(_line_and_below(db, k.line_id)),
+                                  M.Click.run_id == k.run_id,
+                                  M.Click.step_key == k.step_key, M.ClickCost.created_at > wb.created_at)
+                          .order_by(M.ClickCost.id).all()):
                 if sr.id in taken or sr.id in live_batch or x.id in own_links:
                     continue   # the take-back, that click's own undo or the rebuild's reversal removes it
-                writer = _live_batches(db, "cost_line_steps", [x.id]).get(x.id)
+                writer = _live_batches(db, "material_cost_aims", [x.id]).get(x.id)
                 if writer is not None and not _link_undo(db, writer):
                     # A journalled click on a twin the rebuild did not make:
                     # deleting its link would leave that click undoable no more.
@@ -1574,7 +1602,7 @@ def _undo(db: Session, run: M.ProductionRun, actor: str) -> dict:
     # The twins the rebuild made go with it: a finish click on one, then its
     # unit shipped, is no unit this undo leaves unfinished.
     own_twins = frozenset(r.row_id for b in rebuild_batches for r in db.get(M.WriteBatch, b).rows
-                          if r.table_name == "twins" and r.op == "insert")
+                          if r.table_name == "material_lots" and r.op == "insert")
 
     def take_back_copies(wb: M.WriteBatch) -> None:
         # A split copied the rebuild's whole-step links onto the position's
@@ -1582,8 +1610,7 @@ def _undo(db: Session, run: M.ProductionRun, actor: str) -> dict:
         # person's split stays (decisions 0074, 0075).
         own = {(r.table_name, r.row_id) for r in wb.rows}
         for r in wb.rows:
-            k = db.get(M.CostLineStepKey, r.row_id) if r.table_name == "cost_line_step_keys" and r.op == "insert" \
-                else None
+            k = _step_cost(db, r.row_id) if r.table_name == "material_cost_aims" and r.op == "insert" else None
             if k is None:
                 continue
             below, frontier = set(), [k.line_id]
@@ -1591,31 +1618,31 @@ def _undo(db: Session, run: M.ProductionRun, actor: str) -> dict:
                 frontier = [i for (i,) in db.query(M.RunCostLine.id).filter(M.RunCostLine.parent_line_id.in_(frontier))
                             if i not in below]
                 below.update(frontier)
-            copies = (db.query(M.CostLineStepKey).filter(M.CostLineStepKey.line_id.in_(below or {-1}),
-                                                         M.CostLineStepKey.run_id == k.run_id,
-                                                         M.CostLineStepKey.step_key == k.step_key)
-                      .order_by(M.CostLineStepKey.id).all())
-            writers = _live_batches(db, "cost_line_step_keys", [x.id for x in copies])
+            copies = (db.query(M.StepCost).filter(M.StepCost.line_id.in_(below or {-1}),
+                                                         M.StepCost.run_id == k.run_id,
+                                                         M.StepCost.step_key == k.step_key)
+                      .order_by(M.StepCost.id).all())
+            writers = _live_batches(db, "material_cost_aims", [x.id for x in copies])
 
             def removable(w: int | None) -> bool:
                 return w is None or w in ours or _link_undo(db, w)
 
             for x in copies:
-                if ("cost_line_step_keys", x.id) in own or not removable(writers.get(x.id)):
+                if ("material_cost_aims", x.id) in own or not removable(writers.get(x.id)):
                     continue   # its own row, or a link a person made: the check names it
                 plan["takes_back"].append({"kind": "key", "line_id": x.line_id, "step": x.step_key})
                 db.delete(x)
             # The links the key made since on clicks this undo leaves, again:
             # a reversed unlink has put them back after the first pass.
-            grown = (db.query(M.CostLineStep).join(M.StepRun, M.StepRun.id == M.CostLineStep.step_run_id)
-                     .filter(M.CostLineStep.line_id.in_(below | {k.line_id}), M.StepRun.run_id == k.run_id,
-                             M.StepRun.step_key == k.step_key, M.CostLineStep.created_at > wb.created_at)
-                     .order_by(M.CostLineStep.id).all())
-            lwriters = _live_batches(db, "cost_line_steps", [x.id for x in grown])
+            grown = (db.query(M.ClickCost).join(M.Click, M.Click.id == M.ClickCost.event_id)
+                     .filter(M.ClickCost.line_id.in_(below | {k.line_id}), M.Click.run_id == k.run_id,
+                             M.Click.step_key == k.step_key, M.ClickCost.created_at > wb.created_at)
+                     .order_by(M.ClickCost.id).all())
+            lwriters = _live_batches(db, "material_cost_aims", [x.id for x in grown])
             for x in grown:
-                if ("cost_line_steps", x.id) in own or not removable(lwriters.get(x.id)):
+                if ("material_cost_aims", x.id) in own or not removable(lwriters.get(x.id)):
                     continue
-                plan["takes_back"].append({"kind": "link", "line_id": x.line_id, "click_id": x.step_run_id,
+                plan["takes_back"].append({"kind": "link", "line_id": x.line_id, "click_id": x.event_id,
                                            "step": k.step_key})
                 db.delete(x)
         db.flush()
@@ -1662,16 +1689,21 @@ def _undo(db: Session, run: M.ProductionRun, actor: str) -> dict:
         if row:
             plan["takes_back"].append(row)
     db.flush()
-    rest = db.query(M.StepRun).filter_by(run_id=run.id, chosen=CHOSEN).all()
+    rest = db.query(M.Click).filter_by(run_id=run.id, chosen=CHOSEN).all()
     if rest:
+        # A rebuild written before the rebuild was journalled, or before the
+        # switch to the material ledger: its rows are in tables kept read only
+        # (decision 0098), and nothing can take it back any more.
         plan["before_the_journal"] = True
-        _undo_before_the_journal(db, run, rest)
-    if not db.query(M.StepRun).filter_by(run_id=run.id).count():
+        plan["refused"].append(f"{len(rest)} rebuilt click(s) of {run.label} were written before the switch to "
+                               "the material ledger (decision 0098) — they cannot be taken back")
+        return plan
+    if not db.query(M.Click).filter_by(run_id=run.id).count():
         # Nothing crafted is left, so the batch is unpinned: a whole-step link
         # made since on a step with no click yet goes too, or the batch keeps
         # a link no screen can show or remove (decision 0074).
-        left = db.query(M.CostLineStepKey).filter_by(run_id=run.id).all()
-        writers = _live_batches(db, "cost_line_step_keys", [k.id for k in left])
+        left = db.query(M.StepCost).filter_by(run_id=run.id).all()
+        writers = _live_batches(db, "material_cost_aims", [k.id for k in left])
         for b in sorted({x for x in writers.values() if x not in ours}, reverse=True):
             wx = db.get(M.WriteBatch, b)
             if wx.reversed_at is not None:
@@ -1686,7 +1718,7 @@ def _undo(db: Session, run: M.ProductionRun, actor: str) -> dict:
                 plan["refused"].append(f"journal batch #{b} ({wx.kind}) cannot be reversed: {err}")
                 return plan
             plan["takes_back"].append(row)
-        for k in db.query(M.CostLineStepKey).filter_by(run_id=run.id).all():
+        for k in db.query(M.StepCost).filter_by(run_id=run.id).all():
             plan["takes_back"].append({"kind": "key", "line_id": k.line_id, "step": k.step_key})
             db.delete(k)
         db.flush()
@@ -1718,26 +1750,24 @@ def _bound_lots(db: Session, batch_ids: list[int]) -> dict[str, float]:
     keys: set[str] = set()
     for b in batch_ids:
         for r in db.get(M.WriteBatch, b).rows:
-            if r.table_name != "component_consumption_lots":
+            if r.table_name != "material_move_lots":
                 continue
-            cur = db.get(M.ComponentConsumptionLot, r.row_id)
-            for st in (r.before or {}, {"lot_line_id": cur.lot_line_id, "lot_adjustment_id": cur.lot_adjustment_id}
+            cur = db.get(M.MaterialMoveLot, r.row_id)
+            for st in (r.before or {}, {"lot_line_id": cur.lot_line_id, "lot_id": cur.lot_id}
                        if cur is not None else {}):
-                if st.get("lot_line_id"):
-                    keys.add(L._lot_key("L", st["lot_line_id"]))
-                if st.get("lot_adjustment_id"):
-                    keys.add(L._lot_key("A", st["lot_adjustment_id"]))
+                if L.key_of(st.get("lot_line_id"), st.get("lot_id")):
+                    keys.add(L.key_of(st.get("lot_line_id"), st.get("lot_id")))
     if not keys:
         return {}
     state = L.lot_state(db)["lots"]
     return {k: state[k]["qty_remaining"] for k in keys if k in state}
 
 
-def _disposal_scrap(sr: M.StepRun) -> bool:
+def _disposal_scrap(sr: M.Click) -> bool:
     """The scrap click a disposal on the device page writes
     (`twins.scrap_disposed`): no journal batch, taken back like a bench click.
     The device keeps its disposal, so a new rebuild scraps the twin again."""
-    return sr.kind == "scrap" and sr.chosen == "list" and (sr.note or "").startswith("disposed of")
+    return sr.step_kind == "scrap" and sr.chosen == "list" and (sr.note or "").startswith("disposed of")
 
 
 def _returned_short(db: Session, run: M.ProductionRun, batches: list[int], bench_clicks: set[int],
@@ -1757,25 +1787,25 @@ def _returned_short(db: Session, run: M.ProductionRun, batches: list[int], bench
     first_before: dict[int, tuple[int, dict]] = {}
     for b in batches:
         for r in db.get(M.WriteBatch, b).rows:
-            if r.table_name != "component_consumptions":
+            if r.table_name != "material_moves":
                 continue
             if r.op == "insert":
                 inserted.add(r.row_id)
             elif r.op == "update" and r.before and (r.row_id not in first_before or b < first_before[r.row_id][0]):
                 first_before[r.row_id] = (b, r.before)
-    inserted |= {c for (c,) in db.query(M.ComponentConsumption.id)
-                 .filter(M.ComponentConsumption.step_run_id.in_(bench_clicks or {-1})).all()}
+    inserted |= {c for (c,) in db.query(M.Draw.id)
+                 .filter(M.Draw.event_id.in_(bench_clicks or {-1})).all()}
     restored: dict[int, dict] = {}
     for cid, (_b, before) in first_before.items():
-        c = db.get(M.ComponentConsumption, cid)
-        if c is None or cid in inserted:
+        c = db.get(M.MaterialMove, cid)
+        if c is None or cid in inserted or c.kind != "draw":
             continue
-        was = 0.0 if before.get("voided_at") else float(before.get("qty") or 0)
-        now = 0.0 if c.voided_at is not None else float(c.qty or 0)
-        if was > now + 1e-9 or (was and (before.get("consumed_at") or c.consumed_at) != c.consumed_at):
+        was = 0.0 if before.get("voided_at") else -float(before.get("qty") or 0)
+        now = 0.0 if c.voided_at is not None else c.taken
+        if was > now + 1e-9 or (was and (before.get("at") or c.at) != c.at):
             restored[cid] = {"component_id": before.get("component_id"), "mpn": before.get("mpn") or "",
                              "lcsc": before.get("lcsc") or "", "qty": was,
-                             "date": before.get("consumed_at") or c.consumed_at,
+                             "date": before.get("at") or c.at,
                              "company": run_actuals.stock_scope(db, c.company_id)}
     if not restored:
         return []
@@ -1827,8 +1857,7 @@ def _returned_short(db: Session, run: M.ProductionRun, batches: list[int], bench
                                                           getattr(row, "mpn", "") or "",
                                                           getattr(row, "lcsc", "") or ""))):
                 continue
-            q = (row.qty or 0.0) if kind == "buy" else \
-                (-(row.qty or 0.0) if kind == "use" else (row.qty_delta or 0.0))
+            q = row.qty or 0.0   # signed
             # a draw (or a loss) recorded since the rebuild: what can take the units back
             late = (kind == "use" or (kind == "adj" and q < 0)) and rebuilt_at is not None \
                 and getattr(row, "created_at", None) is not None and row.created_at > rebuilt_at
@@ -1855,38 +1884,39 @@ def part_name(db: Session, component_id: int | None) -> str:
 
 
 def _batch_row(db: Session, wb: M.WriteBatch, tids: set[int]) -> dict:
-    srs = [db.get(M.StepRun, r.row_id) for r in wb.rows if r.table_name == "step_runs" and r.op == "insert"]
-    srs = [sr for sr in srs if sr is not None]
-    on = {t for (t,) in db.query(M.TwinStep.twin_id).filter(M.TwinStep.step_run_id.in_([sr.id for sr in srs] or [-1]))}
+    srs = [db.get(M.MaterialEvent, r.row_id) for r in wb.rows
+           if r.table_name == "material_events" and r.op == "insert"]
+    srs = [sr for sr in srs if sr is not None and sr.kind == "step"]
+    on = {t for (t,) in db.query(M.MaterialEventLot.lot_id).filter(M.MaterialEventLot.event_id.in_([sr.id for sr in srs] or [-1]))}
     return {"kind": "journal", "batch_id": wb.id, "write": wb.kind, "source_ref": wb.source_ref,
             "clicks": [{"click_id": sr.id, "step": sr.step_key, "label": sr.step_label, "chosen": sr.chosen,
-                        "made_at": sr.made_at, "units": sr.qty} for sr in srs],
+                        "made_at": sr.at, "units": sr.units} for sr in srs],
             "twins_outside_the_rebuild": len(on - tids)}
 
 
-def _take_back_bench(db: Session, sr: M.StepRun, tids: set[int]) -> dict:
+def _take_back_bench(db: Session, sr: M.Click, tids: set[int]) -> dict:
     """A bench click is not journalled (decision 0074): delete it, its draws
     and their lot bindings, and take its step off each twin's stack key. A
     naming at the bench gives the twin its stack back."""
     devices = []
     draws = 0
-    for c in db.query(M.ComponentConsumption).filter_by(step_run_id=sr.id).all():
-        for b in db.query(M.ComponentConsumptionLot).filter_by(consumption_id=c.id).all():
+    for c in db.query(M.Draw).filter_by(event_id=sr.id).all():
+        for b in db.query(M.MaterialMoveLot).filter_by(move_id=c.id).all():
             db.delete(b)
         db.delete(c)
         draws += 1
-    for x in db.query(M.CostLineStep).filter_by(step_run_id=sr.id).all():
+    for x in db.query(M.ClickCost).filter_by(event_id=sr.id).all():
         db.delete(x)
-    for ts in db.query(M.TwinStep).filter_by(step_run_id=sr.id).all():
-        tw = db.get(M.Twin, ts.twin_id)
+    for ts in db.query(M.MaterialEventLot).filter_by(event_id=sr.id).all():
+        tw = db.get(M.Unit, ts.lot_id)
         if tw is not None:
             if tw.device_unit_id:
                 d = db.get(M.DeviceUnit, tw.device_unit_id)
                 devices.append(d.serial or d.mac if d else tw.device_unit_id)
             # The token goes only when no other click of the twin holds the step.
-            still = (db.query(M.TwinStep.id).join(M.StepRun, M.StepRun.id == M.TwinStep.step_run_id)
-                     .filter(M.TwinStep.twin_id == tw.id, M.TwinStep.id != ts.id,
-                             M.StepRun.step_key == sr.step_key).first())
+            still = (db.query(M.MaterialEventLot.id).join(M.Click, M.Click.id == M.MaterialEventLot.event_id)
+                     .filter(M.MaterialEventLot.lot_id == tw.id, M.MaterialEventLot.id != ts.id,
+                             M.Click.step_key == sr.step_key).first())
             if still is None:
                 toks = [t for t in (tw.stack_key or "").split("|") if t and t.split("@", 1)[0] != sr.step_key]
                 tw.stack_key = "|".join(sorted(toks))
@@ -1895,45 +1925,14 @@ def _take_back_bench(db: Session, sr: M.StepRun, tids: set[int]) -> dict:
                 was = (sr.note or "").rsplit("(was ", 1)
                 tw.status = was[1].rstrip(")") if len(was) == 2 else tw.status
                 tw.scrapped_at = None
-            if sr.kind == "program" and (sr.note or "").startswith("named "):
+            if sr.step_kind == "program" and (sr.note or "").startswith("named "):
                 tw.device_unit_id = None
+                tw.identifier = None
                 tw.named_at = None
                 tw.run_id = tw.origin_run_id
         db.delete(ts)
     row = {"kind": "bench", "click_id": sr.id, "step": sr.step_key, "label": sr.step_label,
-           "batch_run_id": sr.run_id, "made_at": sr.made_at, "devices": devices, "draws": draws}
+           "batch_run_id": sr.run_id, "made_at": sr.at, "devices": devices, "draws": draws}
     db.delete(sr)
     db.flush()
     return row
-
-
-def _undo_before_the_journal(db: Session, run: M.ProductionRun, clicks: list[M.StepRun]) -> None:
-    """A rebuild written before the rebuild was journalled: its draws are
-    unlinked (a draw it wrote for a stated step is deleted), its links, twins
-    and clicks deleted."""
-    ids = [c.id for c in clicks]
-    twins = (db.query(M.Twin).join(M.TwinStep, M.TwinStep.twin_id == M.Twin.id)
-             .filter(M.TwinStep.step_run_id.in_(ids or [-1]), M.Twin.found.is_(False)).distinct().all())
-    tids = [tw.id for tw in twins]
-    live = (db.query(M.StepRun.step_label).join(M.TwinStep, M.TwinStep.step_run_id == M.StepRun.id)
-            .filter(M.TwinStep.twin_id.in_(tids or [-1]), M.StepRun.chosen != CHOSEN).distinct().all())
-    if live:
-        raise HTTPException(409, f"live steps were recorded on rebuilt twins since "
-                                 f"({', '.join(x for (x,) in live)}) — undo is refused")
-    for c in db.query(M.ComponentConsumption).filter(M.ComponentConsumption.step_run_id.in_(ids or [-1])):
-        if c.basis == T.BASIS_STEP and (c.note or "").startswith("rebuilt:"):
-            for b in db.query(M.ComponentConsumptionLot).filter_by(consumption_id=c.id).all():
-                db.delete(b)
-            db.delete(c)       # a draw the rebuild wrote for a stated step goes with it
-        else:
-            c.step_run_id = None
-    for x in db.query(M.CostLineStep).filter(M.CostLineStep.step_run_id.in_(ids or [-1])).all():
-        db.delete(x)
-    for x in db.query(M.TwinStep).filter(M.TwinStep.step_run_id.in_(ids or [-1])).all():
-        db.delete(x)
-    db.flush()
-    for tw in twins:
-        db.delete(tw)
-    for c in clicks:
-        db.delete(c)
-    db.flush()

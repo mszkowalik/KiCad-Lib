@@ -336,10 +336,9 @@ def refresh_parts_document(db: Session, plan: dict, actor: str = "jlc-import",
         if not diff:
             continue
         # A voided draw took nothing: its bindings hold no units (decision 0073).
-        bound = (db.query(M.ComponentConsumptionLot)
-                 .join(M.ComponentConsumption, M.ComponentConsumption.id == M.ComponentConsumptionLot.consumption_id)
-                 .filter(M.ComponentConsumptionLot.lot_line_id == row.id,
-                         M.ComponentConsumption.voided_at.is_(None)).all())
+        bound = (db.query(M.MaterialMoveLot)
+                 .join(M.Draw, M.Draw.id == M.MaterialMoveLot.move_id)
+                 .filter(M.MaterialMoveLot.lot_line_id == row.id, M.Draw.voided_at.is_(None)).all())
         if "unit_price" in diff and bound:
             # The draws bound to this lot were priced at its old cost. They move
             # with it, or the lot's value goes negative once they have used it
@@ -375,10 +374,9 @@ def refresh_parts_document(db: Session, plan: dict, actor: str = "jlc-import",
                     and abs((li.qty or 0) * (li.unit_price or 0) - r["advance_usd"]) < 0.005]
             rows = fits if len(fits) == 1 else []
         for row in rows:
-            if (db.query(M.ComponentConsumptionLot)
-                    .join(M.ComponentConsumption, M.ComponentConsumption.id == M.ComponentConsumptionLot.consumption_id)
-                    .filter(M.ComponentConsumptionLot.lot_line_id == row.id,
-                            M.ComponentConsumption.voided_at.is_(None)).first()):
+            if (db.query(M.MaterialMoveLot)
+                    .join(M.Draw, M.Draw.id == M.MaterialMoveLot.move_id)
+                    .filter(M.MaterialMoveLot.lot_line_id == row.id, M.Draw.voided_at.is_(None)).first()):
                 blockers.append(f"line {row.id} (refunded lot {r['lot_ref']}) has draws bound to it")
                 continue
             voids.append(row)
@@ -453,7 +451,7 @@ def _closed_runs_of(db: Session, bindings: list) -> list[int]:
     """The closed batches the draws behind these lot bindings are charged to."""
     runs = set()
     for b in bindings:
-        c = db.get(M.ComponentConsumption, b.consumption_id)
+        c = db.get(M.Draw, b.move_id)
         if c is not None and c.run_id is not None and c.voided_at is None:
             run = db.get(M.ProductionRun, c.run_id)
             if run is not None and run.closed_at is not None:
@@ -471,17 +469,17 @@ def _reprice_bindings(db: Session, line: M.RunCostLine, new_unit: float) -> list
     so the journal can reverse it.
     """
     out: list[dict] = []
-    for b in (db.query(M.ComponentConsumptionLot)
-              .filter(M.ComponentConsumptionLot.lot_line_id == line.id).all()):
+    for b in (db.query(M.MaterialMoveLot)
+              .filter(M.MaterialMoveLot.lot_line_id == line.id).all()):
         old = float(b.unit_cost_usd or 0.0)
         if abs(old - new_unit) < 1e-12:
             continue
-        c = db.get(M.ComponentConsumption, b.consumption_id)
+        c = db.get(M.Draw, b.move_id)
         delta_value = float(b.qty or 0) * (new_unit - old)
         b.unit_cost_usd = new_unit
-        if c is not None and (c.qty or 0):
+        if c is not None and c.taken:
             was = float(c.unit_cost_usd or 0.0)
-            c.unit_cost_usd = round(was + delta_value / float(c.qty), 8)
+            c.unit_cost_usd = round(was + delta_value / float(c.taken), 8)
             out.append({"consumption_id": c.id, "run_id": c.run_id, "lcsc": c.lcsc,
                         "qty": b.qty, "lot_unit_was": old, "lot_unit_now": new_unit,
                         "delta_usd": round(delta_value, 4)})
@@ -1091,17 +1089,17 @@ def backfill_fee_split(db: Session, row: M.JlcImport, actor: str = "jlc-import",
             # Decisions 0060/0061: the fee keeps the step clicks its line paid for.
             from . import twins as _twins
 
-            keys = db.query(M.CostLineStepKey).filter_by(line_id=target.id).all()
+            keys = db.query(M.StepCost).filter_by(line_id=target.id).all()
             # its clicks, and every click of a whole step it pays for (0074)
-            links = sorted({s for (s,) in db.query(M.CostLineStep.step_run_id).filter_by(line_id=target.id).all()}
+            links = sorted({s for (s,) in db.query(M.ClickCost.event_id).filter_by(line_id=target.id).all()}
                            | {s for k in keys for s in _twins.step_clicks(db, k.run_id, k.step_key)})
             if links or keys:
                 db.flush()
                 for srid in links:
-                    db.add(M.CostLineStep(line_id=child.id, step_run_id=srid))
+                    db.add(M.ClickCost(line_id=child.id, event_id=srid))
                 # and its whole-step links, so later clicks pay too (0074)
                 for k in keys:
-                    db.add(M.CostLineStepKey(line_id=child.id, run_id=k.run_id, step_key=k.step_key))
+                    db.add(M.StepCost(line_id=child.id, run_id=k.run_id, step_key=k.step_key))
         made += len(planned)
         value = round(value + sum(c["amount"] for c in base_kids), 2)
         results.append({"key": key, "line_id": target.id, "status": "split",
@@ -1183,8 +1181,8 @@ def apply_draws(db: Session, order_plan: dict, run_id: int | None,
     later (`charge_draws`). Nothing is superseded on an uncharged write, because
     a forecast belongs to a run and no run has been named yet.
 
-    Shape: one `ComponentConsumption` per (run, part) carrying the qty-weighted
-    average, with one `ComponentConsumptionLot` child per JLC row. That keeps
+    Shape: one stock event per order; in it one `Draw` per (run, part) carrying
+    the qty-weighted average, with one `MaterialMoveLot` per JLC row. That keeps
     the parent row count equal to the part count — which the costs UI assumes —
     while preserving which purchase each slice came from. The two views total
     the same figure by construction, so the advanced toggle can never change a
@@ -1212,7 +1210,10 @@ def apply_draws(db: Session, order_plan: dict, run_id: int | None,
     when = (order_plan["invoice_date"].isoformat()
             if order_plan.get("invoice_date") else "")
 
+    from .material_ledger import core as _ledger
+
     planned_bindings: list[dict] = []
+    order_event: M.MaterialEvent | None = None
     made = skipped = unresolved = 0
     parts_touched: set[str] = set()
     # Identity is matched on the resolved COMPONENT as well as the supplier's
@@ -1228,7 +1229,7 @@ def apply_draws(db: Session, order_plan: dict, run_id: int | None,
     components_touched: set[int] = set()
 
     # Capacity is checked BEFORE anything is written. Checking afterwards is
-    # self-defeating: `lot_state` reads `component_consumption_lots`, so a
+    # self-defeating: `lot_state` reads `material_move_lots`, so a
     # post-flush check sees the very bindings it is validating and counts them
     # twice — every order then looks like it overdraws by exactly its own size.
     # Skip parts already imported, or a re-run double-counts its own previous
@@ -1242,7 +1243,7 @@ def apply_draws(db: Session, order_plan: dict, run_id: int | None,
         # re-import after a deliberate void must stay a no-op — resurrecting a
         # draw someone chose to retire would be the import silently overruling
         # the operator. Voiding is undone by reversing its batch, not by syncing.
-        if db.query(M.ComponentConsumption).filter_by(import_ref=ref).first():
+        if db.query(M.Draw).filter_by(import_ref=ref).first():
             continue
         for r in rows:
             lid = lot_lines.get(r.get("lot_key") or "")
@@ -1261,7 +1262,7 @@ def apply_draws(db: Session, order_plan: dict, run_id: int | None,
         if qty <= 0:
             continue
         import_ref = f"jlc:{order_plan['batch_num']}:{code}:{lcsc or mpn}"
-        if db.query(M.ComponentConsumption).filter_by(import_ref=import_ref).first():
+        if db.query(M.Draw).filter_by(import_ref=import_ref).first():
             skipped += 1
             continue
         if cid is None:
@@ -1287,24 +1288,26 @@ def apply_draws(db: Session, order_plan: dict, run_id: int | None,
         unit = round(value / qty, 8) if qty else 0.0
 
         if not dry_run:
-            cons = M.ComponentConsumption(
-                run_id=run_id, component_id=cid, mpn=(mpn or "")[:200], lcsc=lcsc,
-                qty=qty, unit_cost_usd=unit, basis="measured", consumed_at=when,
-                import_ref=import_ref,
-                # Whose stock (decision 0064): the batch's company, stamped on
-                # flush; with no batch yet, the company the order billed.
-                company_id=None if run_id else _order_buyer(db, order_plan),
+            # Whose stock (decision 0064): the batch's company, stamped on
+            # flush; with no batch yet, the company the order billed.
+            company = None if run_id else _order_buyer(db, order_plan)
+            if order_event is None:
+                # The order's consumption is one operation: one stock event.
+                run = db.get(M.ProductionRun, run_id) if run_id else None
+                order_event = _ledger.stock_event(
+                    db, at=when, run_id=run_id, company_id=run.company_id if run is not None else company,
+                    note=f"JLC assembly order {code} (batch {order_plan['batch_num']})")
+            cons = _ledger.draw(
+                db, event=order_event, run_id=run_id, component_id=cid, mpn=(mpn or "")[:200], lcsc=lcsc,
+                taken=qty, unit_cost_usd=unit, basis="measured", at=when, import_ref=import_ref,
+                company_id=company,
                 note=(f"JLC assembly order {code} (batch {order_plan['batch_num']}) drew "
                       f"{qty:g} across {len(children)} lot(s); prices are the lots' landed "
-                      "cost, not JLC's quoted component price"),
-            )
-            db.add(cons)
-            db.flush()
+                      "cost, not JLC's quoted component price"))
             for ch in children:
-                db.add(M.ComponentConsumptionLot(
-                    consumption_id=cons.id, lot_line_id=ch["lot_line_id"],
-                    qty=ch["qty"], unit_cost_usd=ch["unit_cost_usd"] or 0.0,
-                    source=ch["source"], ext_ref=ch["ext_ref"]))
+                _ledger.bind(db, cons, lot_line_id=ch["lot_line_id"], qty=ch["qty"],
+                             unit_cost_usd=ch["unit_cost_usd"] or 0.0, source=ch["source"],
+                             ext_ref=ch["ext_ref"])
         made += 1
 
     # Retire the forecasts these measurements replace. VOID, never delete: this
@@ -1361,8 +1364,7 @@ def _void_superseded(db: Session, run_id: int, parts: set[str],
         return 0
     voided = 0
     for old in (run_actuals.live_consumption(db, run_id=run_id)
-                .filter(M.ComponentConsumption.import_ref == "",
-                        M.ComponentConsumption.basis.in_(("bom", "manual", "allocated")))
+                .filter(M.Draw.import_ref == "", M.Draw.basis.in_(("bom", "manual", "allocated")))
                 .all()):
         ident = old.lcsc or old.mpn
         if (ident and ident in parts) or (
@@ -1401,7 +1403,7 @@ def charge_draws(db: Session, order_plan: dict, run_id: int,
             f"{sorted({c.run_id for c in elsewhere})} — reverse that batch first")
     out = {"smt_order_code": code, "run_id": run_id,
            "uncharged_draws": len(mine),
-           "value_usd": round(sum((c.qty or 0) * (c.unit_cost_usd or 0) for c in mine), 2),
+           "value_usd": round(sum(c.taken * (c.unit_cost_usd or 0) for c in mine), 2),
            "already_charged": len(rows) - len(mine) - len(elsewhere)}
     # A batch draws its own company's stock (decision 0064). With each company
     # keeping its own, units bound to the other company's lot move to the

@@ -46,6 +46,7 @@ from app.services import process as P
 from app.services import run_actuals as ra
 from app.services import twin_rebuild as R
 from app.services import twins as T
+from app.services.material_ledger import core as ledger
 
 
 @pytest.fixture
@@ -161,9 +162,7 @@ def _old(db, w, days, run_date="2025-03-01", *, ant=None, enc=None, carton=None,
     n = len(days)
     for cid, mpn, qty, price in ((w["ant"].id, "", ant, 1.0), (w["enc"].id, "", enc, 2.0),
                                  (None, "TEST-RB-KARTON", carton, 0.5)):
-        db.add(M.ComponentConsumption(run_id=run.id, component_id=cid, mpn=mpn, lcsc="",
-                                      qty=n if qty is None else qty, unit_cost_usd=price, basis="bom",
-                                      consumed_at=run_date))
+        _bom_draw(db, run, n if qty is None else qty, run_date, component_id=cid, mpn=mpn, unit=price)
     doc = M.RunCostDocument(project_id=proj.id, run_id=run.id, doc_type="invoice", supplier="ASSY",
                             doc_number=f"RB-{run.id}", doc_date=run_date, currency="USD", total_amount=70.0)
     db.add(doc)
@@ -174,6 +173,17 @@ def _old(db, w, days, run_date="2025-03-01", *, ant=None, enc=None, carton=None,
         db.add(M.RunCostLine(document_id=doc.id, plan_key=key, qty=1, unit_price=amount, label=text, position=i))
     db.flush()
     return run, devices
+
+
+def _bom_draw(db, run, qty, day, *, component_id=None, mpn="", unit=2.0):
+    """A BOM draw of a batch (a ledger move; its `qty` is negative)."""
+    return ledger.draw(db, component_id=component_id, mpn=mpn, taken=qty, unit_cost_usd=unit, at=day,
+                       run_id=run.id, basis="bom")
+
+
+def _in_click(db, c):
+    """Is this draw a click's? (Before decision 0098: `step_run_id` set.)"""
+    return R._in_click(db, c)
 
 
 def _bench_run(db, w, kind, device, day, *, status="pass", results=None, version=0, ops=None):
@@ -196,17 +206,17 @@ def _total(db, run):
 
 
 def _twin(db, d):
-    return db.query(M.Twin).filter_by(device_unit_id=d.id).one()
+    return db.query(M.Unit).filter_by(device_unit_id=d.id).one()
 
 
 def _links(db, tw, key):
-    return (db.query(M.TwinStep, M.StepRun).join(M.StepRun, M.StepRun.id == M.TwinStep.step_run_id)
-            .filter(M.TwinStep.twin_id == tw.id, M.StepRun.step_key == key).all())
+    return (db.query(M.MaterialEventLot, M.Click).join(M.Click, M.Click.id == M.MaterialEventLot.event_id)
+            .filter(M.MaterialEventLot.lot_id == tw.id, M.Click.step_key == key).all())
 
 
 def _alive_prices(db, *runs):
-    twins = db.query(M.Twin).filter(M.Twin.origin_run_id.in_([r.id for r in runs]), M.Twin.found.is_(False),
-                                    M.Twin.status != "scrapped").all()
+    twins = db.query(M.Unit).filter(M.Unit.origin_run_id.in_([r.id for r in runs]), M.Unit.found.is_(False),
+                                    M.Unit.status != "scrapped").all()
     return sum(p["total_usd"] for p in T.prices(db, twins).values())
 
 
@@ -235,17 +245,17 @@ def test_bench_runs_are_the_evidence_of_test_mark_and_label(db, w):
     # one click per day and deployment version, each twin naming its own run
     (ts0, sr0), = _links(db, _twin(db, d0), "test")
     (ts3, sr3), = _links(db, _twin(db, d3), "test")
-    assert (ts0.programming_run_id, ts0.deployment_version_id, sr0.made_at) == (t0.id, w["test_v"][0].id, "2025-03-05")
-    assert (ts3.programming_run_id, sr3.made_at) == (t3.id, "2025-03-06") and sr0.id != sr3.id
+    assert (ts0.programming_run_id, ts0.deployment_version_id, sr0.at) == (t0.id, w["test_v"][0].id, "2025-03-05")
+    assert (ts3.programming_run_id, sr3.at) == (t3.id, "2025-03-06") and sr0.id != sr3.id
     (ts2, sr2), = _links(db, _twin(db, d2), "test")
-    assert ts2.programming_run_id is None and sr2.made_at == "2025-03-01"   # stated: its programming day
+    assert ts2.programming_run_id is None and sr2.at == "2025-03-01"   # stated: its programming day
     # the laser: the bench for d0, the statement for d2 only; the label: the bench for d0 only
     assert {d.id for d in (d0, d1, d2, d3) if _links(db, _twin(db, d), "laser")} == {d0.id, d2.id}
     (tl, label_click), = _links(db, _twin(db, d0), "label")
     assert tl.programming_run_id == mk.id and not _links(db, _twin(db, d1), "label")
     # the label step draws one label per copy printed, on the bench's day
-    drawn = db.query(M.ComponentConsumption).filter_by(step_run_id=label_click.id).one()
-    assert (drawn.qty, drawn.consumed_at) == (2, "2025-03-10")
+    drawn = db.query(M.Draw).filter_by(event_id=label_click.id).one()
+    assert (drawn.taken, drawn.at) == (2, "2025-03-10")
     assert plan["check"]["ok"] and _total(db, run) == pytest.approx(before + 0.2, abs=1e-6)
     assert _alive_prices(db, run) == pytest.approx(before + 0.2, abs=0.01)
     # the per-device plan says where each step came from
@@ -302,15 +312,15 @@ def test_each_step_carries_its_own_date(db, w):
     db.flush()
     plan = R.rebuild(db, run, version_id=w["v"].id, dry_run=False)
     assert plan["dates"]["before_programming"] == "2025-03-01"   # the first programming came first
-    clicks = {(sr.step_key, sr.made_at): sr for sr in db.query(M.StepRun).filter_by(run_id=run.id)}
+    clicks = {(sr.step_key, sr.at): sr for sr in db.query(M.Click).filter_by(run_id=run.id)}
     assert ("receive", "2025-03-01") in clicks and ("enclosure", "2025-03-01") in clicks
     # after programming: one click a day, on each device's own day
     assert sorted(day for k, day in clicks if k == "carton") == ["2025-03-01", "2025-03-10"]
     assert sorted(day for k, day in clicks if k == "program") == ["2025-03-01", "2025-03-10"]
     # the carton draw was split, a piece per click, and its value is whole
-    cartons = (ra.live_consumption(db, run_id=run.id).filter(M.ComponentConsumption.mpn == "TEST-RB-KARTON").all())
-    assert sorted(c.qty for c in cartons) == [1, 2] and sum(c.qty * c.unit_cost_usd for c in cartons) == 1.5
-    assert all(c.step_run_id for c in cartons)
+    cartons = (ra.live_consumption(db, run_id=run.id).filter(M.Draw.mpn == "TEST-RB-KARTON").all())
+    assert sorted(c.taken for c in cartons) == [1, 2] and sum(c.taken * c.unit_cost_usd for c in cartons) == 1.5
+    assert all(_in_click(db, c) for c in cartons)
     tw2 = _twin(db, d2)
     assert tw2.status == "scrapped" and tw2.scrapped_at.date().isoformat() == "2025-04-02"
     assert ("scrap", "2025-04-02") in clicks
@@ -330,7 +340,7 @@ def test_draws_that_do_not_match_the_units_must_be_settled(db, w):
     with pytest.raises(HTTPException) as e:
         R.rebuild(db, run, version_id=w["v"].id, dry_run=False)
     assert e.value.status_code == 409 and "no statement" in str(e.value.detail)
-    assert db.query(M.Twin).filter_by(origin_run_id=run.id).count() == 0
+    assert db.query(M.Unit).filter_by(origin_run_id=run.id).count() == 0
     # within the tolerance nothing needs saying
     assert R.rebuild(db, run, version_id=w["v"].id, tolerance=2)["can_write"]
     plan = R.rebuild(db, run, version_id=w["v"].id, dry_run=False,
@@ -341,7 +351,7 @@ def test_draws_that_do_not_match_the_units_must_be_settled(db, w):
     assert [(d["step"], d["qty"]) for d in plan["draws_added"]] == [("carton", 1)]
     assert _total(db, run) == pytest.approx(before + 0.5, abs=1e-6)
     # each twin carries one enclosure; the two left over sit in the origin share
-    per = {p["own_parts_usd"] for p in T.prices(db, db.query(M.Twin).filter_by(origin_run_id=run.id).all()).values()}
+    per = {p["own_parts_usd"] for p in T.prices(db, db.query(M.Unit).filter_by(origin_run_id=run.id).all()).values()}
     assert per == {3.5}          # antenna $1 + enclosure $2 + carton $0.50
     assert _alive_prices(db, run) == pytest.approx(before + 0.5, abs=0.01)
     # short: the step is recorded without the missing carton
@@ -352,7 +362,7 @@ def test_draws_that_do_not_match_the_units_must_be_settled(db, w):
 
 def test_a_returned_surplus_gives_its_lots_back_and_the_undo_restores_it(db, w, monkeypatch):
     run, _devices = _old(db, w, ["2025-03-01"] * 3, enc=5)
-    enc = ra.live_consumption(db, run_id=run.id).filter(M.ComponentConsumption.component_id == w["enc"].id).one()
+    enc = ra.live_consumption(db, run_id=run.id).filter(M.Draw.component_id == w["enc"].id).one()
     L.bind(db, enc, L.FifoPicker(db).pick(w["enc"].id, "", "", 5, "2025-03-01"))
     monkeypatch.setattr(settings, "lot_pricing", True)
     before = _total(db, run)
@@ -360,16 +370,15 @@ def test_a_returned_surplus_gives_its_lots_back_and_the_undo_restores_it(db, w, 
                      settle=[{"step": "enclosure", "how": "return"}])
     assert plan["check"]["ok"] and [(x["qty"], x["usd"]) for x in plan["draws_returned"]] == [(2, 4.0)]
     db.expire_all()
-    left = ra.live_consumption(db, run_id=run.id).filter(M.ComponentConsumption.component_id == w["enc"].id).all()
-    bound = db.query(M.ComponentConsumptionLot).filter(
-        M.ComponentConsumptionLot.consumption_id.in_([c.id for c in left])).all()
-    assert sum(c.qty for c in left) == 3 and sum(b.qty for b in bound) == pytest.approx(3)
+    left = ra.live_consumption(db, run_id=run.id).filter(M.Draw.component_id == w["enc"].id).all()
+    bound = db.query(M.MaterialMoveLot).filter(M.MaterialMoveLot.move_id.in_([c.id for c in left])).all()
+    assert sum(c.taken for c in left) == 3 and sum(b.qty for b in bound) == pytest.approx(3)
     assert _total(db, run) == pytest.approx(before - 4.0, abs=1e-6)
     R.undo(db, run, dry_run=False)
     db.expire_all()
-    back = db.get(M.ComponentConsumption, enc.id)
-    assert back.qty == 5 and back.step_run_id is None
-    assert sum(b.qty for b in db.query(M.ComponentConsumptionLot).filter_by(consumption_id=enc.id)) == pytest.approx(5)
+    back = db.get(M.Draw, enc.id)
+    assert back.taken == 5 and not _in_click(db, back)
+    assert sum(b.qty for b in db.query(M.MaterialMoveLot).filter_by(move_id=enc.id)) == pytest.approx(5)
     assert _total(db, run) == pytest.approx(before, abs=1e-6)
 
 
@@ -392,7 +401,7 @@ def test_devices_that_join_later_are_appended(db, w):
                                                                                          "carton")], dry_run=False)
     assert (plan["named"], plan["devices_with_a_twin_already"]) == (1, 2) and plan["check"]["ok"]
     asm = R._rebuilt_click(db, run, "assembly")
-    assert asm.qty == 3 and _links(db, _twin(db, d2), "assembly")
+    assert asm.units == 3 and _links(db, _twin(db, d2), "assembly")
     # the final assembler's invoice pays for the new carton click too: three twins share it
     li = db.query(M.RunCostLine).filter_by(label="device assembly").join(
         M.RunCostDocument, M.RunCostDocument.id == M.RunCostLine.document_id).filter(
@@ -402,7 +411,7 @@ def test_devices_that_join_later_are_appended(db, w):
     assert _alive_prices(db, run) == pytest.approx(_total(db, run), abs=0.01)
     undone = R.undo(db, run, dry_run=False)
     assert len(undone["rebuild_batches"]) == 2
-    assert db.query(M.Twin).filter_by(origin_run_id=run.id).count() == 0 and run.process_version_id is None
+    assert db.query(M.Unit).filter_by(origin_run_id=run.id).count() == 0 and run.process_version_id is None
 
 
 def test_the_undo_takes_back_the_live_clicks_on_rebuilt_twins(db, w):
@@ -416,12 +425,12 @@ def test_the_undo_takes_back_the_live_clicks_on_rebuilt_twins(db, w):
     dry = R.undo(db, run)
     kinds = sorted((x["kind"], (x.get("step") or x["clicks"][0]["step"])) for x in dry["takes_back"])
     assert kinds == [("bench", "laser"), ("journal", "leaflet")] and not dry["refused"]
-    assert db.query(M.Twin).filter_by(origin_run_id=run.id).count() == 2      # a dry run keeps everything
+    assert db.query(M.Unit).filter_by(origin_run_id=run.id).count() == 2      # a dry run keeps everything
     R.undo(db, run, dry_run=False)
     db.expire_all()
-    assert db.query(M.Twin).filter_by(origin_run_id=run.id).count() == 0
-    assert db.get(M.StepRun, leaflet["step_run_id"]) is None
-    assert db.query(M.StepRun).filter_by(run_id=run.id).count() == 0
+    assert db.query(M.Unit).filter_by(origin_run_id=run.id).count() == 0
+    assert db.get(M.Click, leaflet["step_run_id"]) is None
+    assert db.query(M.Click).filter_by(run_id=run.id).count() == 0
 
 
 # ---------------------------------------------------- the origin batch (hole 7)
@@ -439,7 +448,7 @@ def test_devices_built_on_another_batch_s_boards_keep_its_origin(db, w):
     assert plan["check"]["ok"] and plan["check"]["batches"] == sorted([x.id, run.id])
     tw2 = _twin(db, d2)
     assert (tw2.origin_run_id, tw2.run_id) == (x.id, run.id) and x.label in tw2.note
-    assert R._rebuilt_click(db, x, "assembly").qty == 3 and R._rebuilt_click(db, run, "assembly").qty == 2
+    assert R._rebuilt_click(db, x, "assembly").units == 3 and R._rebuilt_click(db, run, "assembly").units == 2
     # X's boards now spread over three twins; the money of both batches is carried whole
     assert T.origin_shares(db, [x.id])[x.id]["share_usd"] < share_before
     assert _alive_prices(db, run, x) == pytest.approx(_total(db, run) + _total(db, x), abs=0.01)
@@ -495,14 +504,14 @@ def test_the_route_dry_run_keeps_the_transaction_and_a_write_is_one_journal_batc
     run, _devices = _old(db, w, ["2025-03-01"] * 2)
     dry = pr.rebuild_batch(run.id, pr.RebuildIn(version_id=w["v"].id, assume={"leaflet": pr.DevicesIn()}), db=db)
     assert dry["dry_run"] and db.get(M.Project, w["project"].id) is not None     # the fixture survives
-    assert db.query(M.Twin).filter_by(origin_run_id=run.id).count() == 0
+    assert db.query(M.Unit).filter_by(origin_run_id=run.id).count() == 0
     res = pr.rebuild_batch(run.id, pr.RebuildIn(version_id=w["v"].id, dry_run=False), db=db)
     wb = db.get(M.WriteBatch, res["batch_id"])
     assert (wb.kind, wb.source_ref) == ("craft.rebuild", f"run:{run.id}")
     assert pr.undo_rebuild(run.id, pr.UndoIn(), db=db)["rebuild_batches"] == [wb.id]
     pr.undo_rebuild(run.id, pr.UndoIn(dry_run=False), db=db)
     db.expire_all()
-    assert db.query(M.Twin).filter_by(origin_run_id=run.id).count() == 0
+    assert db.query(M.Unit).filter_by(origin_run_id=run.id).count() == 0
     assert db.get(M.WriteBatch, wb.id).reversed_at is not None
 
 
@@ -525,8 +534,8 @@ def test_the_program_step_names_the_first_passing_program_run_of_the_device(db, 
     plan = R.rebuild(db, run, version_id=w["v"].id, dry_run=False)
     assert plan["can_write"]
     (ts, sr), = _links(db, _twin(db, d0), "program")
-    assert (ts.programming_run_id, ts.deployment_version_id, sr.made_at) == (first.id, w["flash_v"][0].id,
-                                                                             "2025-03-01")
+    assert (ts.programming_run_id, ts.deployment_version_id, sr.at) == (first.id, w["flash_v"][0].id,
+                                                                        "2025-03-01")
     row = next(x for x in plan["devices"] if x["device_id"] == d0.id)
     assert (row["steps"]["program"]["run"], row["steps"]["program"]["version"]) == (first.id, "rb-flash v1")
     # the later pass is a reflash on the twin card, not the programming
@@ -580,8 +589,9 @@ def test_parts_meet_by_pool_identity(db, w):
     v2 = P.compose(db, w["project"].id, actor="test", graph=g)
     P.publish(db, v2, actor="test", comment="antenna by MPN")
     run, _devices = _old(db, w, ["2025-03-01"] * 3, ant=5)          # the antenna draw carries the component id
-    enc_draw = ra.live_consumption(db, run_id=run.id).filter(M.ComponentConsumption.component_id == enc.id).one()
+    enc_draw = ra.live_consumption(db, run_id=run.id).filter(M.Draw.component_id == enc.id).one()
     enc_draw.component_id, enc_draw.mpn = None, "TEST-RB-ENC"       # the enclosure draw names its MPN only
+    enc_draw.item_id = ledger.item(db, None, "TEST-RB-ENC").id      # and so is filed under that name
     db.flush()
     dry = R.rebuild(db, run, version_id=v2.id)
     rows = {r["step"]: r for r in dry["parts"]}
@@ -597,22 +607,22 @@ def test_parts_meet_by_pool_identity(db, w):
                      settle=[{"step": "antenna", "part": f"c{ant.id}", "how": "loss"}])
     assert plan["can_write"] and plan["check"]["ok"] and R._CANON.get() is None
     assert [(x["step"], x["part"], x["qty"]) for x in plan["left_in_origin"]["loss"]] == [("antenna", f"c{ant.id}", 2)]
-    assert db.get(M.ComponentConsumption, enc_draw.id).step_run_id is not None
+    assert _in_click(db, db.get(M.Draw, enc_draw.id))
 
 
 def test_the_undo_takes_back_a_disposal_from_the_device_page(db, w):
     run, (d0, _d1) = _old(db, w, ["2025-03-01", "2025-03-02"])
     R.rebuild(db, run, version_id=w["v"].id, dry_run=False)
     osvc.dispose_device(db, d0, reason="cracked", actor="test")
-    scrap = db.query(M.StepRun).filter_by(run_id=run.id, kind="scrap", chosen="list").one()
+    scrap = db.query(M.Click).filter_by(run_id=run.id, step_kind="scrap", chosen="list").one()
     assert _twin(db, d0).status == "scrapped" and scrap.note == "disposed of: cracked (was finished)"
     dry = R.undo(db, run)
     assert not dry["refused"]
     assert [(x["kind"], x["step"]) for x in dry["takes_back"]] == [("bench", "scrap")]
     R.undo(db, run, dry_run=False)
     db.expire_all()
-    assert db.query(M.Twin).filter_by(origin_run_id=run.id).count() == 0
-    assert db.query(M.StepRun).filter_by(run_id=run.id).count() == 0
+    assert db.query(M.Unit).filter_by(origin_run_id=run.id).count() == 0
+    assert db.query(M.Click).filter_by(run_id=run.id).count() == 0
     assert db.get(M.DeviceUnit, d0.id).state == "disposed"
     # the device keeps its disposal, so a new rebuild scraps the twin again
     again = R.rebuild(db, db.get(M.ProductionRun, run.id), version_id=w["v"].id, dry_run=False)
@@ -621,7 +631,7 @@ def test_the_undo_takes_back_a_disposal_from_the_device_page(db, w):
 
 def test_the_undo_refuses_while_the_returned_surplus_is_drawn_again(db, w, monkeypatch):
     run, _devices = _old(db, w, ["2025-03-01"] * 3, enc=5)
-    enc = ra.live_consumption(db, run_id=run.id).filter(M.ComponentConsumption.component_id == w["enc"].id).one()
+    enc = ra.live_consumption(db, run_id=run.id).filter(M.Draw.component_id == w["enc"].id).one()
     L.bind(db, enc, L.FifoPicker(db).pick(w["enc"].id, "", "", 5, "2025-03-01"))
     monkeypatch.setattr(settings, "lot_pricing", True)
     R.rebuild(db, run, version_id=w["v"].id, dry_run=False, settle=[{"step": "enclosure", "how": "return"}])
@@ -630,17 +640,14 @@ def test_the_undo_refuses_while_the_returned_surplus_is_drawn_again(db, w, monke
     db.add(other)
     db.flush()
     # 100 bought, 3 kept: the 2 returned are drawn again by another batch
-    drain = M.ComponentConsumption(run_id=other.id, component_id=w["enc"].id, mpn="", lcsc="", qty=97,
-                                   unit_cost_usd=2.0, basis="bom", consumed_at="2025-04-01")
-    db.add(drain)
-    db.flush()
+    drain = _bom_draw(db, other, 97, "2025-04-01", component_id=w["enc"].id)
     dry = R.undo(db, run)
     assert len(dry["refused"]) == 1 and "drawn again since" in dry["refused"][0] and "short 2" in dry["refused"][0]
     with pytest.raises(HTTPException) as e:
         R.undo(db, run, dry_run=False)
     assert e.value.status_code == 409
-    assert db.get(M.ComponentConsumption, enc.id).qty == 3      # nothing was kept
-    drain.qty = 95                                               # the pool holds the 2 again
+    assert db.get(M.Draw, enc.id).taken == 3      # nothing was kept
+    drain.taken = 95                                               # the pool holds the 2 again
     db.flush()
     assert not R.undo(db, run)["refused"]
 
@@ -658,7 +665,7 @@ def test_the_undo_takes_back_the_links_its_whole_step_key_made_since(db, w):
     db.add(c)
     db.flush()
     pr.craft_receive(c.id, pr.ReceiveIn(qty=1, made_at="2025-06-01", dry_run=False), db=db)
-    pile = db.query(M.Twin).filter_by(run_id=c.id).one()
+    pile = db.query(M.Unit).filter_by(run_id=c.id).one()
     pr.craft_step(c.id, pr.StepIn(step_key="antenna", stack=T.stack_id(c.id, pile.stack_key), qty=1,
                                   chosen="stack", made_at="2025-06-01", dry_run=False), db=db)
     db.refresh(pile)
@@ -668,18 +675,18 @@ def test_the_undo_takes_back_the_links_its_whole_step_key_made_since(db, w):
     db.flush()
     ev = osvc.mark_produced(db, d, a.id, at=_at("2025-06-02"), actor="test")
     assert T.name_at_bench(db, d, ev, a).id == pile.id
-    bench = db.query(M.StepRun).filter_by(run_id=a.id, chosen="bench").one()
-    assert db.query(M.CostLineStep).filter_by(step_run_id=bench.id, line_id=li.id).count() == 1
+    bench = db.query(M.Click).filter_by(run_id=a.id, chosen="bench").one()
+    assert db.query(M.ClickCost).filter_by(event_id=bench.id, line_id=li.id).count() == 1
     dry = R.undo(db, a)
     assert not dry["refused"]
     assert [(x["kind"], x["click_id"]) for x in dry["takes_back"]] == [("link", bench.id)]
     R.undo(db, a, dry_run=False)
     db.expire_all()
-    assert db.query(M.Twin).filter_by(origin_run_id=a.id).count() == 0
+    assert db.query(M.Unit).filter_by(origin_run_id=a.id).count() == 0
     # the click and the live twin stay; the position pays for nothing any more
-    assert db.get(M.StepRun, bench.id) is not None and db.get(M.Twin, pile.id).device_unit_id == d.id
-    assert db.query(M.CostLineStep).filter_by(line_id=li.id).count() == 0
-    assert db.query(M.CostLineStepKey).filter_by(line_id=li.id).count() == 0
+    assert db.get(M.Click, bench.id) is not None and db.get(M.Unit, pile.id).device_unit_id == d.id
+    assert db.query(M.ClickCost).filter_by(line_id=li.id).count() == 0
+    assert db.query(M.StepCost).filter_by(line_id=li.id).count() == 0
 
 
 def test_the_undo_refuses_while_a_batch_it_touched_is_closed(db, w):
@@ -697,7 +704,7 @@ def test_the_undo_refuses_while_a_batch_it_touched_is_closed(db, w):
     assert e.value.status_code == 409
     db.expire_all()
     # A's frozen clicks keep the twin built on its boards
-    assert R._rebuilt_click(db, a, "assembly").qty == 3 and _twin(db, bd[2]).origin_run_id == a.id
+    assert R._rebuilt_click(db, a, "assembly").units == 3 and _twin(db, bd[2]).origin_run_id == a.id
 
 
 def test_the_undo_refuses_a_bench_click_in_another_closed_batch(db, w):
@@ -705,7 +712,7 @@ def test_the_undo_refuses_a_bench_click_in_another_closed_batch(db, w):
 
     a, _ad = _old(db, w, ["2025-02-01"] * 2, run_date="2025-02-01", label="TBA", ant=3, enc=3)
     R.rebuild(db, a, version_id=w["v"].id, spares=[{"qty": 1, "done": ["antenna", "enclosure"]}], dry_run=False)
-    spare = db.query(M.Twin).filter(M.Twin.origin_run_id == a.id, M.Twin.device_unit_id.is_(None)).one()
+    spare = db.query(M.Unit).filter(M.Unit.origin_run_id == a.id, M.Unit.device_unit_id.is_(None)).one()
     b = M.ProductionRun(project_id=w["project"].id, label="TB-live", run_date="2025-06-01", status="in_progress",
                         process_version_id=w["v"].id, qty=1, bench_stack=T.stack_id(a.id, spare.stack_key))
     d = M.DeviceUnit(project_id=w["project"].id, serial="RBLIVE000001", mac="00:00:00:rb:ee:01")
@@ -715,7 +722,7 @@ def test_the_undo_refuses_a_bench_click_in_another_closed_batch(db, w):
     assert T.name_at_bench(db, d, ev, b).id == spare.id
     assert T.record_marking(db, d, laser=False, label=True, deployment_id=w["mark"].id) == ["label"]
     prr.close_run(b.id, db=db)
-    clicks = db.query(M.StepRun).filter_by(run_id=b.id, chosen="bench").all()
+    clicks = db.query(M.Click).filter_by(run_id=b.id, chosen="bench").all()
     dry = R.undo(db, a)
     assert sorted(dry["refused"]) == sorted(f"click #{sr.id} ({sr.step_label}) is in closed batch TB-live — reopen it first"
                                             for sr in clicks)
@@ -723,7 +730,7 @@ def test_the_undo_refuses_a_bench_click_in_another_closed_batch(db, w):
         R.undo(db, a, dry_run=False)
     db.expire_all()
     # the closed batch keeps its clicks and the label it drew
-    assert db.query(M.StepRun).filter_by(run_id=b.id).count() == 2
+    assert db.query(M.Click).filter_by(run_id=b.id).count() == 2
     assert _total(db, db.get(M.ProductionRun, b.id)) == pytest.approx(0.1, abs=1e-6)
 
 
@@ -732,12 +739,13 @@ def test_the_undo_reverses_an_append_that_wrote_no_click(db, w):
     first = R.rebuild(db, run, version_id=w["v"].id, dry_run=False)
     more = R.rebuild(db, run, append=True, spares=[{"qty": 2, "done": []}], dry_run=False)
     wb = db.get(M.WriteBatch, more["batch_id"])
-    assert not [r for r in wb.rows if r.table_name == "step_runs" and r.op == "insert"]
+    assert not [r for r in wb.rows if r.table_name == "material_events" and r.op == "insert"
+                and db.get(M.MaterialEvent, r.row_id).kind == "step"]
     dry = R.undo(db, run)
     assert not dry["refused"] and dry["rebuild_batches"] == [more["batch_id"], first["batch_id"]]
     R.undo(db, run, dry_run=False)
     db.expire_all()
-    assert db.query(M.Twin).filter_by(origin_run_id=run.id).count() == 0
+    assert db.query(M.Unit).filter_by(origin_run_id=run.id).count() == 0
     assert all(db.get(M.WriteBatch, b).reversed_at is not None for b in (first["batch_id"], more["batch_id"]))
 
 
@@ -780,8 +788,8 @@ def test_taking_back_a_bench_click_keeps_a_step_another_click_holds(db, w):
         ("bench", "label"), ("journal", "reopen")]
     R.undo(db, run, dry_run=False)
     db.expire_all()
-    assert db.query(M.Twin).filter_by(origin_run_id=run.id).count() == 0
-    assert db.query(M.StepRun).filter_by(run_id=run.id).count() == 0
+    assert db.query(M.Unit).filter_by(origin_run_id=run.id).count() == 0
+    assert db.query(M.Click).filter_by(run_id=run.id).count() == 0
 
 
 def test_the_undo_puts_back_the_version_the_batch_had_pinned(db, w):
@@ -812,19 +820,18 @@ def test_a_deficit_the_pool_already_had_does_not_stop_the_undo(db, w, monkeypatc
     BEFORE the rebuild returned the surplus, and nothing was drawn since. The
     undo puts back exactly what was there, so it is no reason to refuse."""
     run, _devices = _old(db, w, ["2025-03-01"] * 3, enc=5)
-    enc = ra.live_consumption(db, run_id=run.id).filter(M.ComponentConsumption.component_id == w["enc"].id).one()
+    enc = ra.live_consumption(db, run_id=run.id).filter(M.Draw.component_id == w["enc"].id).one()
     other = M.ProductionRun(project_id=w["project"].id, label="TB-early", run_date="2025-02-15",
                             status="completed", qty=1)
     db.add(other)
     db.flush()
-    db.add(M.ComponentConsumption(run_id=other.id, component_id=w["enc"].id, mpn="", lcsc="", qty=120,
-                                  unit_cost_usd=2.0, basis="bom", consumed_at="2025-02-15"))
+    _bom_draw(db, other, 120, "2025-02-15", component_id=w["enc"].id)
     db.flush()
     R.rebuild(db, run, version_id=w["v"].id, dry_run=False, settle=[{"step": "enclosure", "how": "return"}])
-    assert db.get(M.ComponentConsumption, enc.id).qty == 3
+    assert db.get(M.Draw, enc.id).taken == 3
     assert not R.undo(db, run)["refused"]
     R.undo(db, run, dry_run=False)
-    assert db.get(M.ComponentConsumption, enc.id).qty == 5
+    assert db.get(M.Draw, enc.id).taken == 5
 
 
 def test_a_draw_raised_after_the_return_stops_the_undo(db, w, monkeypatch):
@@ -837,8 +844,7 @@ def test_a_draw_raised_after_the_return_stops_the_undo(db, w, monkeypatch):
                             status="completed", qty=1)
     db.add(other)
     db.flush()
-    db.add(M.ComponentConsumption(run_id=other.id, component_id=w["enc"].id, mpn="", lcsc="", qty=95,
-                                  unit_cost_usd=2.0, basis="bom", consumed_at="2025-02-01"))
+    _bom_draw(db, other, 95, "2025-02-01", component_id=w["enc"].id)
     db.flush()
     R.rebuild(db, run, version_id=w["v"].id, dry_run=False, settle=[{"step": "enclosure", "how": "return"}])
     rc.set_used_qty(other.id, rc.ConsumptionIn(component_id=w["enc"].id, qty=97, consumed_at="2025-02-01"), db=db)
@@ -855,8 +861,7 @@ def test_a_dip_on_the_batch_s_own_date_hides_no_later_shortfall(db, w):
                             status="completed", qty=1)
     db.add(early)
     db.flush()
-    db.add(M.ComponentConsumption(run_id=early.id, component_id=w["enc"].id, mpn="", lcsc="", qty=100,
-                                  unit_cost_usd=2.0, basis="bom", consumed_at="2025-03-01"))
+    _bom_draw(db, early, 100, "2025-03-01", component_id=w["enc"].id)
     doc = M.RunCostDocument(project_id=w["project"].id, doc_type="invoice", supplier="T", doc_number="DIP-1",
                             doc_date="2025-03-05", currency="USD", total_amount=200.0)
     db.add(doc)
@@ -871,8 +876,7 @@ def test_a_dip_on_the_batch_s_own_date_hides_no_later_shortfall(db, w):
     db.flush()
     pool_now = ra.pool_state(db)
     held = next(v["qty"] for v in pool_now.values() if v.get("component_id") == w["enc"].id)
-    db.add(M.ComponentConsumption(run_id=later.id, component_id=w["enc"].id, mpn="", lcsc="", qty=held,
-                                  unit_cost_usd=2.0, basis="bom", consumed_at="2025-04-01"))
+    _bom_draw(db, later, held, "2025-04-01", component_id=w["enc"].id)
     db.flush()
     refused = R.undo(db, run)["refused"]
     assert refused and "drawn again since" in refused[0]
@@ -883,15 +887,12 @@ def test_the_undo_refuses_while_a_lot_it_gave_back_is_bound_again(db, w, monkeyp
     in the oldest lot, a later draw binds them, and a newer lot keeps the
     pool above zero. The undo would bind the old lot twice."""
     run, _devices = _old(db, w, ["2025-03-01"] * 3, enc=5)
-    enc = ra.live_consumption(db, run_id=run.id).filter(M.ComponentConsumption.component_id == w["enc"].id).one()
+    enc = ra.live_consumption(db, run_id=run.id).filter(M.Draw.component_id == w["enc"].id).one()
     other = M.ProductionRun(project_id=w["project"].id, label="TB-lots", run_date="2025-02-01",
                             status="completed", qty=1)
     db.add(other)
     db.flush()
-    first = M.ComponentConsumption(run_id=other.id, component_id=w["enc"].id, mpn="", lcsc="", qty=95,
-                                   unit_cost_usd=2.0, basis="bom", consumed_at="2025-02-01")
-    db.add(first)
-    db.flush()
+    first = _bom_draw(db, other, 95, "2025-02-01", component_id=w["enc"].id)
     L.bind(db, first, L.FifoPicker(db).pick(w["enc"].id, "", "", 95, "2025-02-01"))
     L.bind(db, enc, L.FifoPicker(db).pick(w["enc"].id, "", "", 5, "2025-03-01"))
     doc = M.RunCostDocument(project_id=w["project"].id, doc_type="invoice", supplier="T", doc_number="LOT-2",
@@ -907,16 +908,13 @@ def test_the_undo_refuses_while_a_lot_it_gave_back_is_bound_again(db, w, monkeyp
                             status="completed", qty=1)
     db.add(later)
     db.flush()
-    late = M.ComponentConsumption(run_id=later.id, component_id=w["enc"].id, mpn="", lcsc="", qty=10,
-                                  unit_cost_usd=2.0, basis="bom", consumed_at="2025-04-01")
-    db.add(late)
-    db.flush()
+    late = _bom_draw(db, later, 10, "2025-04-01", component_id=w["enc"].id)
     L.bind(db, late, L.FifoPicker(db).pick(w["enc"].id, "", "", 10, "2025-04-01"))
     refused = R.undo(db, run)["refused"]
     assert len(refused) == 1 and "overdrawn by 2" in refused[0]
     with pytest.raises(HTTPException):
         R.undo(db, run, dry_run=False)
-    assert db.get(M.ComponentConsumption, enc.id).qty == 3      # nothing was kept
+    assert db.get(M.Draw, enc.id).taken == 3      # nothing was kept
 
 
 def test_a_lot_overdrawn_before_the_rebuild_does_not_stop_the_undo(db, w, monkeypatch):
@@ -924,15 +922,12 @@ def test_a_lot_overdrawn_before_the_rebuild_does_not_stop_the_undo(db, w, monkey
     below what its draws hold before the rebuild; the undo puts it back where
     it was, which is no reason to refuse."""
     run, _devices = _old(db, w, ["2025-03-01"] * 3, enc=5)
-    enc = ra.live_consumption(db, run_id=run.id).filter(M.ComponentConsumption.component_id == w["enc"].id).one()
+    enc = ra.live_consumption(db, run_id=run.id).filter(M.Draw.component_id == w["enc"].id).one()
     other = M.ProductionRun(project_id=w["project"].id, label="TB-cut", run_date="2025-02-01",
                             status="completed", qty=1)
     db.add(other)
     db.flush()
-    first = M.ComponentConsumption(run_id=other.id, component_id=w["enc"].id, mpn="", lcsc="", qty=95,
-                                   unit_cost_usd=2.0, basis="bom", consumed_at="2025-02-01")
-    db.add(first)
-    db.flush()
+    first = _bom_draw(db, other, 95, "2025-02-01", component_id=w["enc"].id)
     L.bind(db, first, L.FifoPicker(db).pick(w["enc"].id, "", "", 95, "2025-02-01"))
     L.bind(db, enc, L.FifoPicker(db).pick(w["enc"].id, "", "", 5, "2025-03-01"))
     doc = M.RunCostDocument(project_id=w["project"].id, doc_type="invoice", supplier="T", doc_number="LOT-3",
@@ -970,15 +965,12 @@ def test_a_lot_the_return_left_alone_keeps_the_undo_s_own_floor(db, w, monkeypat
                             status="completed", qty=1)
     db.add(other)
     db.flush()
-    first = M.ComponentConsumption(run_id=other.id, component_id=w["enc"].id, mpn="", lcsc="", qty=96,
-                                   unit_cost_usd=2.0, basis="bom", consumed_at="2025-02-01")
-    db.add(first)
-    db.flush()
+    first = _bom_draw(db, other, 96, "2025-02-01", component_id=w["enc"].id)
     L.bind(db, first, L.FifoPicker(db).pick(w["enc"].id, "", "", 96, "2025-02-01"))
     run, _devices = _old(db, w, ["2025-03-01", "2025-03-01", "2025-03-02"], ant=4, enc=6)
     for c in ra.live_consumption(db, run_id=run.id).all():
         if c.component_id in (w["ant"].id, w["enc"].id):
-            L.bind(db, c, L.FifoPicker(db).pick(c.component_id, "", "", c.qty, "2025-03-01"))
+            L.bind(db, c, L.FifoPicker(db).pick(c.component_id, "", "", c.taken, "2025-03-01"))
     monkeypatch.setattr(settings, "lot_pricing", True)
     plan = R.rebuild(db, run, version_id=w["v"].id, dry_run=False,
                      spares=[{"qty": 1, "done": ["antenna", "enclosure"]}],
@@ -1017,8 +1009,8 @@ def test_a_whole_step_link_between_the_rebuild_and_an_append_is_undone_too(db, w
         pr.craft_costs(b.id, pr.CostsIn(line_ids=[freight.id], unlink=True, dry_run=False), db=db)
     assert not R.undo(db, b)["refused"]
     R.undo(db, b, dry_run=False)
-    assert db.query(M.StepRun).filter_by(run_id=b.id).count() == 0
-    assert db.query(M.CostLineStepKey).filter_by(line_id=freight.id).count() == 0
+    assert db.query(M.Click).filter_by(run_id=b.id).count() == 0
+    assert db.query(M.StepCost).filter_by(line_id=freight.id).count() == 0
 
 
 # ------------------------------------------------ loop-until-dry round 7
@@ -1038,7 +1030,7 @@ def test_a_unit_the_rebuild_left_active_finished_and_shipped_does_not_stop_the_u
     db.flush()
     assert not R.undo(db, b)["refused"]
     R.undo(db, b, dry_run=False)
-    assert db.query(M.Twin).filter_by(origin_run_id=b.id).count() == 0
+    assert db.query(M.Unit).filter_by(origin_run_id=b.id).count() == 0
 
 
 def test_the_undo_takes_back_the_keys_a_split_copied_from_the_rebuild(db, w):
@@ -1054,10 +1046,10 @@ def test_the_undo_takes_back_the_keys_a_split_copied_from_the_rebuild(db, w):
         rc.ChildIn(label="a", amount=12, plan_key="final:device", run_id=b.id),
         rc.ChildIn(label="b", amount=8, plan_key="final:device", run_id=b.id)]), db)
     kids = [li.id for li in db.query(M.RunCostLine).filter_by(parent_line_id=fee.id)]
-    assert db.query(M.CostLineStepKey).filter(M.CostLineStepKey.line_id.in_(kids)).count() == 4
+    assert db.query(M.StepCost).filter(M.StepCost.line_id.in_(kids)).count() == 4
     assert not R.undo(db, b)["refused"]
     R.undo(db, b, dry_run=False)
-    assert db.query(M.CostLineStepKey).filter_by(run_id=b.id).count() == 0
+    assert db.query(M.StepCost).filter_by(run_id=b.id).count() == 0
     assert db.query(M.RunCostLine).filter(M.RunCostLine.id.in_(kids), M.RunCostLine.voided_at.is_(None)).count() == 2
 
 
@@ -1074,7 +1066,7 @@ def test_the_undo_takes_back_a_whole_step_link_that_waits_for_its_first_click(db
     plan = R.undo(db, b)
     assert not plan["refused"] and any(x.get("kind") == "journal" for x in plan["takes_back"])
     R.undo(db, b, dry_run=False)
-    assert db.query(M.CostLineStepKey).filter_by(run_id=b.id).count() == 0
+    assert db.query(M.StepCost).filter_by(run_id=b.id).count() == 0
     assert db.get(M.ProductionRun, b.id).process_version_id is None
 
 
@@ -1096,7 +1088,7 @@ def _name_from_another_pile(db, w, b):
     db.add(pile_run)
     db.flush()
     pr.craft_receive(pile_run.id, pr.ReceiveIn(qty=1, made_at="2025-06-01", dry_run=False), db=db)
-    pile = db.query(M.Twin).filter_by(run_id=pile_run.id).one()
+    pile = db.query(M.Unit).filter_by(run_id=pile_run.id).one()
     pr.craft_step(pile_run.id, pr.StepIn(step_key="antenna", stack=T.stack_id(pile_run.id, pile.stack_key), qty=1,
                                          chosen="stack", made_at="2025-06-01", dry_run=False), db=db)
     pr.set_bench_stack(b.id, pr.BenchStackIn(stack=T.stack_id(pile_run.id, pile.stack_key)), db=db)
@@ -1123,10 +1115,10 @@ def test_the_undo_takes_back_a_split_child_s_link_to_a_click_named_later(db, w):
         rc.ChildIn(label="b", amount=8, plan_key="final:device", run_id=b.id)]), db)
     _name_from_another_pile(db, w, b)
     lines = [fd.id] + [li.id for li in db.query(M.RunCostLine).filter_by(parent_line_id=fd.id)]
-    assert db.query(M.CostLineStep).filter(M.CostLineStep.line_id.in_(lines)).count() > 0
+    assert db.query(M.ClickCost).filter(M.ClickCost.line_id.in_(lines)).count() > 0
     assert not R.undo(db, b)["refused"]
     R.undo(db, b, dry_run=False)
-    assert db.query(M.CostLineStep).filter(M.CostLineStep.line_id.in_(lines)).count() == 0
+    assert db.query(M.ClickCost).filter(M.ClickCost.line_id.in_(lines)).count() == 0
 
 
 @pytest.mark.parametrize("link_first", [False, True])
@@ -1145,7 +1137,7 @@ def test_a_cost_link_on_a_bench_click_is_undone_with_it(db, w, link_first):
         pr.craft_costs(b.id, pr.CostsIn(line_ids=[freight.id], step_keys=["test"], dry_run=False), db=db)
     assert not R.undo(db, b)["refused"]
     R.undo(db, b, dry_run=False)
-    assert db.query(M.CostLineStepKey).filter_by(run_id=b.id).count() == 0
+    assert db.query(M.StepCost).filter_by(run_id=b.id).count() == 0
 
 
 def test_a_link_whose_unlink_was_undone_is_taken_back_by_its_own_write(db, w):
@@ -1161,7 +1153,7 @@ def test_a_link_whose_unlink_was_undone_is_taken_back_by_its_own_write(db, w):
     plan = R.undo(db, b)
     assert not plan["refused"] and any(x.get("batch_id") == link["batch_id"] for x in plan["takes_back"]), plan
     R.undo(db, b, dry_run=False)
-    assert db.query(M.CostLineStepKey).filter_by(run_id=b.id).count() == 0
+    assert db.query(M.StepCost).filter_by(run_id=b.id).count() == 0
 
 
 # ------------------------------------------------ loop-until-dry round 9
@@ -1189,8 +1181,8 @@ def test_a_link_the_rebuild_s_key_made_outside_it_goes_whatever_the_person_did_s
     assert not dry["refused"], dry["refused"]
     real = R.undo(db, b, dry_run=False)
     assert [x.get("kind") for x in real["takes_back"]] == [x.get("kind") for x in dry["takes_back"]]
-    assert db.query(M.CostLineStep).filter_by(line_id=fd.id).count() == 0
-    assert db.query(M.CostLineStepKey).filter_by(run_id=b.id).count() == 0
+    assert db.query(M.ClickCost).filter_by(line_id=fd.id).count() == 0
+    assert db.query(M.StepCost).filter_by(run_id=b.id).count() == 0
 
 
 # ------------------------------------------------ loop-until-dry round 10
@@ -1208,8 +1200,8 @@ def test_a_person_s_link_undone_and_put_back_on_the_write_log_stays_with_the_und
     b, (_d0, d1) = _old(db, w, ["2025-03-01", "2025-03-02"])
     R.rebuild(db, b, version_id=w["v"].id, active={"device_ids": [d1.id]}, dry_run=False)
     pile = _name_from_another_pile(db, w, b)
-    click = (db.query(M.StepRun).join(M.TwinStep, M.TwinStep.step_run_id == M.StepRun.id)
-             .filter(M.TwinStep.twin_id == pile.id, M.StepRun.run_id == b.id).one())
+    click = (db.query(M.Click).join(M.MaterialEventLot, M.MaterialEventLot.event_id == M.Click.id)
+             .filter(M.MaterialEventLot.lot_id == pile.id, M.Click.run_id == b.id).one())
     freight = _line_of(db, b, "logistics:inbound")
     pr.craft_costs(b.id, pr.CostsIn(line_ids=[freight.id], step_keys=["test"], step_run_ids=[click.id],
                                     dry_run=False), db=db)
@@ -1220,5 +1212,5 @@ def test_a_person_s_link_undone_and_put_back_on_the_write_log_stays_with_the_und
     dry = R.undo(db, b)
     assert not dry["refused"], dry["refused"]
     R.undo(db, b, dry_run=False)
-    assert [x.step_run_id for x in db.query(M.CostLineStep).filter_by(line_id=freight.id)] == [click.id]
-    assert [k.step_key for k in db.query(M.CostLineStepKey).filter_by(line_id=freight.id)] == ["test"]
+    assert [x.event_id for x in db.query(M.ClickCost).filter_by(line_id=freight.id)] == [click.id]
+    assert [k.step_key for k in db.query(M.StepCost).filter_by(line_id=freight.id)] == ["test"]

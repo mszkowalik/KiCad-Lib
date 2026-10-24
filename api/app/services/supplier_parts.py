@@ -200,7 +200,7 @@ def coverage(db: Session, run: M.ProductionRun) -> dict:
 
     Two ways a position can be satisfied, and the supplier states which:
 
-    * out of OUR pool — there must be a `component_consumptions` draw;
+    * out of OUR pool — there must be a draw (`M.Draw`, a move of the material ledger);
     * out of the SUPPLIER's stock — it is inside the assembly fee, and there
       must be NO draw, or the run pays twice.
 
@@ -250,7 +250,7 @@ def coverage(db: Session, run: M.ProductionRun) -> dict:
     for c in run_actuals.live_consumption(db, run_id=run.id).all():
         key = (c.lcsc or "").strip().upper()
         if key:
-            drawn[key] += c.qty or 0.0
+            drawn[key] += c.taken
 
     rows = []
     for key, e in sorted(expect.items()):

@@ -556,7 +556,7 @@ def delete_run(run_id: int, db: Session = Depends(get_db)):
         "cost documents": db.query(M.RunCostDocument).filter_by(run_id=run_id).count(),
         "cost lines": db.query(M.RunCostLine).filter_by(run_id=run_id).count(),
         "component draws": run_actuals.live_consumption(db, run_id=run_id).count(),
-        "stock adjustments": db.query(M.ComponentStockAdjustment).filter_by(charge_run_id=run_id).count(),
+        "stock adjustments": db.query(M.Adjustment).filter_by(run_id=run_id).count(),
     }
     held = {k: v for k, v in blockers.items() if v}
     if held:

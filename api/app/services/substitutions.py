@@ -69,9 +69,8 @@ def _orders_by_run(db: Session) -> dict[str, int]:
     from is on the draw itself — no second source to keep in step.
     """
     out: dict[str, int] = {}
-    for c in (db.query(M.ComponentConsumption)
-                .filter(M.ComponentConsumption.import_ref.like("jlc:%"),
-                        M.ComponentConsumption.run_id.isnot(None)).all()):
+    for c in (db.query(M.Draw)
+                .filter(M.Draw.import_ref.like("jlc:%"), M.Draw.run_id.isnot(None)).all()):
         bits = (c.import_ref or "").split(":")
         if len(bits) >= 3:
             out.setdefault(bits[2], c.run_id)
@@ -294,7 +293,7 @@ def unused(db: Session, run: M.ProductionRun) -> dict:
 
     drawn = set()
     drawn_ids: set[int] = set()
-    for c in db.query(M.ComponentConsumption).filter_by(run_id=run.id).all():
+    for c in db.query(M.Draw).filter_by(run_id=run.id).all():
         if c.lcsc:
             drawn.add(c.lcsc.upper())
         if c.component_id:

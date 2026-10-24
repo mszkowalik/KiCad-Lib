@@ -39,7 +39,9 @@ the migration reads as "edited since" and can never be undone. Found
 assembly record. A table other writers keep moving (the bench stamps a device's
 `last_seen`, `last_status`, `chip` and topic) is listed in `journal.HASH_ONLY`
 with the columns the journalled write changes: only those are guarded and put
-back by an undo. `tests/costs/test_journal_columns.py` fails on a new column
+back by an undo. A batch or a request whose rows name a table the material
+ledger replaced (`journal.LEGACY_TABLES`, decision 0098) is refused: those
+tables are read only. `tests/costs/test_journal_columns.py` fails on a new column
 of a journalled table that is in neither list.
 
 **An undo or a redo is checked against the stock it leaves** (decision

@@ -13,19 +13,20 @@ A project's PROCESS (`ProcessVersion.graph`) is a versioned document:
 - **prepared** — recipes for PREPARED PARTS: internal parts made before they
   meet a device (an enclosure drilled and UV printed), held as stock lots.
 
-The units themselves are TWINS (`services/twins.py`). This module owns the
-document, its machine check, and the prepared-part stock.
+The units themselves are unit lots of the material ledger (`services/twins.py`,
+decision 0097). This module owns the document, its machine check, and the
+prepared-part stock.
 
-**Nothing here forks the pool.** A prepared-part transformation is written with
-the two event kinds every replayer already understands: its inputs are draws
-(no run, `transformation_id` set) and its output is one positive
-`ComponentStockAdjustment`, which `lots.py` treats as a lot (`A<id>`). The
-pool's value identity holds by construction.
+**Nothing here forks the pool.** A prepared part is made by a MAKE event
+(`M.Make`): its inputs are draws of the make (no run), and its output is one
+positive adjustment of the make, which deposits a stored lot (`A<lot id>`).
+Every replayer already reads both, so the pool's value identity holds by
+construction.
 
-**Lots matter only for internal parts.** Bought parts are valued at the moving
-average, as everywhere in this platform. A prepared part's lots carry real
-differences (printed or stickered, found at zero value or built from today's
-purchases), so every draw of one names its lot.
+**A prepared part always takes a lot.** A bought part takes lots only while
+`lot_pricing` is on. A prepared part's lots carry real differences (printed or
+stickered, found at zero value or built from today's purchases), so every draw
+of one names its lot.
 """
 from __future__ import annotations
 
@@ -433,7 +434,7 @@ def version_json(db: Session, v: M.ProcessVersion, *, with_check: bool = False) 
         "graph": g, "parts": {str(k): p for k, p in _part_names(db, ids).items()},
         "batches": [{"id": r.id, "label": r.label} for r in db.query(M.ProductionRun)
                     .filter_by(process_version_id=v.id).order_by(M.ProductionRun.id).all()],
-        "transformation_count": db.query(func.count(M.ProcessTransformation.id))
+        "transformation_count": db.query(func.count(M.Make.id))
                                   .filter_by(process_version_id=v.id).scalar() or 0,
     }
     if with_check:
@@ -528,40 +529,38 @@ def internal_parts(db: Session) -> list[M.Component]:
 
 # ==================================================================== lots
 
-def _bound_rows(db: Session, adj_ids: list[int]) -> dict[int, tuple[float, float]]:
-    """(units, value) bound to each adjustment lot by live draws, over all time —
+def _bound_rows(db: Session, lot_ids: list[int]) -> dict[int, tuple[float, float]]:
+    """(units, value) bound to each stored lot by live draws, over all time —
     the sums `lots.lot_state` subtracts, read straight from the binding rows."""
-    if not adj_ids:
+    if not lot_ids:
         return {}
-    rows = (db.query(M.ComponentConsumptionLot.lot_adjustment_id,
-                     func.sum(M.ComponentConsumptionLot.qty),
-                     func.sum(M.ComponentConsumptionLot.qty * M.ComponentConsumptionLot.unit_cost_usd))
-            .join(M.ComponentConsumption,
-                  M.ComponentConsumption.id == M.ComponentConsumptionLot.consumption_id)
-            .filter(M.ComponentConsumptionLot.lot_adjustment_id.in_(adj_ids),
-                    M.ComponentConsumption.voided_at.is_(None))
-            .group_by(M.ComponentConsumptionLot.lot_adjustment_id).all())
-    return {aid: (float(q or 0), float(v or 0)) for aid, q, v in rows}
+    rows = (db.query(M.MaterialMoveLot.lot_id, func.sum(M.MaterialMoveLot.qty),
+                     func.sum(M.MaterialMoveLot.qty * M.MaterialMoveLot.unit_cost_usd))
+            .join(M.Draw, M.Draw.id == M.MaterialMoveLot.move_id)
+            .filter(M.MaterialMoveLot.lot_id.in_(lot_ids), M.Draw.voided_at.is_(None))
+            .group_by(M.MaterialMoveLot.lot_id).all())
+    return {lid: (float(q or 0), float(v or 0)) for lid, q, v in rows}
 
 
-def _bound(db: Session, adj_ids: list[int]) -> dict[int, float]:
-    return {k: q for k, (q, _v) in _bound_rows(db, adj_ids).items()}
+def _bound(db: Session, lot_ids: list[int]) -> dict[int, float]:
+    return {k: q for k, (q, _v) in _bound_rows(db, lot_ids).items()}
 
 
-def lot_json(adj: M.ComponentStockAdjustment, bound: tuple[float, float],
-             extra_usd: float = 0.0) -> dict:
-    """A prepared-part lot. Its value is what it held plus its conversion cost
-    (`extra_usd`, decision 0058 §4); what is left is that value MINUS what the
-    draws took at their frozen prices — the `lots.py` rule, so a conversion
-    invoice that arrives after units were drawn leaves its share visible in the
-    lot instead of re-pricing draws that already happened."""
-    qty = float(adj.qty_delta or 0)
+def lot_json(adj: M.Adjustment, bound: tuple[float, float], extra_usd: float = 0.0,
+             make_id: int | None = None) -> dict:
+    """A prepared-part lot, from the adjustment that made it. Its value is what
+    it held plus its conversion cost (`extra_usd`, decision 0058 §4); what is
+    left is that value MINUS what the draws took at their frozen prices — the
+    `lots.py` rule, so a conversion invoice that arrives after units were drawn
+    leaves its share visible in the lot instead of re-pricing draws that
+    already happened. The API keys stay: `adjustment_id` is the lot's id."""
+    qty = float(adj.qty or 0)
     value = qty * float(adj.unit_cost_usd or 0) + extra_usd
     bound_qty, bound_value = bound
     remaining = round(qty - bound_qty, 6)
-    return {"adjustment_id": adj.id, "key": f"A{adj.id}", "component_id": adj.component_id,
-            "date": adj.adjusted_at, "reason": adj.reason, "note": adj.note,
-            "transformation_id": adj.transformation_id, "company_id": adj.company_id,
+    return {"adjustment_id": adj.lot_id, "key": f"A{adj.lot_id}", "component_id": adj.component_id,
+            "date": adj.at, "reason": adj.reason, "note": adj.note,
+            "transformation_id": make_id, "company_id": adj.company_id,
             "qty": qty, "remaining": remaining,
             "unit_cost_usd": round(value / qty, 6) if qty else 0.0,
             "conversion_usd": round(extra_usd, 4),
@@ -569,54 +568,67 @@ def lot_json(adj: M.ComponentStockAdjustment, bound: tuple[float, float],
             "open": remaining > EPS}
 
 
+def _maker(db: Session, adjs: list[M.Adjustment]) -> dict[int, int]:
+    """`adjustment id -> make id` for the adjustments that deposited a make's output."""
+    kinds = dict(db.query(M.MaterialEvent.id, M.MaterialEvent.kind)
+                 .filter(M.MaterialEvent.id.in_({a.event_id for a in adjs} or {-1})).all())
+    return {a.id: a.event_id for a in adjs if kinds.get(a.event_id) == "make"}
+
+
 def prepared_lots(db: Session, component_ids: set[int], *, open_only: bool = False,
                   company_id: int | None = None) -> list[dict]:
-    """The lots of internal parts, oldest first. A lot is a positive stock
-    adjustment of the part; its remaining is what it held minus every live
-    draw bound to it — exactly `lots.lot_state`'s rule for an `A` lot.
-    `company_id` keeps one company's lots (decision 0064; pass it through
+    """The lots of internal parts, oldest first. A lot is a stored lot a
+    positive adjustment of the part made; its remaining is what it held minus
+    every live draw bound to it — exactly `lots.lot_state`'s rule for an `A`
+    lot. `company_id` keeps one company's lots (decision 0064; pass it through
     `run_actuals.stock_scope`)."""
     if not component_ids:
         return []
-    q = (db.query(M.ComponentStockAdjustment)
-         .filter(M.ComponentStockAdjustment.component_id.in_(component_ids),
-                 M.ComponentStockAdjustment.qty_delta > 0))
+    q = (db.query(M.Adjustment)
+         .filter(M.Adjustment.component_id.in_(component_ids), M.Adjustment.qty > 0,
+                 M.Adjustment.lot_id.isnot(None)))
     if company_id is not None:
-        q = q.filter(M.ComponentStockAdjustment.company_id == company_id)
-    adjs = q.order_by(M.ComponentStockAdjustment.adjusted_at, M.ComponentStockAdjustment.id).all()
-    bound = _bound_rows(db, [a.id for a in adjs])
+        q = q.filter(M.Adjustment.company_id == company_id)
+    adjs = q.order_by(M.Adjustment.at, M.Adjustment.id).all()
+    bound = _bound_rows(db, [a.lot_id for a in adjs])
     extras = run_actuals.conversion_extras_usd(db)
-    out = [lot_json(a, bound.get(a.id, (0.0, 0.0)), extras.get(a.id, 0.0)) for a in adjs]
+    maker = _maker(db, adjs)
+    out = [lot_json(a, bound.get(a.lot_id, (0.0, 0.0)), extras.get(a.id, 0.0), maker.get(a.id)) for a in adjs]
     return [lt for lt in out if lt["open"]] if open_only else out
 
 
-def lot_remaining(db: Session, adj_id: int) -> float:
-    adj = db.get(M.ComponentStockAdjustment, adj_id)
-    if adj is None or (adj.qty_delta or 0) <= 0:
+def _lot_adjustment(db: Session, lot_id: int) -> M.Adjustment | None:
+    """The positive adjustment that made a stored lot."""
+    return db.query(M.Adjustment).filter(M.Adjustment.lot_id == lot_id, M.Adjustment.qty > 0).first()
+
+
+def lot_remaining(db: Session, lot_id: int) -> float:
+    adj = _lot_adjustment(db, lot_id)
+    if adj is None:
         return 0.0
-    return float(adj.qty_delta or 0) - _bound(db, [adj_id]).get(adj_id, 0.0)
+    return float(adj.qty or 0) - _bound(db, [lot_id]).get(lot_id, 0.0)
 
 
 def _pick_lots(db: Session, component_id: int, need: float,
                chosen: list[dict] | None, company_id: int | None = None
                ) -> tuple[list[tuple[int, float, float]], float]:
     """Which lots an internal-part draw takes: `chosen` [{adjustment_id, qty}]
-    when given, else oldest open lot first. Returns ([(adj_id, qty, unit)],
-    the quantity no lot could cover)."""
+    (the API's key for a lot id) when given, else oldest open lot first.
+    Returns ([(lot id, qty, unit)], the quantity no lot could cover)."""
     lots = {lt["adjustment_id"]: lt for lt in prepared_lots(db, {component_id}, open_only=True,
                                                             company_id=company_id)}
     picks: list[tuple[int, float, float]] = []
     if chosen:
         for c in chosen:
-            aid, q = int(c["adjustment_id"]), float(c.get("qty") or 0)
-            lt = lots.get(aid)
+            lid, q = int(c["adjustment_id"]), float(c.get("qty") or 0)
+            lt = lots.get(lid)
             if q <= 0:
                 continue
             if lt is None:
-                raise HTTPException(422, f"lot A{aid} is not an open lot of this part")
+                raise HTTPException(422, f"lot A{lid} is not an open lot of this part")
             if q - lt["remaining"] > EPS:
-                raise HTTPException(409, f"lot A{aid} holds {lt['remaining']:g}, not {q:g}")
-            picks.append((aid, q, lt["unit_cost_usd"]))
+                raise HTTPException(409, f"lot A{lid} holds {lt['remaining']:g}, not {q:g}")
+            picks.append((lid, q, lt["unit_cost_usd"]))
         covered = sum(p[1] for p in picks)
         if abs(covered - need) > EPS:
             raise HTTPException(422, f"the chosen lots give {covered:g}, the recipe needs {need:g}")
@@ -694,10 +706,10 @@ def transform(db: Session, project_id: int, *, recipe_key: str, qty: float, scra
         if comp is not None and comp.internal:
             picks, uncovered = _pick_lots(db, cid, need, (lots or {}).get(str(cid))
                                           or (lots or {}).get(cid), company_id=scope)
-            for aid, q, unit in picks:
+            for lid, q, unit in picks:
                 draws.append({"component_id": cid, "name": label, "qty": round(q, 6),
                               "unit_cost_usd": unit, "value_usd": round(q * unit, 4),
-                              "lot_adjustment_id": aid, "internal": True})
+                              "lot_adjustment_id": lid, "internal": True})
             if uncovered > EPS:
                 problems.append({"component_id": cid, "name": label, "needed": round(need, 6),
                                  "short": round(uncovered, 6),
@@ -748,59 +760,48 @@ def transform(db: Session, project_id: int, *, recipe_key: str, qty: float, scra
                                            "purchase, make the missing prepared part first, or record "
                                            "a stock adjustment", "plan": plan})
 
-    t = M.ProcessTransformation(
-        project_id=project_id, process_version_id=v.id, recipe_key=recipe_key,
-        recipe_label=(r.get("label") or recipe_key)[:200], output_component_id=out_cid,
-        qty=qty, scrap=scrap, production_run_id=run.id if run else None, made_at=made_at,
-        input_value_usd=input_value, note=(note or "")[:500],
-        actor=actor)
-    db.add(t)
+    from .material_ledger import core as _ledger
+
+    mk = M.Make(project_id=project_id, process_version_id=v.id, step_key=recipe_key,
+                step_label=(r.get("label") or recipe_key)[:200], output_component_id=out_cid,
+                qty=qty, scrap=scrap, run_id=run.id if run else None, at=made_at, company_id=tcompany,
+                input_value_usd=input_value, note=(note or "")[:500], actor=actor)
+    db.add(mk)
     db.flush()
     for d in draws:
-        c = M.ComponentConsumption(
-            run_id=None, component_id=d["component_id"], mpn=d.get("mpn", ""), lcsc="", qty=d["qty"],
-            unit_cost_usd=d["unit_cost_usd"], basis=BASIS_TRANSFORMATION, consumed_at=made_at,
-            transformation_id=t.id, company_id=tcompany,
-            note=f"input of {t.recipe_label} (transformation #{t.id})"[:500])
-        db.add(c)
-        db.flush()
+        c = _ledger.draw(db, event=mk, component_id=d["component_id"], mpn=d.get("mpn", ""), taken=d["qty"],
+                         unit_cost_usd=d["unit_cost_usd"], basis=BASIS_TRANSFORMATION, at=made_at,
+                         company_id=tcompany, note=f"input of {mk.step_label} (transformation #{mk.id})")
         if d.get("bindings"):
             _lots.bind(db, c, d)
         if d["lot_adjustment_id"]:
-            db.add(M.ComponentConsumptionLot(
-                consumption_id=c.id, lot_adjustment_id=d["lot_adjustment_id"], qty=d["qty"],
-                unit_cost_usd=d["unit_cost_usd"], source="manual",
-                note=f"transformation #{t.id}"))
-    out = M.ComponentStockAdjustment(
-        project_id=project_id, component_id=out_cid, mpn="", lcsc="", qty_delta=qty,
-        unit_cost_usd=round(input_value / qty, 8), reason="transformation",
-        adjusted_at=made_at, actor=actor, transformation_id=t.id, company_id=tcompany,
-        note=f"{t.recipe_label}: {qty:g} made" + (f", {scrap:g} scrapped" if scrap else ""))
-    db.add(out)
+            _ledger.bind(db, c, qty=d["qty"], unit_cost_usd=d["unit_cost_usd"], lot_id=d["lot_adjustment_id"],
+                         source="manual", note=f"transformation #{mk.id}")
+    out = _ledger.adjustment(db, event=mk, component_id=out_cid, qty=qty, unit_cost_usd=round(input_value / qty, 8),
+                             reason="transformation", at=made_at, project_id=project_id, company_id=tcompany,
+                             actor=actor,
+                             note=f"{mk.step_label}: {qty:g} made" + (f", {scrap:g} scrapped" if scrap else ""))
+    mk.output_lot_id = out.lot_id
     db.flush()
-    t.output_adjustment_id = out.id
-    db.flush()
-    plan["transformation_id"] = t.id
-    plan["output"]["lot_adjustment_id"] = out.id
+    plan["transformation_id"] = mk.id
+    plan["output"]["lot_adjustment_id"] = out.lot_id
     return plan
 
 
-def void_transformation(db: Session, t: M.ProcessTransformation, *, reason: str,
-                        actor: str) -> dict:
-    """Undo a transformation: void its input draws and remove its output lot.
+def void_transformation(db: Session, t: M.Make, *, reason: str, actor: str) -> dict:
+    """Undo a make: void its input draws and remove its output lot.
 
     Refused once anything drew from the output lot — the inputs cannot be
     removed from under stock somebody already used (decision 0040, carried
-    through the prepared part). The output adjustment is DELETED, not
-    countered: a negative counter-entry would read as lost stock of the part, and nothing
-    references the row once no draw is bound to it. `stock_adjustments` is a
-    journalled table, so the deletion stays reversible."""
+    through the prepared part). The output adjustment and its lot are DELETED,
+    not countered: a negative counter-entry would read as lost stock of the
+    part, and nothing references them once no draw is bound to the lot. The
+    ledger is journalled, so the deletion stays reversible."""
     if t.voided_at is not None:
         raise HTTPException(409, "already voided")
     if not (reason or "").strip():
         raise HTTPException(422, "say why it is voided")
-    if t.output_adjustment_id and _bound(db, [t.output_adjustment_id]).get(
-            t.output_adjustment_id, 0.0) > EPS:
+    if t.output_lot_id and _bound(db, [t.output_lot_id]).get(t.output_lot_id, 0.0) > EPS:
         raise HTTPException(409, "units of this transformation's output have been drawn — "
                                  "void those draws (or the later transformation) first")
     aimed = (db.query(M.RunCostLine)
@@ -810,35 +811,39 @@ def void_transformation(db: Session, t: M.ProcessTransformation, *, reason: str,
         raise HTTPException(409, f"{aimed} invoice position(s) are aimed at this transformation "
                                  "as its conversion cost — point them elsewhere first")
     now = utcnow()
-    for c in db.query(M.ComponentConsumption).filter_by(transformation_id=t.id,
-                                                       voided_at=None).all():
+    for c in db.query(M.Draw).filter_by(event_id=t.id, voided_at=None).all():
         c.voided_at = now
         c.void_reason = "transformation voided"
-    out = db.get(M.ComponentStockAdjustment, t.output_adjustment_id) if t.output_adjustment_id else None
-    if out is not None:
-        db.delete(out)
+    if t.output_lot_id:
+        for a in db.query(M.Adjustment).filter_by(lot_id=t.output_lot_id).all():
+            db.delete(a)
+        lot = db.get(M.MaterialLot, t.output_lot_id)
+        if lot is not None:
+            db.delete(lot)
     t.voided_at = now
     t.void_reason = reason[:200]
     db.flush()
     return {"id": t.id, "voided": True}
 
 
-def transformation_json(db: Session, t: M.ProcessTransformation, names: dict | None = None,
+def transformation_json(db: Session, t: M.Make, names: dict | None = None,
                         conversion: dict[int, float] | None = None) -> dict:
+    """A make, in the API's words: `recipe_*` is the step, `output_adjustment_id`
+    the lot it deposited."""
     names = names if names is not None else _part_names(db, {t.output_component_id})
     conversion = conversion if conversion is not None else run_actuals.conversion_by_transformation(db)
     conv = conversion.get(t.id, 0.0)
-    run = db.get(M.ProductionRun, t.production_run_id) if t.production_run_id else None
+    run = db.get(M.ProductionRun, t.run_id) if t.run_id else None
     return {
-        "id": t.id, "process_version_id": t.process_version_id, "recipe_key": t.recipe_key,
-        "recipe_label": t.recipe_label, "output_component_id": t.output_component_id,
+        "id": t.id, "process_version_id": t.process_version_id, "recipe_key": t.step_key,
+        "recipe_label": t.step_label, "output_component_id": t.output_component_id,
         "output_name": (names.get(t.output_component_id) or {}).get("name"),
-        "qty": t.qty, "scrap": t.scrap, "made_at": t.made_at,
-        "run_id": t.production_run_id, "run_label": run.label if run else None,
+        "qty": t.qty, "scrap": t.scrap, "made_at": t.at,
+        "run_id": t.run_id, "run_label": run.label if run else None,
         "input_value_usd": round(t.input_value_usd or 0, 4),
         "conversion_usd": round(conv, 4),
         "unit_cost_usd": round(((t.input_value_usd or 0) + conv) / t.qty, 6) if t.qty else None,
-        "output_adjustment_id": t.output_adjustment_id, "note": t.note, "actor": t.actor,
+        "output_adjustment_id": t.output_lot_id, "note": t.note, "actor": t.actor,
         "voided": t.voided_at is not None, "void_reason": t.void_reason,
         "created_at": t.created_at.isoformat() if t.created_at else None,
     }
@@ -878,56 +883,52 @@ def bank(db: Session, project_id: int, *, component_id: int, qty: float,
             "at": at or _today()}
     if dry_run:
         return plan
-    a = M.ComponentStockAdjustment(
-        project_id=project_id, component_id=comp.id, mpn="", lcsc="", qty_delta=qty,
-        unit_cost_usd=unit_cost_usd, reason="opening_balance", adjusted_at=plan["at"],
-        actor=actor, note=note[:500])
-    db.add(a)
-    db.flush()
-    plan["lot_adjustment_id"] = a.id
+    from .material_ledger import core as _ledger
+
+    a = _ledger.adjustment(db, component_id=comp.id, qty=qty, unit_cost_usd=unit_cost_usd,
+                           reason="opening_balance", at=plan["at"], project_id=project_id, actor=actor, note=note)
+    plan["lot_adjustment_id"] = a.lot_id
     return plan
 
 
-def write_off(db: Session, project_id: int, *, lot_adjustment_id: int, qty: float,
+def write_off(db: Session, project_id: int, *, lot_id: int, qty: float,
               at: str = "", charge_run_id: int | None = None, note: str = "",
               actor: str = "", dry_run: bool = True) -> dict:
     """Units of a prepared-part lot that broke or were not found. A draw bound to the
     lot, so the lot's remaining falls with the pool's quantity; charged to
     `charge_run_id` when a batch is to carry the loss, else to nobody."""
-    adj = db.get(M.ComponentStockAdjustment, lot_adjustment_id)
-    if adj is None or (adj.qty_delta or 0) <= 0:
+    adj = _lot_adjustment(db, lot_id)
+    if adj is None:
         raise HTTPException(404, "no such lot")
     _require_prepared(db, project_id, adj.component_id)
     if qty <= 0:
         raise HTTPException(422, "write off at least one unit")
-    left = lot_remaining(db, adj.id)
+    left = lot_remaining(db, lot_id)
     if qty - left > EPS:
-        raise HTTPException(409, f"lot A{adj.id} holds {left:g}, not {qty:g}")
+        raise HTTPException(409, f"lot A{lot_id} holds {left:g}, not {qty:g}")
     run = db.get(M.ProductionRun, charge_run_id) if charge_run_id else None
     if charge_run_id and (run is None or run.project_id != project_id):
         raise HTTPException(404, "no such batch in this project")
     if (run is not None and run_actuals.stock_scope(db, adj.company_id) is not None
             and run.company_id != adj.company_id):
-        raise HTTPException(409, f"lot A{adj.id} is another company's stock than {run.label}'s "
+        raise HTTPException(409, f"lot A{lot_id} is another company's stock than {run.label}'s "
                                  "(decision 0064) — transfer it first")
     if not (note or "").strip():
         raise HTTPException(422, "say why these units are written off")
     unit = lot_json(adj, (0.0, 0.0), run_actuals.conversion_extras_usd(db).get(adj.id, 0.0))[
         "unit_cost_usd"]
-    plan = {"dry_run": dry_run, "lot_adjustment_id": adj.id, "qty": qty,
+    plan = {"dry_run": dry_run, "lot_adjustment_id": lot_id, "qty": qty,
             "unit_cost_usd": unit, "value_usd": round(qty * unit, 4),
             "charge_run_id": charge_run_id, "at": at or _today()}
     if dry_run:
         return plan
-    c = M.ComponentConsumption(
-        run_id=charge_run_id, component_id=adj.component_id, mpn="", lcsc="", qty=qty,
-        unit_cost_usd=unit, basis=BASIS_WRITEOFF, consumed_at=plan["at"],
-        company_id=adj.company_id,  # the lot's own stock (decision 0064)
-        note=f"written off from lot A{adj.id}: {note}"[:500])
-    db.add(c)
-    db.flush()
-    db.add(M.ComponentConsumptionLot(consumption_id=c.id, lot_adjustment_id=adj.id, qty=qty,
-                                     unit_cost_usd=unit, source="manual", note="write-off"))
+    from .material_ledger import core as _ledger
+
+    c = _ledger.draw(db, component_id=adj.component_id, taken=qty, unit_cost_usd=unit, basis=BASIS_WRITEOFF,
+                     at=plan["at"], run_id=charge_run_id,
+                     company_id=adj.company_id,  # the lot's own stock (decision 0064)
+                     actor=actor, note=f"written off from lot A{lot_id}: {note}")
+    _ledger.bind(db, c, qty=qty, unit_cost_usd=unit, lot_id=lot_id, source="manual", note="write-off")
     db.flush()
     plan["consumption_id"] = c.id
     return plan
@@ -962,7 +963,7 @@ def stocktake(db: Session, project_id: int, *, component_id: int, counted: float
         if left <= EPS:
             break
         take = min(left, lt["remaining"])
-        plan["steps"].append(write_off(db, project_id, lot_adjustment_id=lt["adjustment_id"],
+        plan["steps"].append(write_off(db, project_id, lot_id=lt["adjustment_id"],
                                        qty=take, at=at,
                                        note=f"stocktake: not on the shelf. {note}",
                                        actor=actor, dry_run=dry_run))

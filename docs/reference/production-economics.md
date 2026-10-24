@@ -261,7 +261,7 @@ guard reads one company's stock is in [companies.md](companies.md).
   `consumed_at`, never today. While `lot_pricing` is on, such a draw is refused
   instead, and a re-POST takes lots oldest first, not the average (see "Lots and
   FIFO pricing" at the end of this page).
-- **A zero-priced draw also hides duplicates.** `ComponentConsumption` has no
+- **A zero-priced draw also hides duplicates.** A draw had no
   uniqueness constraint, so a part drawn once by `consume_from_bom` and again by an
   ad-hoc script is simply charged twice — and while both rows price at zero, nothing
   in any total betrays it. Components 324/325 were double-drawn across all five Aqua
@@ -489,7 +489,7 @@ guard reads one company's stock is in [companies.md](companies.md).
   `basis`, so a `per_device` child scales by its own batch. Nothing tries to work
   out which batches a line covers.
 - **Attrition belongs to the batch that lost it.** The batch's Materials tab
-  writes a `ComponentStockAdjustment` with `charge_run_id` set, so the loss lands
+  writes an adjustment (`M.Adjustment`) with `run_id` set, so the loss lands
   in that batch's per-device figure instead of floating at project level. The
   Stock page keeps the same power for anything the batch view cannot express.
 - **`lost` and `external` are different axes.** `pool_state` counts an
@@ -506,7 +506,7 @@ guard reads one company's stock is in [companies.md](companies.md).
   each assembly order consumed (`presaleDetailResultVOList`), and
   `jlc_invoice.parse` checks those rows sum to the invoice's prepaid total. WHO
   PAYS is inferred later by `plan_orders` and confirmed by a human.
-  `ComponentConsumption.run_id` is therefore **nullable**: NULL means the stock
+  A draw's `run_id` is therefore **nullable**: NULL means the stock
   left and no run has been charged.
   - Importing a manufacturing document writes its draws uncharged
     (`jlc_apply.draw_stock_for_invoice`, from `jlc_import.stock_plans` — which
@@ -766,7 +766,7 @@ guard reads one company's stock is in [companies.md](companies.md).
 
 `services/lots.py` replays the shared event list into lots. A lot is a purchase
 line, a positive stock adjustment or an in-house transfer position. A binding
-(`ComponentConsumptionLot`) records which lot a draw took, how much, and at
+(`MaterialMoveLot`) records which lot a draw took, how much, and at
 what unit cost. The module docstring says why a lot's remaining quantity and
 value are computed on read and never stored.
 

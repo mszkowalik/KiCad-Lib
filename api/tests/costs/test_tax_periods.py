@@ -14,6 +14,7 @@ import pytest
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
+from app import models as M
 from app.db import engine
 from app.services import companies as C
 from app.services import company_books as B
@@ -35,6 +36,10 @@ def db():
 def test_a_month_takes_the_form_of_the_last_period_that_started_by_its_quarter(db):
     c = C.by_key(db, "7sigma")
     c.tax_form = "pit_scale"
+    # A copy of production holds 7Sigma's real periods (2022-Q1 on). Before the
+    # first period the company's one form applies, so the test starts with none
+    # (rolled back with the transaction).
+    db.query(M.CompanyTaxPeriod).filter_by(company_id=c.id).delete()
     B.set_tax_period(db, c.id, from_quarter="2048-Q1", form="pit_scale", actor="t")
     B.set_tax_period(db, c.id, from_quarter="2049-Q1", form="pit_linear", rate=12.5, actor="t")
     periods = B.tax_periods(db, c.id)

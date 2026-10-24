@@ -206,22 +206,23 @@ def backfill(db: Session, *, dry_run: bool = True, fetch_jlc: bool = False,
             return seven.id
         return None
 
-    def company_of_lots(c: M.ComponentConsumption) -> int | None:
+    def company_of_lots(c: M.Draw) -> int | None:
         """The one company whose lots a draw is bound to: JLC named the
-        purchases a warehouse pick or an order consumed."""
+        purchases a warehouse pick or an order consumed. A stored lot is the
+        company of the adjustment that made it."""
         owners = set()
-        for b in db.query(M.ComponentConsumptionLot).filter_by(consumption_id=c.id).all():
+        for b in db.query(M.MaterialMoveLot).filter_by(move_id=c.id).all():
             if b.lot_line_id:
                 li = db.get(M.RunCostLine, b.lot_line_id)
                 owners.add(company_of_doc(li.document_id) if li is not None else None)
-            elif b.lot_adjustment_id:
-                a = db.get(M.ComponentStockAdjustment, b.lot_adjustment_id)
+            elif b.lot_id:
+                a = db.query(M.Adjustment).filter(M.Adjustment.lot_id == b.lot_id, M.Adjustment.qty > 0).first()
                 owners.add(a.company_id if a is not None else None)
         return owners.pop() if len(owners) == 1 else None
 
     # 2. Draws: from what they are linked to, else the lots they are bound to
     # (a JLC warehouse pick, `jlcledger:`), else the JLC order's buyer.
-    for c in RA.live_consumption(db).filter(M.ComponentConsumption.company_id.is_(None)).all():
+    for c in RA.live_consumption(db).filter(M.Draw.company_id.is_(None)).all():
         cid = C.stock_company_for(db, c)
         if cid is None and c.run_id is None:
             cid = company_of_lots(c)
@@ -231,10 +232,10 @@ def backfill(db: Session, *, dry_run: bool = True, fetch_jlc: bool = False,
             imp = db.query(M.JlcImport).filter_by(external_id=batch).first()
             cid = company_of_doc(imp.document_id if imp else None)
         if cid is None:
-            cid = by_date(c.consumed_at)
+            cid = by_date(c.at)
         if cid is None:
-            out["unresolved_draws"].append({"id": c.id, "mpn": c.mpn, "lcsc": c.lcsc, "qty": c.qty,
-                                            "date": c.consumed_at, "import_ref": c.import_ref,
+            out["unresolved_draws"].append({"id": c.id, "mpn": c.mpn, "lcsc": c.lcsc, "qty": c.taken,
+                                            "date": c.at, "import_ref": c.import_ref,
                                             "note": (c.note or "")[:120]})
             continue
         out["draws"] += 1
@@ -242,12 +243,11 @@ def backfill(db: Session, *, dry_run: bool = True, fetch_jlc: bool = False,
             c.company_id = cid
 
     # 3. Adjustments.
-    for a in (db.query(M.ComponentStockAdjustment)
-              .filter(M.ComponentStockAdjustment.company_id.is_(None)).all()):
-        cid = C.stock_company_for(db, a) or by_date(a.adjusted_at)
+    for a in db.query(M.Adjustment).filter(M.Adjustment.company_id.is_(None)).all():
+        cid = C.stock_company_for(db, a) or by_date(a.at)
         if cid is None:
-            out["unresolved_adjustments"].append({"id": a.id, "mpn": a.mpn, "qty": a.qty_delta,
-                                                  "date": a.adjusted_at, "reason": a.reason})
+            out["unresolved_adjustments"].append({"id": a.id, "mpn": a.mpn, "qty": a.qty,
+                                                  "date": a.at, "reason": a.reason})
             continue
         out["adjustments"] += 1
         if not dry_run:

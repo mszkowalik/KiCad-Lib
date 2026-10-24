@@ -38,8 +38,14 @@ CLOSED_EPS = 1e-6
 
 
 def _lot_key(kind: str, ident: int) -> str:
-    """`L123` = purchase line 123, `A7` = stock adjustment 7."""
+    """`L123` = purchase line 123, `A7` = stored lot 7 (a lot a positive
+    adjustment made: a count, found units, a make's output)."""
     return f"{kind}{ident}"
+
+
+def key_of(lot_line_id: int | None, lot_id: int | None) -> str | None:
+    """The key of a binding's lot, or None when it names none."""
+    return _lot_key("L", lot_line_id) if lot_line_id else _lot_key("A", lot_id) if lot_id else None
 
 
 def lot_state(db: Session, as_of: str | None = None) -> dict:
@@ -47,10 +53,10 @@ def lot_state(db: Session, as_of: str | None = None) -> dict:
 
     Returns `{"lots": {key: {...}}, "parts": {identity: {...}}}`.
 
-    A lot is a purchase line (or a POSITIVE stock adjustment, which creates real
-    priced stock with no purchase behind it — `opening_balance` rows do exactly
-    that, and excluding them would make every draw against opening stock
-    permanently unallocatable).
+    A lot is a purchase line, or a stored lot: the one a POSITIVE adjustment
+    made, which is real priced stock with no purchase behind it —
+    `opening_balance` rows do exactly that, and leaving them out would make every
+    draw against opening stock permanently unallocatable.
     """
     # Transfers included: a transfer's position is a lot (decision 0064).
     events, doc_by_id, surcharge = run_actuals._pool_events(db, with_transfers=True)
@@ -95,12 +101,12 @@ def lot_state(db: Session, as_of: str | None = None) -> dict:
                 "unknown_rate": not known,
                 "qty_assigned": 0.0, "value_assigned": 0.0,
             }
-        elif kind == "adj" and (row.qty_delta or 0) > 0:
-            key = _lot_key("A", row.id)
-            qty = row.qty_delta or 0.0
+        elif kind == "adj" and (row.qty or 0) > 0 and row.lot_id:
+            key = _lot_key("A", row.lot_id)
+            qty = row.qty or 0.0
             value = qty * (row.unit_cost_usd or 0.0) + extras.get(row.id, 0.0)
             lots[key] = {
-                "key": key, "kind": "adjustment", "id": row.id,
+                "key": key, "kind": "stock", "id": row.lot_id, "adjustment_id": row.id,
                 "date": when, "lcsc": row.lcsc or "", "mpn": row.mpn or "",
                 "component_id": row.component_id,
                 "lot_ref": "", "document_id": None,
@@ -117,12 +123,10 @@ def lot_state(db: Session, as_of: str | None = None) -> dict:
     # windowing the assignments would hand the same stock out twice. A VOIDED
     # draw took nothing — the pool replay skips it — so its bindings free their
     # lots (as `process._bound_rows` reads them).
-    for b in (db.query(M.ComponentConsumptionLot)
-              .join(M.ComponentConsumption, M.ComponentConsumption.id == M.ComponentConsumptionLot.consumption_id)
-              .filter(M.ComponentConsumption.voided_at.is_(None)).all()):
-        key = (_lot_key("L", b.lot_line_id) if b.lot_line_id
-               else _lot_key("A", b.lot_adjustment_id) if b.lot_adjustment_id
-               else None)
+    for b in (db.query(M.MaterialMoveLot)
+              .join(M.Draw, M.Draw.id == M.MaterialMoveLot.move_id)
+              .filter(M.Draw.voided_at.is_(None)).all()):
+        key = key_of(b.lot_line_id, b.lot_id)
         if key is None or key not in lots:
             continue
         lots[key]["qty_assigned"] += b.qty or 0.0
@@ -175,16 +179,16 @@ def lot_state(db: Session, as_of: str | None = None) -> dict:
 def unallocated_draws(db: Session) -> list[dict]:
     """Draws with no lot binding at all — the honest measure of how much of the
     ledger the lot layer does NOT yet explain."""
-    bound = {b.consumption_id for b in db.query(M.ComponentConsumptionLot).all()}
+    bound = {m for (m,) in db.query(M.MaterialMoveLot.move_id).all()}
     out = []
-    for c in run_actuals.live_consumption(db).all():
+    for c in run_actuals.live_consumption(db).order_by(M.Draw.id).all():
         if c.id in bound:
             continue
         out.append({
             "id": c.id, "run_id": c.run_id, "lcsc": c.lcsc, "mpn": c.mpn,
-            "qty": c.qty, "unit_cost_usd": c.unit_cost_usd,
-            "value_usd": round((c.qty or 0) * (c.unit_cost_usd or 0), 4),
-            "basis": c.basis, "consumed_at": c.consumed_at,
+            "qty": c.taken, "unit_cost_usd": c.unit_cost_usd,
+            "value_usd": round(c.taken * (c.unit_cost_usd or 0), 4),
+            "basis": c.basis, "consumed_at": c.at,
         })
     return out
 
@@ -196,7 +200,7 @@ def coverage(db: Session) -> dict:
     state = lot_state(db)
     total_drawn = 0.0
     for c in run_actuals.live_consumption(db).all():
-        total_drawn += (c.qty or 0) * (c.unit_cost_usd or 0)
+        total_drawn += c.taken * (c.unit_cost_usd or 0)
     unalloc = unallocated_draws(db)
     unalloc_value = sum(u["value_usd"] for u in unalloc)
     lots = state["lots"].values()
@@ -227,9 +231,7 @@ def check_lot_capacity(db: Session, bindings: list[dict]) -> list[dict]:
     state = lot_state(db)
     want: dict[str, float] = defaultdict(float)
     for b in bindings:
-        key = (_lot_key("L", b["lot_line_id"]) if b.get("lot_line_id")
-               else _lot_key("A", b["lot_adjustment_id"]) if b.get("lot_adjustment_id")
-               else None)
+        key = key_of(b.get("lot_line_id"), b.get("lot_id"))
         if key:
             want[key] += b.get("qty") or 0.0
     out = []
@@ -249,12 +251,11 @@ def check_lot_capacity(db: Session, bindings: list[dict]) -> list[dict]:
 # ============================================================ FIFO (0073)
 
 def _lot_companies(db: Session, lots: dict[str, dict]) -> dict[str, int | None]:
-    """The company whose stock each lot is: a purchase line's buyer, a positive
-    adjustment's company, a transfer position's receiver."""
+    """The company whose stock each lot is: a purchase line's buyer, a transfer
+    position's receiver, the company of the adjustment that made a stored lot."""
     docs = {d.id: d.company_id for d in db.query(M.RunCostDocument.id, M.RunCostDocument.company_id)}
-    adjs = {a.id: a.company_id for a in db.query(M.ComponentStockAdjustment.id,
-                                                 M.ComponentStockAdjustment.company_id)}
-    return {k: (docs.get(lot["document_id"]) if lot["kind"] == "line" else adjs.get(lot["id"]))
+    adjs = {a.id: a.company_id for a in db.query(M.Adjustment.id, M.Adjustment.company_id)}
+    return {k: (docs.get(lot["document_id"]) if lot["kind"] == "line" else adjs.get(lot["adjustment_id"]))
             for k, lot in lots.items()}
 
 
@@ -299,7 +300,7 @@ class FifoPicker:
             need -= take
             value += take * (lot["unit_cost_usd"] or 0.0)
             out["bindings"].append({"lot_line_id": lot["id"] if lot["kind"] == "line" else None,
-                                    "lot_adjustment_id": lot["id"] if lot["kind"] == "adjustment" else None,
+                                    "lot_id": lot["id"] if lot["kind"] == "stock" else None,
                                     "lot": key, "qty": round(take, 6), "unit_cost_usd": lot["unit_cost_usd"],
                                     "lot_date": lot["date"]})
         out["covered"] = round(float(qty) - need, 6)
@@ -309,18 +310,17 @@ class FifoPicker:
         return out
 
 
-def bound_on(db: Session, *, line_ids=(), adjustment_ids=()) -> dict[str, tuple[float, list[int]]]:
+def bound_on(db: Session, *, line_ids=(), lot_ids=()) -> dict[str, tuple[float, list[int]]]:
     """Lot key → (units live draws hold of it, those draws' ids): what a
     change to the lot's purchase or adjustment must leave them (decision 0073)."""
     out: dict[str, tuple[float, list[int]]] = {}
-    for col, kind, ids in ((M.ComponentConsumptionLot.lot_line_id, "L", list(line_ids)),
-                           (M.ComponentConsumptionLot.lot_adjustment_id, "A", list(adjustment_ids))):
+    for col, kind, ids in ((M.MaterialMoveLot.lot_line_id, "L", list(line_ids)),
+                           (M.MaterialMoveLot.lot_id, "A", list(lot_ids))):
         if not ids:
             continue
-        for lot_id, q, cid in (db.query(col, M.ComponentConsumptionLot.qty, M.ComponentConsumption.id)
-                               .join(M.ComponentConsumption,
-                                     M.ComponentConsumption.id == M.ComponentConsumptionLot.consumption_id)
-                               .filter(col.in_(ids), M.ComponentConsumption.voided_at.is_(None)).all()):
+        for lot_id, q, cid in (db.query(col, M.MaterialMoveLot.qty, M.Draw.id)
+                               .join(M.Draw, M.Draw.id == M.MaterialMoveLot.move_id)
+                               .filter(col.in_(ids), M.Draw.voided_at.is_(None)).all()):
             q0, ds = out.get(_lot_key(kind, lot_id), (0.0, []))
             out[_lot_key(kind, lot_id)] = (q0 + (q or 0.0), sorted({*ds, cid}))
     return out
@@ -346,14 +346,14 @@ def bound_snapshot(db: Session, line_ids) -> dict[int, dict]:
     """For each of these positions that live draws are bound to: the lot it
     is now and the draws on it. `bound_problems` reads it after a change."""
     out: dict[int, dict] = {}
-    rows = (db.query(M.ComponentConsumptionLot.lot_line_id, M.ComponentConsumptionLot.qty, M.ComponentConsumption)
-            .join(M.ComponentConsumption, M.ComponentConsumption.id == M.ComponentConsumptionLot.consumption_id)
-            .filter(M.ComponentConsumptionLot.lot_line_id.in_(list(line_ids) or [-1]),
-                    M.ComponentConsumption.voided_at.is_(None)).all())
+    rows = (db.query(M.MaterialMoveLot.lot_line_id, M.MaterialMoveLot.qty, M.Draw)
+            .join(M.Draw, M.Draw.id == M.MaterialMoveLot.move_id)
+            .filter(M.MaterialMoveLot.lot_line_id.in_(list(line_ids) or [-1]),
+                    M.Draw.voided_at.is_(None)).all())
     for lid, q, c in rows:
         e = out.setdefault(lid, {"held": 0.0, "draws": {}})
         e["held"] += q or 0.0
-        e["draws"][c.id] = {"date": c.consumed_at or "", "scope": run_actuals.stock_scope(db, c.company_id),
+        e["draws"][c.id] = {"date": c.at or "", "scope": run_actuals.stock_scope(db, c.company_id),
                             "keys": set(run_actuals._identity_keys(c.component_id, c.mpn or "", c.lcsc or ""))}
     for lid, e in out.items():
         e["lot"] = lot_line(db, db.get(M.RunCostLine, lid))
@@ -428,12 +428,11 @@ def stock_problems(db: Session, before: dict) -> list[str]:
     return out
 
 
-def bind(db: Session, consumption: M.ComponentConsumption, picked: dict, source: str = "fifo") -> None:
+def bind(db: Session, draw: M.Draw, picked: dict, source: str = "fifo") -> None:
     """Write the bindings `FifoPicker.pick` chose for an existing draw."""
     for b in picked["bindings"]:
-        db.add(M.ComponentConsumptionLot(consumption_id=consumption.id, lot_line_id=b["lot_line_id"],
-                                         lot_adjustment_id=b["lot_adjustment_id"], qty=b["qty"],
-                                         unit_cost_usd=b["unit_cost_usd"] or 0.0, source=source))
+        db.add(M.MaterialMoveLot(move_id=draw.id, lot_line_id=b["lot_line_id"], lot_id=b["lot_id"], qty=b["qty"],
+                                 unit_cost_usd=b["unit_cost_usd"] or 0.0, source=source))
     db.flush()
 
 
@@ -448,20 +447,18 @@ def short_text(rows: list[dict]) -> str:
                      f"{round(r.get('uncovered') or 0, 4):g} not in any lot" for r in rows[:6])
 
 
-def untraced(db: Session) -> list[tuple[M.ComponentConsumption, float]]:
+def untraced(db: Session) -> list[tuple[M.Draw, float]]:
     """Live draws and the part of each no lot binding explains — what
     `lot_pricing` waits for. A binding with no lot (a JLC row whose lot was
     never resolved) explains nothing."""
     traced: dict[int, float] = defaultdict(float)
-    for cid, q, ll, la in db.query(M.ComponentConsumptionLot.consumption_id, M.ComponentConsumptionLot.qty,
-                                   M.ComponentConsumptionLot.lot_line_id,
-                                   M.ComponentConsumptionLot.lot_adjustment_id):
+    for mid, q, ll, la in db.query(M.MaterialMoveLot.move_id, M.MaterialMoveLot.qty,
+                                   M.MaterialMoveLot.lot_line_id, M.MaterialMoveLot.lot_id):
         if ll or la:
-            traced[cid] += q or 0.0
+            traced[mid] += q or 0.0
     out = []
-    for c in run_actuals.live_consumption(db).order_by(M.ComponentConsumption.consumed_at,
-                                                       M.ComponentConsumption.id):
-        rest = (c.qty or 0.0) - traced.get(c.id, 0.0)
+    for c in run_actuals.live_consumption(db).order_by(M.Draw.at, M.Draw.id):
+        rest = c.taken - traced.get(c.id, 0.0)
         if rest > CLOSED_EPS:
             out.append((c, round(rest, 6)))
     return out
@@ -488,7 +485,7 @@ def bind_history(db: Session, *, actor: str = "", dry_run: bool = True) -> dict:
         cid = c.company_id if per_company else None
         if cid not in pickers:
             pickers[cid] = FifoPicker(db, cid, state=state)
-        p = pickers[cid].pick(c.component_id, c.mpn or "", c.lcsc or "", rest, (c.consumed_at or "")[:10])
+        p = pickers[cid].pick(c.component_id, c.mpn or "", c.lcsc or "", rest, (c.at or "")[:10])
         if p["uncovered"] > CLOSED_EPS:
             # The units it took are not in any lot: give back what it reserved,
             # leave it as it is, and say so.
@@ -497,22 +494,21 @@ def bind_history(db: Session, *, actor: str = "", dry_run: bool = True) -> dict:
             uncovered.append({"consumption_id": c.id, "run_id": c.run_id,
                               "batch": runs[c.run_id].label if c.run_id in runs else None,
                               "label": c.lcsc or c.mpn or str(c.component_id), "mpn": c.mpn or "",
-                              "lcsc": c.lcsc or "", "component_id": c.component_id, "date": c.consumed_at,
-                              "qty": c.qty, "uncovered": p["uncovered"], "company_id": c.company_id})
+                              "lcsc": c.lcsc or "", "component_id": c.component_id, "date": c.at,
+                              "qty": c.taken, "uncovered": p["uncovered"], "company_id": c.company_id})
             continue
-        old = (c.qty or 0.0) * (c.unit_cost_usd or 0.0)
-        have = [b for b in db.query(M.ComponentConsumptionLot).filter_by(consumption_id=c.id).all()
-                if b.lot_line_id or b.lot_adjustment_id]
+        old = c.taken * (c.unit_cost_usd or 0.0)
+        have = [b for b in db.query(M.MaterialMoveLot).filter_by(move_id=c.id).all() if b.lot_line_id or b.lot_id]
         value = sum((b.qty or 0.0) * (b.unit_cost_usd or 0.0) for b in have) \
             + sum(b["qty"] * (b["unit_cost_usd"] or 0.0) for b in p["bindings"])
-        unit = round(value / (c.qty or 1.0), 8)
+        unit = round(value / (c.taken or 1.0), 8)
         if not dry_run:
-            for b in db.query(M.ComponentConsumptionLot).filter_by(consumption_id=c.id).all():
-                if not (b.lot_line_id or b.lot_adjustment_id):
+            for b in db.query(M.MaterialMoveLot).filter_by(move_id=c.id).all():
+                if not (b.lot_line_id or b.lot_id):
                     db.delete(b)   # a row that named no lot, now explained
             bind(db, c, p, source="fifo_history")
             c.unit_cost_usd = unit
-        moved[c.run_id] += (c.qty or 0.0) * unit - old
+        moved[c.run_id] += c.taken * unit - old
         bound_n += 1
     if not dry_run:
         db.flush()
@@ -566,7 +562,7 @@ def fifo_price(db: Session, rows: list[dict], *, as_of: str, company_id: int | N
     return problems
 
 
-def resize_bound(db: Session, c: M.ComponentConsumption, qty: float, *, as_of: str,
+def resize_bound(db: Session, c: M.Draw, qty: float, *, as_of: str,
                  company_id: int | None) -> list[dict]:
     """Change a bound draw's quantity (decision 0073): more takes the next lots
     oldest first, less gives back the newest bindings first. The draw is priced
@@ -578,12 +574,11 @@ def resize_bound(db: Session, c: M.ComponentConsumption, qty: float, *, as_of: s
     grows as with the switch on, and takes the price of the lots it holds; a
     growth no lot covers in full binds nothing and keeps the price."""
     on = lot_pricing_on()
-    rows = (db.query(M.ComponentConsumptionLot).filter_by(consumption_id=c.id)
-            .order_by(M.ComponentConsumptionLot.id).all())
-    have = sum(b.qty or 0.0 for b in rows if b.lot_line_id or b.lot_adjustment_id)
-    lot_priced = have > CLOSED_EPS and abs((c.qty or 0.0) - have) <= CLOSED_EPS and abs(
+    rows = (db.query(M.MaterialMoveLot).filter_by(move_id=c.id).order_by(M.MaterialMoveLot.id).all())
+    have = sum(b.qty or 0.0 for b in rows if b.lot_line_id or b.lot_id)
+    lot_priced = have > CLOSED_EPS and abs(c.taken - have) <= CLOSED_EPS and abs(
         (c.unit_cost_usd or 0.0) - sum((b.qty or 0.0) * (b.unit_cost_usd or 0.0) for b in rows
-                                       if b.lot_line_id or b.lot_adjustment_id) / have) <= 1e-6
+                                       if b.lot_line_id or b.lot_id) / have) <= 1e-6
     if qty > have + CLOSED_EPS:
         if not on and not lot_priced:
             return []
@@ -614,8 +609,7 @@ def resize_bound(db: Session, c: M.ComponentConsumption, qty: float, *, as_of: s
     db.flush()
     if not on and not lot_priced:
         return []
-    live = [b for b in db.query(M.ComponentConsumptionLot).filter_by(consumption_id=c.id)
-            if b.lot_line_id or b.lot_adjustment_id]
+    live = [b for b in db.query(M.MaterialMoveLot).filter_by(move_id=c.id) if b.lot_line_id or b.lot_id]
     total = sum(b.qty or 0.0 for b in live)
     if total > CLOSED_EPS:
         c.unit_cost_usd = round(sum((b.qty or 0.0) * (b.unit_cost_usd or 0.0) for b in live) / total, 8)

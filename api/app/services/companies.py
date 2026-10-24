@@ -324,55 +324,54 @@ def _seller_of_devices(db: Session, run: M.ProductionRun, companies: dict[str, M
 
 # ===================================================== stock per company (0064)
 
-def transformation_company(db: Session, t: M.ProcessTransformation | None) -> int | None:
-    """The company a process transformation worked for: the batch it was done
-    for, else its project's owner on the day."""
-    if t is None:
+def make_company(db: Session, mk: M.Make | None) -> int | None:
+    """The company a make worked for: the batch it was done for, else its
+    project's owner on the day."""
+    if mk is None:
         return None
-    if t.production_run_id:
-        run = db.get(M.ProductionRun, t.production_run_id)
+    if mk.run_id:
+        run = db.get(M.ProductionRun, mk.run_id)
         if run is not None and run.company_id:
             return run.company_id
-    owner = owner_on(db, t.project_id, t.made_at or None)
+    owner = owner_on(db, mk.project_id, mk.at or None)
     return owner.id if owner else None
 
 
-def stock_company_for(db: Session, row) -> int | None:
-    """The company whose stock a draw or an adjustment moves, from what it is
-    linked to. None when nothing says (an uncharged draw, a free-standing
+def stock_company_for(db: Session, row: M.MaterialMove) -> int | None:
+    """The company whose stock a move (a draw or an adjustment) moves, from
+    what it is linked to: its batch, else its event (a click's batch, a make's
+    company, a stock event's company), else, for an adjustment, its project's
+    owner on the day. None when nothing says (an uncharged draw, a free-standing
     adjustment): the writer, or the backfill, must name it."""
     def run_company(run_id):
         run = db.get(M.ProductionRun, run_id) if run_id else None
         return run.company_id if run is not None else None
 
-    if isinstance(row, M.ComponentConsumption):
-        if row.run_id:
-            return run_company(row.run_id)
-        if row.step_run_id:
-            sr = db.get(M.StepRun, row.step_run_id)
-            return run_company(sr.run_id) if sr is not None else None
-        if row.transformation_id:
-            return transformation_company(db, db.get(M.ProcessTransformation, row.transformation_id))
+    if not isinstance(row, M.MaterialMove):
         return None
-    if isinstance(row, M.ComponentStockAdjustment):
-        if row.charge_run_id:
-            return run_company(row.charge_run_id)
-        if row.transformation_id:
-            return transformation_company(db, db.get(M.ProcessTransformation, row.transformation_id))
-        if row.project_id:
-            owner = owner_on(db, row.project_id, row.adjusted_at or None)
-            return owner.id if owner else None
+    if row.run_id:
+        return run_company(row.run_id)
+    ev = db.get(M.MaterialEvent, row.event_id) if row.event_id else None
+    if ev is not None:
+        if ev.kind == "step":
+            return run_company(ev.run_id)
+        if ev.kind == "make":
+            return make_company(db, ev)
+        if ev.company_id:
+            return ev.company_id
+    if isinstance(row, M.Adjustment) and row.project_id:
+        owner = owner_on(db, row.project_id, row.at or None)
+        return owner.id if owner else None
     return None
 
 
 @event.listens_for(Session, "before_flush")
 def stamp_stock(session: Session, flush_context, instances) -> None:
-    """Every NEW draw and adjustment gets its company, whichever of the eleven
-    writers made it. A writer that knows better sets `company_id` itself and is
+    """Every NEW move (a draw or an adjustment) gets its company, whichever
+    writer made it. A writer that knows better sets `company_id` itself and is
     left alone."""
     for obj in list(session.new):
-        if isinstance(obj, (M.ComponentConsumption, M.ComponentStockAdjustment)) \
-                and obj.company_id is None:
+        if isinstance(obj, M.MaterialMove) and obj.company_id is None:
             with session.no_autoflush:
                 obj.company_id = stock_company_for(session, obj)
 
@@ -391,7 +390,6 @@ def stock_without_company(db: Session) -> dict[str, int]:
         pooled = (db.query(M.RunCostLine.document_id)
                   .filter(M.RunCostLine.document_id.in_(doc_ids), RA.IS_STOCK,
                           M.RunCostLine.voided_at.is_(None)).distinct().count())
-    draws = RA.live_consumption(db).filter(M.ComponentConsumption.company_id.is_(None)).count()
-    adjs = (db.query(M.ComponentStockAdjustment)
-            .filter(M.ComponentStockAdjustment.company_id.is_(None)).count())
+    draws = RA.live_consumption(db).filter(M.Draw.company_id.is_(None)).count()
+    adjs = db.query(M.Adjustment).filter(M.Adjustment.company_id.is_(None)).count()
     return {"documents with parts": pooled, "draws": draws, "adjustments": adjs}

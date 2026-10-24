@@ -18,6 +18,7 @@ from sqlalchemy.orm import Session
 from app import models as M
 from app.db import engine
 from app.services import cost_steps, jlc_apply, jlc_import, jlc_ledger as L
+from app.services.material_ledger import core as ledger
 
 
 @pytest.fixture
@@ -150,11 +151,11 @@ def test_booking_writes_one_uncharged_measured_draw(db, part):
              remark="pick 8 pcs up to complete SMT order")
     res = L.book(db, [r.change_key_id], dry_run=False)
     assert res["totals"] == {"rows": 1, "qty": 8, "usd": 0.8}
-    row = db.get(M.ComponentConsumption, res["written"][0]["consumption_id"])
+    row = db.get(M.Draw, res["written"][0]["consumption_id"])
     assert row.run_id is None
     assert row.basis == "measured"
-    assert row.qty == 8
-    assert row.consumed_at == "2026-03-05"
+    assert row.taken == 8
+    assert row.at == "2026-03-05"
     assert "pick 8 pcs" in row.note
     assert row.import_ref == f"jlcledger:{r.change_key_id}"
 
@@ -169,10 +170,10 @@ def test_booking_the_same_row_twice_is_a_no_op(db, part):
 
 def test_a_dry_run_writes_nothing(db, part):
     r = _row(db, qty=-8, code="T3", key=900110)
-    before = db.query(M.ComponentConsumption).count()
+    before = db.query(M.Draw).count()
     res = L.book(db, [r.change_key_id], dry_run=True)
     assert res["totals"]["rows"] == 1
-    assert db.query(M.ComponentConsumption).count() == before
+    assert db.query(M.Draw).count() == before
 
 
 def test_booking_refuses_more_than_the_pool_holds(db, part):
@@ -238,13 +239,9 @@ def test_refresh_keeps_a_hand_written_annotation(db, part):
 def test_refresh_refuses_to_shrink_a_line_draws_are_bound_to(db, part):
     """JLC saying the parts never arrived and the platform saying they were used
     is a contradiction a human settles, not an UPDATE."""
-    draw = M.ComponentConsumption(run_id=None, lcsc="CLEDGER01", mpn="LEDGER-PART-1",
-                                  qty=10, unit_cost_usd=0.1, basis="measured",
-                                  consumed_at="2026-03-01")
-    db.add(draw)
-    db.flush()
-    db.add(M.ComponentConsumptionLot(consumption_id=draw.id, lot_line_id=part["line"].id,
-                                     qty=10, unit_cost_usd=0.1, source="test"))
+    draw = ledger.draw(db, run_id=None, lcsc="CLEDGER01", mpn="LEDGER-PART-1",
+                       taken=10, unit_cost_usd=0.1, basis="measured", at="2026-03-01")
+    ledger.bind(db, draw, qty=10, unit_cost_usd=0.1, lot_line_id=part["line"].id, source="test")
     db.flush()
     res = jlc_apply.refresh_parts_document(db, _plan(status=40), dry_run=True)
     assert res["status"] == "refused"
@@ -442,13 +439,9 @@ def test_a_refunded_cancellation_is_no_line_and_a_refresh_removes_the_old_fee(db
 
 
 def _bind(db, part, qty, unit, run_id=None):
-    draw = M.ComponentConsumption(run_id=run_id, lcsc="CLEDGER01", mpn="LEDGER-PART-1",
-                                  qty=qty, unit_cost_usd=unit, basis="measured",
-                                  consumed_at="2026-03-01")
-    db.add(draw)
-    db.flush()
-    db.add(M.ComponentConsumptionLot(consumption_id=draw.id, lot_line_id=part["line"].id,
-                                     qty=qty, unit_cost_usd=unit, source="reported"))
+    draw = ledger.draw(db, run_id=run_id, lcsc="CLEDGER01", mpn="LEDGER-PART-1",
+                       taken=qty, unit_cost_usd=unit, basis="measured", at="2026-03-01")
+    ledger.bind(db, draw, qty=qty, unit_cost_usd=unit, lot_line_id=part["line"].id, source="reported")
     db.flush()
     return draw
 
@@ -462,7 +455,7 @@ def test_a_resettled_lot_moves_the_draws_that_used_it(db, part):
     res = jlc_apply.refresh_parts_document(db, plan, dry_run=False)
     assert res["status"] == "refreshed"
     assert db.get(M.RunCostLine, part["line"].id).unit_price == 0.06
-    assert round(db.get(M.ComponentConsumption, draw.id).unit_cost_usd, 8) == 0.06
+    assert round(db.get(M.Draw, draw.id).unit_cost_usd, 8) == 0.06
     [moved] = res["repriced_draws"]
     assert moved["delta_usd"] == -16.0
     assert res["identities"]["pool_balanced"]

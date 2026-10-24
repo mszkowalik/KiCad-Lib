@@ -24,6 +24,7 @@ from sqlalchemy.orm import Session
 from app import models as M
 from app.db import engine
 from app.services import supplier_parts as sp
+from app.services.material_ledger import core as ledger
 
 
 @pytest.fixture
@@ -136,10 +137,8 @@ def world(db: Session):
 
 
 def _draw(db, run, lcsc, qty):
-    db.add(M.ComponentConsumption(run_id=run.id, mpn="", lcsc=lcsc, qty=qty,
-                                  unit_cost_usd=1.0, basis="bom",
-                                  consumed_at="2026-03-01"))
-    db.flush()
+    ledger.draw(db, run_id=run.id, mpn="", lcsc=lcsc, taken=qty, unit_cost_usd=1.0, basis="bom",
+                at="2026-03-01")
 
 
 def test_every_position_covered_once_reads_ok(db: Session, world):

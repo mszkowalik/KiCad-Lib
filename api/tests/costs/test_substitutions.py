@@ -18,6 +18,7 @@ from sqlalchemy.orm import Session
 from app import models as M
 from app.db import engine
 from app.services import run_actuals as ra, substitutions as S
+from app.services.material_ledger import core as ledger
 
 
 @pytest.fixture
@@ -63,10 +64,8 @@ def _order(db, run, order, when, lines, batch="W-TEST"):
     """One cached JLC order BOM, attributed to `run` through a draw's import_ref."""
     db.add(M.JlcImport(external_id=f"{batch}-{order}", doc_date=when,
                        bom_info={order: lines}))
-    db.add(M.ComponentConsumption(run_id=run.id, lcsc="CANY", qty=1, unit_cost_usd=0.0,
-                                  basis="measured", consumed_at=when,
-                                  import_ref=f"jlc:{batch}:{order}:CANY"))
-    db.flush()
+    ledger.draw(db, run_id=run.id, lcsc="CANY", taken=1, unit_cost_usd=0.0, basis="measured", at=when,
+                import_ref=f"jlc:{batch}:{order}:CANY")
 
 
 def _line(ref, code, match="auto", comment="100uF"):
@@ -228,10 +227,8 @@ def test_a_part_that_was_drawn_is_not_reported(db, world):
     on every batch would make the flag worthless."""
     run = world["runs"][0]
     _order(db, run, "SMT-A", "2026-03-01", [_line("C9", "COTHER")])
-    db.add(M.ComponentConsumption(run_id=run.id, lcsc="CSPEC", qty=10,
-                                  unit_cost_usd=0.1, basis="manual",
-                                  consumed_at="2026-03-01"))
-    db.flush()
+    ledger.draw(db, run_id=run.id, lcsc="CSPEC", taken=10, unit_cost_usd=0.1, basis="manual",
+                at="2026-03-01")
     assert S.unused(db, run)["unused"] == []
 
 
@@ -311,9 +308,9 @@ def test_a_bom_draw_takes_the_part_that_was_fitted(db, world):
                         serial="S-0001"))
     _sub(db, run)
     db.flush()
-    res = ra.consume_from_bom(db, run, basis="bom", consumed_at="2026-03-01")
+    res = ra.consume_from_bom(db, run, basis="bom", at="2026-03-01")
     assert res.get("error") is None, res
-    drawn = db.query(M.ComponentConsumption).filter_by(run_id=run.id, basis="bom").all()
+    drawn = db.query(M.Draw).filter_by(run_id=run.id, basis="bom").all()
     assert [c.lcsc for c in drawn] == ["CNEW"]
     assert "in place of CSPEC" in drawn[0].note
 

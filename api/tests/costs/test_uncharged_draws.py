@@ -18,6 +18,7 @@ from sqlalchemy.orm import Session
 from app import models as M
 from app.db import engine
 from app.services import jlc_apply, run_actuals as ra
+from app.services.material_ledger import core as ledger
 
 
 @pytest.fixture
@@ -68,12 +69,8 @@ def _pool_row(db, lcsc="CTEST001", **kw):
 
 def _draw(db, world, qty=400.0, run_id=None, ref="jlc:WTEST:SMTTEST:CTEST001",
           when="2026-03-05"):
-    c = M.ComponentConsumption(
-        run_id=run_id, mpn="TEST-PART-1", lcsc="CTEST001", qty=qty,
-        unit_cost_usd=0.1, basis="measured", consumed_at=when, import_ref=ref)
-    db.add(c)
-    db.flush()
-    return c
+    return ledger.draw(db, run_id=run_id, mpn="TEST-PART-1", lcsc="CTEST001", taken=qty,
+                       unit_cost_usd=0.1, basis="measured", at=when, import_ref=ref)
 
 
 # ---------------------------------------------------------------- the model
@@ -107,14 +104,14 @@ def test_charging_a_draw_writes_no_second_draw(db, world):
     quantity the supplier reported — that is how the same stock gets counted
     twice."""
     _draw(db, world)
-    before = db.query(M.ComponentConsumption).filter_by(lcsc="CTEST001").count()
+    before = db.query(M.Draw).filter_by(lcsc="CTEST001").count()
     plan = {"smt_order_code": "SMTTEST", "batch_num": "WTEST"}
     res = jlc_apply.charge_draws(db, plan, world["run"].id, dry_run=False)
     db.flush()
     assert res["status"] == "charged"
     assert res["uncharged_draws"] == 1
-    assert db.query(M.ComponentConsumption).filter_by(lcsc="CTEST001").count() == before
-    assert db.query(M.ComponentConsumption).filter_by(lcsc="CTEST001").one().run_id == world["run"].id
+    assert db.query(M.Draw).filter_by(lcsc="CTEST001").count() == before
+    assert db.query(M.Draw).filter_by(lcsc="CTEST001").one().run_id == world["run"].id
     # and the stock did not move again
     assert _pool_row(db)["qty"] == 600
 
@@ -126,7 +123,7 @@ def test_charging_is_visible_in_the_dry_run_without_writing(db, world):
     assert res["status"] == "dry_run"
     assert res["uncharged_draws"] == 1
     assert res["value_usd"] == 40.0
-    assert db.query(M.ComponentConsumption).filter_by(lcsc="CTEST001").one().run_id is None
+    assert db.query(M.Draw).filter_by(lcsc="CTEST001").one().run_id is None
 
 
 def test_a_draw_already_charged_elsewhere_is_refused(db, world):
@@ -153,11 +150,8 @@ def test_charging_the_same_order_twice_is_a_no_op(db, world):
 def test_charging_supersedes_the_bom_forecast_it_replaces(db, world):
     """A forecast belongs to a run, so it can only be retired once a run is
     named — which is the charging step, not the measuring step."""
-    forecast = M.ComponentConsumption(
-        run_id=world["run"].id, mpn="TEST-PART-1", lcsc="CTEST001", qty=390,
-        unit_cost_usd=0.1, basis="bom", consumed_at="2026-03-01", import_ref="")
-    db.add(forecast)
-    db.flush()
+    forecast = ledger.draw(db, run_id=world["run"].id, mpn="TEST-PART-1", lcsc="CTEST001", taken=390,
+                           unit_cost_usd=0.1, basis="bom", at="2026-03-01", import_ref="")
     _draw(db, world)
     plan = {"smt_order_code": "SMTTEST", "batch_num": "WTEST"}
     res = jlc_apply.charge_draws(db, plan, world["run"].id, dry_run=False)
@@ -225,17 +219,14 @@ def test_another_projects_order_is_not_attrition(db, world):
     project this platform does not track is not a defect, and counting the two
     together reported 1,094 written-off pieces on 2026-09-18 when the real
     attrition was zero."""
-    db.add(M.ComponentStockAdjustment(
-        project_id=world["project"].id, mpn="TEST-PART-1", lcsc="CTEST001",
-        qty_delta=-30, unit_cost_usd=0.1, reason="external_project",
-        charge_run_id=None, adjusted_at="2026-03-02",
-        import_ref="jlc:ext:SMTOTHER:CTEST001", note="another project"))
-    db.add(M.ComponentStockAdjustment(
-        project_id=world["project"].id, mpn="TEST-PART-1", lcsc="CTEST001",
-        qty_delta=-5, unit_cost_usd=0.1, reason="attrition",
-        charge_run_id=world["run"].id, adjusted_at="2026-03-03",
-        note="lost in production"))
-    db.flush()
+    ledger.adjustment(
+        db, project_id=world["project"].id, mpn="TEST-PART-1", lcsc="CTEST001",
+        qty=-30, unit_cost_usd=0.1, reason="external_project", run_id=None, at="2026-03-02",
+        import_ref="jlc:ext:SMTOTHER:CTEST001", note="another project")
+    ledger.adjustment(
+        db, project_id=world["project"].id, mpn="TEST-PART-1", lcsc="CTEST001",
+        qty=-5, unit_cost_usd=0.1, reason="attrition", run_id=world["run"].id, at="2026-03-03",
+        note="lost in production")
     row = _pool_row(db)
     assert row["external"] == 30
     assert row["lost"] == 5, "only the real loss counts as written off"
@@ -296,7 +287,7 @@ def test_typing_a_used_quantity_creates_edits_and_removes_one_draw(db, world):
     # correcting it is the SAME action, not a compensating adjustment
     res = _set_used(db, run, 380)
     assert res["status"] == "updated" and res["was"] == 400
-    assert db.query(M2.ComponentConsumption).filter_by(run_id=run.id).count() == 1
+    assert db.query(M2.Draw).filter_by(run_id=run.id).count() == 1
     assert _pool_row(db)["qty"] == 620
 
     assert _set_used(db, run, 380)["status"] == "unchanged"
@@ -317,7 +308,7 @@ def test_a_typed_draw_is_priced_from_the_pool_it_draws_from(db, world):
     res = _set_used(db, world["run"], 100)
     assert res["status"] == "created"
     assert res["unit_cost_usd"] == 0.1, "priced from the pool, not zero"
-    row = db.query(M2.ComponentConsumption).filter_by(run_id=world["run"].id).one()
+    row = db.query(M2.Draw).filter_by(run_id=world["run"].id).one()
     assert row.component_id == 4242, "the draw adopts the pool's identity"
     # one pool entry, not two
     matches = [v for v in ra.pool_state(db).values() if (v.get("lcsc") or "") == "CTEST001"]
@@ -355,12 +346,10 @@ def test_a_legacy_adjustment_counts_as_already_booked(db, world):
     from app.routers.jlc_import import _booked, _stock_already_booked
     plan = {"smt_order_code": "SMTEXT", "batch_num": "WEXT"}
     assert _stock_already_booked(db, plan) is False
-    db.add(M.ComponentStockAdjustment(
-        project_id=world["project"].id, mpn="TEST-PART-1", lcsc="CTEST001",
-        qty_delta=-40, unit_cost_usd=0.1, reason="external_project",
-        charge_run_id=None, adjusted_at="2026-03-02",
-        import_ref="jlc:ext:SMTEXT:CTEST001", note="another project"))
-    db.flush()
+    ledger.adjustment(
+        db, project_id=world["project"].id, mpn="TEST-PART-1", lcsc="CTEST001",
+        qty=-40, unit_cost_usd=0.1, reason="external_project", run_id=None, at="2026-03-02",
+        import_ref="jlc:ext:SMTEXT:CTEST001", note="another project")
     assert _stock_already_booked(db, plan) is True
     b = _booked(db, plan)
     assert b["legacy_adjustments"] == 1 and b["draws"] == 0
@@ -371,17 +360,15 @@ def test_the_migration_changes_shape_and_not_stock(db, world):
     """Rewriting an `external_project` adjustment as an uncharged draw must move
     the same pieces out of the pool, not different ones. Verified on production
     data 2026-09-18: 27 rows, 72 part balances, ZERO changed."""
-    db.add(M.ComponentStockAdjustment(
-        project_id=world["project"].id, mpn="TEST-PART-1", lcsc="CTEST001",
-        qty_delta=-40, unit_cost_usd=0.1, reason="external_project",
-        charge_run_id=None, adjusted_at="2026-03-02",
-        import_ref="jlc:ext:SMTEXT:CTEST001", note="another project"))
-    db.flush()
+    ledger.adjustment(
+        db, project_id=world["project"].id, mpn="TEST-PART-1", lcsc="CTEST001",
+        qty=-40, unit_cost_usd=0.1, reason="external_project", run_id=None, at="2026-03-02",
+        import_ref="jlc:ext:SMTEXT:CTEST001", note="another project")
     before = _pool_row(db)
     assert before["qty"] == 960 and before["external"] == 40 and before["lost"] == 0
 
     # the shape the migration writes instead
-    db.delete(db.query(M.ComponentStockAdjustment)
+    db.delete(db.query(M.Adjustment)
               .filter_by(import_ref="jlc:ext:SMTEXT:CTEST001").one())
     db.flush()
     _draw(db, world, qty=40.0, ref="jlc:WEXT:SMTEXT:CTEST001", when="2026-03-02")

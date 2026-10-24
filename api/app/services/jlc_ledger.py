@@ -180,8 +180,7 @@ def _local_index(db: Session) -> tuple[dict, dict]:
     purchase either, it is money recorded so a document reconciles.
     """
     draws: dict[tuple[str, str], list] = {}
-    for c in db.query(M.ComponentConsumption).filter(
-            M.ComponentConsumption.import_ref.like("jlc:%")).all():
+    for c in db.query(M.Draw).filter(M.Draw.import_ref.like("jlc:%")).all():
         bits = (c.import_ref or "").split(":")
         if len(bits) >= 3:
             draws.setdefault(((c.lcsc or "").upper(), bits[2]), []).append(c)
@@ -203,8 +202,7 @@ def _booked_keys(db: Session) -> set[str]:
     """`changeKeyId`s already written as draws, from `import_ref`."""
     return {
         (c.import_ref or "").split(":", 1)[1]
-        for c in db.query(M.ComponentConsumption)
-        .filter(M.ComponentConsumption.import_ref.like("jlcledger:%")).all()
+        for c in db.query(M.Draw).filter(M.Draw.import_ref.like("jlcledger:%")).all()
     }
 
 
@@ -412,17 +410,17 @@ def book(db: Session, change_key_ids: list[int] | None = None,
             entry["lots"] = [{"lot": b["lot"], "qty": b["qty"], "unit_cost_usd": b["unit_cost_usd"]}
                              for b in picked["bindings"]]
         if not dry_run:
-            row = M.ComponentConsumption(
-                run_id=None, component_id=pool.get("component_id"),
+            from .material_ledger import core as _ledger
+
+            # One JLC warehouse pick is one operation: a stock event of its own.
+            row = _ledger.draw(
+                db, component_id=pool.get("component_id"),
                 mpn=pool.get("mpn") or r["mpn"], lcsc=pool.get("lcsc") or r["lcsc"],
-                qty=r["qty"], unit_cost_usd=unit, basis="measured",
-                import_ref=f"jlcledger:{r['change_key_id']}", company_id=company_id,
-                consumed_at=r["date"],
+                taken=r["qty"], unit_cost_usd=unit, basis="measured",
+                import_ref=f"jlcledger:{r['change_key_id']}", company_id=company_id, at=r["date"],
                 note=(f"JLC inventory ledger {r['date']}"
                       + (f" ({r['business_code']})" if r["business_code"] else "")
-                      + f": {r['remark']}")[:500])
-            db.add(row)
-            db.flush()
+                      + f": {r['remark']}"))
             if picked is not None:
                 L.bind(db, row, picked)
             entry["consumption_id"] = row.id

@@ -95,7 +95,7 @@ def test_batch_units_scraps_from_a_stack(db, world):
     b1 = world["b1"].id
     out = call("batch_units", run_id=b1, action="scrap", stack=stack, qty=1, reason="dropped", dry_run=False)
     assert out["units"] == 1
-    assert db.query(M.Twin).filter_by(run_id=b1, status="scrapped").count() == 1
+    assert db.query(M.Unit).filter_by(run_id=b1, status="scrapped").count() == 1
     assert "error" in call("batch_units", run_id=b1, action="explode")
 
 

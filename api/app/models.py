@@ -29,6 +29,7 @@ from sqlalchemy import (
     text,
 )
 from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.orm import Mapped, deferred, mapped_column, relationship
 
 from .db import Base
@@ -1690,64 +1691,6 @@ class JlcStockChange(Base):
     )
 
 
-class ComponentConsumptionLot(Base):
-    """WHICH purchase a draw actually consumed, and at what that lot really cost.
-
-    One `ComponentConsumption` may have several of these — a draw spanning two
-    lots splits, which is exactly what produces the "one averaged row / N flat
-    rows" view the user asked for. The parent's `unit_cost_usd` is the
-    quantity-weighted average of its children, so the two views always total the
-    same figure and switching the display can never change a number.
-
-    **The lot itself is NOT a new table.** A lot is already a row: a leaf
-    `run_cost_lines` entry with `kind='part'` and no `run_id` — precisely the set
-    `run_actuals._pool_events` already treats as a purchase. Mirroring those into
-    a parallel table would create a second source of truth free to drift from the
-    money rows, and would break the documented invariant that `_pool_events` is
-    the ONE source of stock events. So lots are made first-class by being *bound
-    to*, not copied.
-
-    `lot_line_id` and `lot_adjustment_id` are alternatives: at most one is set,
-    and NEITHER being set means the draw could not be attributed to any purchase
-    (an unallocated slice, priced from the pool average as before). The
-    adjustment pointer exists because a positive `opening_balance` adjustment
-    creates real priced stock with no purchase line behind it — without it, that
-    stock could never be drawn from and every such draw would be unallocated.
-
-    `source` records HOW the binding was decided, following the
-    `ComponentConsumption.basis` precedent so an inference can never be mistaken
-    for a fact:
-      `reported`      — the supplier said so (JLC `presaleGoodsKeyId`)
-      `fifo`          — inferred, oldest eligible lot first
-      `manual`        — a human pinned it
-      `unallocated`   — no lot could be found; priced from the average
-      `legacy_average`— a pre-lot draw, carrying its original frozen unit cost
-    """
-
-    __tablename__ = "component_consumption_lots"
-
-    id: Mapped[int] = mapped_column(primary_key=True)
-    consumption_id: Mapped[int] = mapped_column(
-        ForeignKey("component_consumptions.id", ondelete="CASCADE")
-    )
-    lot_line_id: Mapped[int | None] = mapped_column(Integer, nullable=True)  # soft ptr
-    lot_adjustment_id: Mapped[int | None] = mapped_column(Integer, nullable=True)  # soft ptr
-    qty: Mapped[float] = mapped_column(Float, default=0.0)
-    # The LOT's landed unit cost, snapshotted at bind time — never JLC's quoted
-    # component price. A parts refresh moves it when JLC re-settles the lot.
-    unit_cost_usd: Mapped[float] = mapped_column(Float, default=0.0)
-    source: Mapped[str] = mapped_column(String(20), default="fifo")
-    ext_ref: Mapped[str] = mapped_column(String(120), default="")  # presaleGoodsKeyId etc.
-    note: Mapped[str] = mapped_column(String(500), default="")
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
-
-    __table_args__ = (
-        Index("ix_cons_lot_consumption", "consumption_id"),
-        Index("ix_cons_lot_line", "lot_line_id"),
-        Index("ix_cons_lot_adjustment", "lot_adjustment_id"),
-    )
-
-
 class JlcImport(Base):
     """A fetched JLC payload, staged before anything is decided or written.
 
@@ -2665,140 +2608,6 @@ class RunCostLine(Base):
     )
 
 
-class ComponentConsumption(Base):
-    """What LEFT the component cost pool, and which run pays for it.
-
-    Those are two facts with two sources. The quantity is reported by the
-    supplier — JLC itemises every consigned lot an assembly order consumed. The
-    run is a judgement someone makes afterwards. `run_id` is therefore nullable:
-    an uncharged draw is stock that has moved and money that has not landed.
-
-    The point is SPLITTING INVOICE COST, not tracking inventory (user decision
-    2026-07-27) — quantities exist to apportion money. `basis` records how the
-    quantity was arrived at so an estimate can never be read as a measurement:
-
-    - `measured`   — from JLC stock deltas between syncs
-    - `bom`        — BOM qty x units built
-    - `allocated`  — historical backfill, anchored on purchases minus current stock
-    - `manual`     — typed
-
-    `unit_cost_usd` is the moving average SNAPSHOTTED here, so a purchase
-    entered later (backfill inserts older rows) can never rewrite a closed run.
-    The average itself is replayed in event-date order, never insertion order.
-    """
-
-    __tablename__ = "component_consumptions"
-
-    id: Mapped[int] = mapped_column(primary_key=True)
-    #: WHO PAYS. NULL means the stock left the shelf and nobody has been charged
-    #: yet — a draw JLC reported on an invoice, for an assembly order not yet
-    #: linked to a batch (or deliberately never linked, because JLC built
-    #: something this platform does not track).
-    #:
-    #: Nullable since 2026-09-18. Before that a draw could not exist without a
-    #: run, so the stock movement was gated behind a human decision about COST:
-    #: JLC states on every invoice exactly which consigned lots each order
-    #: consumed, and the platform waited for somebody to agree. A decision
-    #: recorded on 2026-08-25 was never applied and 441 pieces stayed on our
-    #: books for three weeks. Quantity is reported by the supplier; attribution
-    #: is a judgement. They are now written at their own times.
-    #:
-    #: This is the only field on a draw a later correction may move, for the
-    #: same reason as `production_run_id` on a `produced` event
-    #: (decision 0029): it records a CHOICE, not the event.
-    run_id: Mapped[int | None] = mapped_column(
-        ForeignKey("production_runs.id"), nullable=True)
-    component_id: Mapped[int | None] = mapped_column(Integer, nullable=True)  # soft ptr
-    mpn: Mapped[str] = mapped_column(String(200), default="")
-    lcsc: Mapped[str] = mapped_column(String(50), default="")
-    qty: Mapped[float] = mapped_column(Float, default=0.0)
-    unit_cost_usd: Mapped[float] = mapped_column(Float, default=0.0)
-    basis: Mapped[str] = mapped_column(String(20), default="bom")
-    # Provenance of an IMPORTED draw, empty on every hand-made row. Backed by the
-    # partial unique index `uq_consumption_import`, which is the FIRST uniqueness
-    # this table has ever had — re-running an import becomes a no-op instead of a
-    # second draw, which is precisely how components 324/325 were charged twice
-    # across five runs.
-    import_ref: Mapped[str] = mapped_column(String(120), default="")
-    consumed_at: Mapped[str] = mapped_column(String(20), default="")  # ISO date; drives the replay
-    note: Mapped[str] = mapped_column(String(500), default="")
-    # Retiring a draw VOIDS it; it is never deleted. A forecast superseded by a
-    # measurement has to be restorable, because reversing the import that
-    # superseded it must put the run back exactly as it was — and `void_shop.py`
-    # and `void_absent.py` deleted 10 rows that could then only come back from a
-    # database backup. Every read of this table filters `voided_at IS NULL`;
-    # the seven sites are listed in the Phase 1 section of
-    # `docs/production-costs/design.md`.
-    voided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    void_reason: Mapped[str] = mapped_column(String(40), default="")
-    # Decision 0058. A draw an INPUT of a process transformation took: its value
-    # moved into the transformation's output lot, so it is charged to no batch
-    # and is NOT an uncharged draw waiting for one. Soft pointer.
-    transformation_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    # Decision 0059. The STEP CLICK that drew this: a process step applied to N
-    # twins draws N x each input in one row, and each twin owns 1/N of it — that
-    # is how a twin's own parts are exact. Soft pointer.
-    step_run_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    # Decision 0064. The company whose stock this draw took. Stamped on insert
-    # from the batch, the step or the transformation (`companies.stamp_stock`).
-    company_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    # Decision 0064. The SENDER's side of an in-house transfer: the transfer
-    # document's position that put this stock into the other company. Charged
-    # to no batch and not waiting for one. Soft pointer.
-    transfer_line_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
-
-    __table_args__ = (
-        Index("ix_consumption_run", "run_id"),
-        Index("ix_consumption_component", "component_id"),
-    )
-
-
-class ComponentStockAdjustment(Base):
-    """Attrition and reconciliation — a first-class part of the model, not an
-    error path. Components get lost in production, so the platform's remaining
-    quantity is never expected to match JLCPCB's stock exactly.
-
-    `charge_run_id` decides where the money lands: set it and the loss is part
-    of that run's cost (its per-device figure carries the real attrition);
-    leave it NULL and the write-off sits at project level. Also used for
-    opening balances when backfilling history.
-    """
-
-    __tablename__ = "component_stock_adjustments"
-
-    id: Mapped[int] = mapped_column(primary_key=True)
-    project_id: Mapped[int | None] = mapped_column(ForeignKey("projects.id"), nullable=True)
-    component_id: Mapped[int | None] = mapped_column(Integer, nullable=True)  # soft ptr
-    mpn: Mapped[str] = mapped_column(String(200), default="")
-    lcsc: Mapped[str] = mapped_column(String(50), default="")
-    qty_delta: Mapped[float] = mapped_column(Float, default=0.0)  # negative = lost/written off
-    unit_cost_usd: Mapped[float | None] = mapped_column(Float, nullable=True)  # snapshot; NULL = replay
-    # attrition|scrap|miscount|opening_balance|correction|external_project
-    reason: Mapped[str] = mapped_column(String(30), default="attrition")
-    charge_run_id: Mapped[int | None] = mapped_column(ForeignKey("production_runs.id"), nullable=True)
-    adjusted_at: Mapped[str] = mapped_column(String(20), default="")  # ISO date; drives the replay
-    # Provenance of an IMPORTED adjustment, backed by `uq_stock_adj_import`.
-    # `apply_external_movements` deduped by scanning `note LIKE '%code%'` — a text
-    # scan standing in for a constraint. This is the constraint.
-    import_ref: Mapped[str] = mapped_column(String(120), default="")
-    note: Mapped[str] = mapped_column(String(500), default="")
-    actor: Mapped[str] = mapped_column(String(100), default="")
-    # Decision 0058. The OUTPUT LOT of a process transformation: a positive
-    # adjustment of an internal part, priced at what its inputs and conversion
-    # cost. A positive adjustment is already a lot (`lots.py`, key `A<id>`), so
-    # every replayer sees the new stock with no new event kind. Soft pointer.
-    transformation_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    # Decision 0064. The company whose stock this adjustment moves.
-    company_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
-
-    __table_args__ = (
-        Index("ix_stock_adj_component", "component_id"),
-        Index("ix_stock_adj_run", "charge_run_id"),
-    )
-
-
 # ------------------------------------------------------- processes (0058)
 class ProcessVersion(Base):
     """One version of a project's PRODUCTION PROCESS (decision 0058).
@@ -2841,201 +2650,17 @@ class ProcessVersion(Base):
     )
 
 
-class ProcessTransformation(Base):
-    """One time a recipe was carried out: inputs drawn, an output lot deposited
-    (decision 0058 §3).
-
-    The INPUTS are `ComponentConsumption` rows carrying this id and no run —
-    their value moved into the output, so no batch pays for them twice. The
-    OUTPUT is one positive `ComponentStockAdjustment` carrying this id, valued
-    at the inputs drawn (frozen at their draw prices) plus `conversion_usd`.
-    `scrap` is output units' worth of inputs that were consumed and broke: they
-    are drawn, they add value to the good units, and they add no quantity.
-
-    `production_run_id` is CONTEXT — the batch the work was done for — never a
-    charge: the batch pays when it draws the output lot. Voiding voids the
-    draws and the output together, and is refused once anything drew from the
-    output lot (decision 0040, transitively).
-    """
-
-    __tablename__ = "process_transformations"
-
-    id: Mapped[int] = mapped_column(primary_key=True)
-    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"))
-    process_version_id: Mapped[int] = mapped_column(Integer)  # soft ptr, pinned
-    recipe_key: Mapped[str] = mapped_column(String(40))
-    recipe_label: Mapped[str] = mapped_column(String(200), default="")  # as it read then
-    output_component_id: Mapped[int] = mapped_column(Integer)  # soft ptr
-    qty: Mapped[float] = mapped_column(Float, default=0.0)
-    scrap: Mapped[float] = mapped_column(Float, default=0.0)
-    production_run_id: Mapped[int | None] = mapped_column(Integer, nullable=True)  # soft ptr
-    made_at: Mapped[str] = mapped_column(String(20), default="")  # ISO date; drives the replay
-    input_value_usd: Mapped[float] = mapped_column(Float, default=0.0)
-    # The conversion cost is NOT stored: it is the invoice positions aimed at
-    # this transformation (`RunCostLine.transformation_id`), read on every
-    # replay like a freight surcharge, so a late invoice needs nothing re-written.
-    output_adjustment_id: Mapped[int | None] = mapped_column(Integer, nullable=True)  # soft ptr
-    note: Mapped[str] = mapped_column(String(500), default="")
-    actor: Mapped[str] = mapped_column(String(100), default="")
-    voided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    void_reason: Mapped[str] = mapped_column(String(200), default="")
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
-
-    __table_args__ = (
-        Index("ix_transformation_project", "project_id"),
-        Index("ix_transformation_run", "production_run_id"),
-    )
-
-
-class Twin(Base):
-    """One unit's record from the first step that touches it (decision 0059).
-
-    Before programming a twin is UNNAMED and lives in a STACK: the unnamed
-    active twins of one batch with the same `stack_key` (the steps done and the
-    prepared-part lots used). Twins of a stack are identical by construction,
-    so programming may name any one of them. **`id` is internal: it is never
-    printed, never shown as a unit's identity, and no endpoint addresses an
-    unnamed twin by it** — a step takes "N from this stack" and the platform
-    picks which.
-
-    `origin_run_id` is the batch the board was received in and never changes:
-    the twin's origin batch cost is a share of THAT batch. `run_id` is the batch
-    it is in now — the one that programmed it, for a twin moved at programming.
-    `found` marks a unit entered at a stock count at zero value: its cost sits in
-    the closed books of its origin batch.
-    """
-
-    __tablename__ = "twins"
-
-    id: Mapped[int] = mapped_column(primary_key=True)
-    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"))
-    origin_run_id: Mapped[int] = mapped_column(Integer)  # soft ptr, fixed
-    run_id: Mapped[int] = mapped_column(Integer)  # soft ptr, the batch it is in now
-    process_version_id: Mapped[int] = mapped_column(Integer)  # soft ptr
-    device_unit_id: Mapped[int | None] = mapped_column(Integer, nullable=True, unique=True)
-    status: Mapped[str] = mapped_column(String(20), default="active")  # active|finished|scrapped
-    stack_key: Mapped[str] = mapped_column(String(400), default="")
-    found: Mapped[bool] = mapped_column(Boolean, default=False)
-    note: Mapped[str] = mapped_column(String(500), default="")
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
-    named_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    scrapped_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-
-    __table_args__ = (
-        Index("ix_twin_stack", "run_id", "stack_key"),
-        Index("ix_twin_origin", "origin_run_id"),
-    )
-
-
-class StepRun(Base):
-    """One click of a process step on N twins (decision 0059).
-
-    It records the step AS IT READ THEN (`step_label`, `kind`) beside the
-    version it ran under, how the units were chosen (`chosen`: stack, scanned,
-    list, bench, merge, found, supplier, rebuilt), who and when. Its draws
-    carry `step_run_id`, and each of its twins owns 1/qty of them. The invoice
-    positions that paid for it are `CostLineStep` rows (decisions 0060, 0061).
-    A step that happened is history and is not voided.
-    """
-
-    __tablename__ = "step_runs"
-
-    id: Mapped[int] = mapped_column(primary_key=True)
-    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"))
-    run_id: Mapped[int] = mapped_column(Integer)  # the batch it was done in
-    process_version_id: Mapped[int] = mapped_column(Integer)
-    step_key: Mapped[str] = mapped_column(String(40))
-    step_label: Mapped[str] = mapped_column(String(200), default="")
-    kind: Mapped[str] = mapped_column(String(20), default="step")
-    qty: Mapped[int] = mapped_column(Integer, default=0)
-    chosen: Mapped[str] = mapped_column(String(20), default="stack")
-    made_at: Mapped[str] = mapped_column(String(20), default="")  # ISO date; drives the replay
-    actor: Mapped[str] = mapped_column(String(100), default="")
-    note: Mapped[str] = mapped_column(String(500), default="")
-    # Who did an assembly step and the order or invoice it was done under, as
-    # the person stated them in "Record assembly" (decision 0072).
-    assembler: Mapped[str] = mapped_column(String(120), default="", server_default="")
-    reference: Mapped[str] = mapped_column(String(200), default="", server_default="")
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
-
-    __table_args__ = (
-        Index("ix_step_run_run", "run_id"),
-    )
-
-
-class CostLineStepKey(Base):
-    """An invoice position paid for a WHOLE STEP of a batch (decision 0074):
-    every click of `step_key` in `run_id`, also the clicks the benches record
-    after the link was made. Each new click gets its `CostLineStep` row when it
-    is written, so the reading side is unchanged."""
-
-    __tablename__ = "cost_line_step_keys"
-
-    id: Mapped[int] = mapped_column(primary_key=True)
-    line_id: Mapped[int] = mapped_column(ForeignKey("run_cost_lines.id", ondelete="CASCADE"))
-    run_id: Mapped[int] = mapped_column(Integer)
-    step_key: Mapped[str] = mapped_column(String(40))
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
-
-    __table_args__ = (
-        UniqueConstraint("line_id", "run_id", "step_key", name="uq_cost_line_step_key"),
-    )
-
-
-class CostLineStep(Base):
-    """An invoice position PAID FOR this step click (decisions 0060, 0061).
-
-    A position can pay for several clicks — the final assembler's invoice
-    covers programming, the enclosure, the laser mark and the label at once —
-    and the twins of all of them share it equally. The money stays charged to
-    the position's batch: this is a label, not a destination."""
-
-    __tablename__ = "cost_line_steps"
-
-    id: Mapped[int] = mapped_column(primary_key=True)
-    line_id: Mapped[int] = mapped_column(ForeignKey("run_cost_lines.id", ondelete="CASCADE"))
-    step_run_id: Mapped[int] = mapped_column(ForeignKey("step_runs.id", ondelete="CASCADE"))
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
-
-    __table_args__ = (
-        UniqueConstraint("line_id", "step_run_id", name="uq_cost_line_step"),
-        Index("ix_cost_line_step_click", "step_run_id"),
-    )
-
-
-class TwinStep(Base):
-    """A twin took part in a step click. A twin's history is these rows."""
-
-    __tablename__ = "twin_steps"
-
-    id: Mapped[int] = mapped_column(primary_key=True)
-    twin_id: Mapped[int] = mapped_column(ForeignKey("twins.id", ondelete="CASCADE"))
-    step_run_id: Mapped[int] = mapped_column(ForeignKey("step_runs.id", ondelete="CASCADE"))
-    # The bench run that did this step on THIS unit, and the deployment version
-    # it ran (decision 0074): one click can hold many twins, each programmed,
-    # tested or marked by its own run. Soft pointers; NULL for a step no bench
-    # did.
-    programming_run_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    deployment_version_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
-
-    __table_args__ = (
-        Index("ix_twin_step_twin", "twin_id"),
-        Index("ix_twin_step_run", "step_run_id"),
-    )
-
-
-# ------------------------------------------------- material ledger (0097)
+# ------------------------------------------------- material ledger (0097, 0098)
 #
-# Phase 1 of decision 0097: a SHADOW of the pool, the lots, the prepared parts
-# and the twins, rebuilt whole from those tables by
-# `services/material_ledger/project.py` and compared with them by `parity.py`.
-# The old tables stay the truth. `material_items` and `material_state_maps`
-# hold what people decide (a tracking level, "this internal part is a state of
-# that item") and survive a rebuild; every other table here is dropped and
-# built again, so it carries no journal trigger (`row_changes.SKIP`).
-# Design: docs/material-ledger/design.md.
+# Stock, work and units in one model (decision 0097), the only one since the
+# cut-over (decision 0098). Seven records: what a thing is (item), a quantity
+# whose members nobody can tell apart (lot), one operation (event), one change
+# of an item's quantity (move) and the lots it came from or went to (move
+# lots), the lots an operation acted on (event lots), and an invoice position
+# aimed at work (cost aim). A PURCHASE lot is its invoice line (`L<line id>`)
+# and has no lot row: the line is the one truth of what was bought, and a copy
+# could drift from the money (decision 0073). Design:
+# docs/material-ledger/design.md; rules: docs/reference/material-ledger.md.
 
 class MaterialItem(Base):
     """What a thing is. Work never changes it (0097 §1)."""
@@ -3062,8 +2687,8 @@ class MaterialItem(Base):
 class MaterialStateMap(Base):
     """A person's statement that an internal part is a STATE of another item:
     component 577 "SIM6-12-3W cut" is component 233 with four `cut_*`
-    properties. The projector then writes the part's transformations as
-    properties on lots of the item, not as lots of a new item."""
+    properties. Read by the work that turns states into properties (0097
+    phase 4); nothing reads it for stock or cost."""
 
     __tablename__ = "material_state_maps"
 
@@ -3077,133 +2702,295 @@ class MaterialStateMap(Base):
 
 
 class MaterialEvent(Base):
-    """One operation: who, when, which batch, under which rule (0097 §6)."""
+    """One operation (0097 §6): who, when, which batch, under which rule.
+
+    `kind` says what it is. `step` is a CLICK of a process step on N units
+    (`Click`), `make` a recipe carried out on stock (`Make`, 0058 §3), and
+    `stock` any other operation on stock: a draw a supplier reported, a BOM or
+    hand draw, an in-house transfer, a write-off, a count. Its moves are the
+    quantities it changed; its event lots are the units it acted on.
+
+    A step that happened is history: a click is not voided. A make is voided
+    with its moves, and only while nothing drew from its output (0040)."""
 
     __tablename__ = "material_events"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    #: receive | transfer | step | transform | consume | count
-    kind: Mapped[str] = mapped_column(String(20))
-    at: Mapped[str] = mapped_column(String(20), default="")  # ISO date; drives the replay
+    kind: Mapped[str] = mapped_column(String(10))  # step | make | stock
+    #: ISO date; the day the work was done, which the replay orders by.
+    at: Mapped[str] = mapped_column(String(20), default="")
     actor: Mapped[str] = mapped_column(String(100), default="")
+    project_id: Mapped[int | None] = mapped_column(ForeignKey("projects.id"), nullable=True)
     company_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    run_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    process_version_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    #: The batch the work was done in. For a make it is context only: the
+    #: batch pays when it draws the output lot.
+    run_id: Mapped[int | None] = mapped_column(Integer, nullable=True)  # soft ptr
+    process_version_id: Mapped[int | None] = mapped_column(Integer, nullable=True)  # soft ptr, pinned
+    #: The step (or the recipe) AS IT READ THEN, so history keeps its words
+    #: when the process changes (decision 0021, generalised).
     step_key: Mapped[str] = mapped_column(String(40), default="")
-    step_label: Mapped[str] = mapped_column(String(200), default="")  # as it read then
-    step_kind: Mapped[str] = mapped_column(String(20), default="")  # the step's kind (finish, scrap, ...)
-    #: The units a step acted on (`StepRun.qty`): each owns 1/units of its draws.
+    step_label: Mapped[str] = mapped_column(String(200), default="")
+    #: The step's kind: assembly, receive, step, program, test, mark_laser,
+    #: label, finish, and the clicks the platform writes itself: scrap,
+    #: reopen, merge.
+    step_kind: Mapped[str] = mapped_column(String(20), default="")
+    #: A click: the units it acted on. Each owns 1/units of its draws.
     units: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    #: How the units were chosen: stack, scanned, list, bench, merge, found,
+    #: supplier (an assembly from a JLC order), manual (another house),
+    #: rebuilt, stated. A scan is an observation, a pick a person's statement.
     chosen: Mapped[str] = mapped_column(String(20), default="")
-    station: Mapped[str] = mapped_column(String(40), default="")
-    programming_run_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    deployment_version_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    file_set_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    params: Mapped[dict | None] = mapped_column(JSONB, nullable=True)  # resolved, never secret
+    #: Who did an assembly and under which order or invoice (decision 0072).
+    assembler: Mapped[str] = mapped_column(String(120), default="", server_default="")
+    reference: Mapped[str] = mapped_column(String(200), default="", server_default="")
     note: Mapped[str] = mapped_column(String(500), default="")
-    reverses_event_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    #: The row it was projected from: `document`, `consumption`, `step_run`,
-    #: `transformation`, `adjustment`.
-    source_kind: Mapped[str] = mapped_column(String(20), default="")
-    source_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    #: A make: units made and scrapped, what it made, what its inputs were
+    #: worth at their frozen prices, and the lot it deposited. Its conversion
+    #: cost is NOT stored: it is the invoice positions aimed at it
+    #: (`RunCostLine.transformation_id`), read on every replay.
+    qty: Mapped[float | None] = mapped_column(Float, nullable=True)
+    scrap: Mapped[float | None] = mapped_column(Float, nullable=True)
+    output_component_id: Mapped[int | None] = mapped_column(Integer, nullable=True)  # soft ptr
+    input_value_usd: Mapped[float | None] = mapped_column(Float, nullable=True)
+    output_lot_id: Mapped[int | None] = mapped_column(Integer, nullable=True)  # soft ptr
+    voided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    void_reason: Mapped[str] = mapped_column(String(200), default="")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
+    __mapper_args__ = {"polymorphic_on": "kind", "polymorphic_identity": "stock"}
     __table_args__ = (
-        Index("ix_material_event_source", "source_kind", "source_id"),
         Index("ix_material_event_run", "run_id"),
+        Index("ix_material_event_kind", "kind"),
     )
+
+
+class Click(MaterialEvent):
+    """A process step done on N units at once (decision 0059)."""
+
+    __mapper_args__ = {"polymorphic_identity": "step"}
+
+
+class Make(MaterialEvent):
+    """A recipe carried out on stock: inputs drawn, one output lot deposited
+    (decision 0058 §3)."""
+
+    __mapper_args__ = {"polymorphic_identity": "make"}
 
 
 class MaterialLot(Base):
     """A quantity of one item whose members are identical in the record
-    (0097 §2). Its quantity is the sum of its moves and is never stored."""
+    (0097 §2). Its quantity is the sum of what its moves put in and took out;
+    it is never stored.
+
+    `kind` is `stock` for a lot a move made (a count, a found pile, the output
+    of a make) and `unit` for one product unit (`Unit`). A purchase lot has no
+    row: it is its invoice line."""
 
     __tablename__ = "material_lots"
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    kind: Mapped[str] = mapped_column(String(10))  # stock | unit
     item_id: Mapped[int] = mapped_column(ForeignKey("material_items.id"))
     company_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    label: Mapped[str] = mapped_column(String(120), default="")
+    at: Mapped[str] = mapped_column(String(20), default="")  # ISO date it came into being
+    created_event_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    split_from_lot_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     #: Read off the object (a MAC, an engraved code), never invented.
     identifier: Mapped[str | None] = mapped_column(String(120), nullable=True)
-    device_unit_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    split_from_lot_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    created_event_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    #: A product unit: the batch it was received in (0059 §12), and whether a
-    #: stock count found it (zero value, 0058).
-    origin_run_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # --- a unit (decision 0059)
+    project_id: Mapped[int | None] = mapped_column(ForeignKey("projects.id"), nullable=True)
+    #: The batch the board was received in. Fixed: the unit's origin share is
+    #: a share of THAT batch, wherever it is programmed (0059 §12).
+    origin_run_id: Mapped[int | None] = mapped_column(Integer, nullable=True)  # soft ptr
+    #: The batch it is in now: the one that programmed it, for a moved unit.
+    run_id: Mapped[int | None] = mapped_column(Integer, nullable=True)  # soft ptr
+    process_version_id: Mapped[int | None] = mapped_column(Integer, nullable=True)  # soft ptr
+    device_unit_id: Mapped[int | None] = mapped_column(Integer, nullable=True, unique=True)
+    status: Mapped[str] = mapped_column(String(20), default="active")  # active | finished | scrapped
+    #: The STACK this unnamed unit is in: the steps done and the prepared-part
+    #: lots used ("antenna|enclosure@A785|receive"). Units of one batch with the
+    #: same key are one physical pile, so naming any of them is no guess.
+    stack_key: Mapped[str] = mapped_column(String(400), default="")
+    #: Entered at a stock count at zero value: its cost sits in the closed
+    #: books of its origin batch (0058).
     found: Mapped[bool] = mapped_column(Boolean, default=False)
-    #: What the lot stands for: `line` (a purchase), `adjustment`, `twin`.
-    source_kind: Mapped[str] = mapped_column(String(20), default="")
-    source_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    label: Mapped[str] = mapped_column(String(120), default="")  # L123, A675, a supplier lot
-    at: Mapped[str] = mapped_column(String(20), default="")  # ISO date it came into being
+    note: Mapped[str] = mapped_column(String(500), default="")
+    named_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    scrapped_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
+    __mapper_args__ = {"polymorphic_on": "kind", "polymorphic_identity": "stock"}
     __table_args__ = (
         Index("ix_material_lot_item", "item_id"),
-        Index("ix_material_lot_source", "source_kind", "source_id"),
-        Index("ix_material_lot_device", "device_unit_id"),
+        Index("ix_material_lot_stack", "run_id", "stack_key"),
+        Index("ix_material_lot_origin", "origin_run_id"),
     )
 
 
-class MaterialMove(Base):
-    """One change of a quantity: `qty` units (signed) of one lot, or of an
-    item when nobody recorded the lot (0097 §3).
+class Unit(MaterialLot):
+    """One product unit, from the first step that touches it (decision 0059).
 
-    `value_usd` is what the move carried, signed like `qty`: frozen for a
-    draw, read on read for a receipt (`value_source = invoice`) and for a
-    lot's conversion costs. `lot_value_usd` is what the LOT gave or got. The
-    two differ while `lot_pricing` is off: a draw is charged the moving
-    average and takes the lot's landed cost out of the lot."""
+    **Its id is internal: it is never printed, never shown as a unit's
+    identity, and no endpoint addresses an unnamed unit by it.** A step takes
+    "N from this stack" and the platform picks which. Programming names it:
+    `device_unit_id` and `identifier` (the MAC)."""
+
+    __mapper_args__ = {"polymorphic_identity": "unit"}
+
+
+class MaterialMove(Base):
+    """One change of one item's quantity, in one event (0097 §3).
+
+    `qty` is SIGNED: positive into stock, negative out of it. Its lots are
+    its `MaterialMoveLot` rows; what they do not cover changed a lot nobody
+    recorded. `kind` is `draw` (`Draw`) or `adjust` (`Adjustment`).
+
+    `unit_cost_usd` is the price SNAPSHOTTED at the move, so a purchase entered
+    later (a backfill inserts older rows) never rewrites a closed batch. NULL on
+    an adjustment means "the moving average at the replay"."""
 
     __tablename__ = "material_moves"
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    kind: Mapped[str] = mapped_column(String(10))  # draw | adjust
     event_id: Mapped[int] = mapped_column(ForeignKey("material_events.id"))
     item_id: Mapped[int] = mapped_column(ForeignKey("material_items.id"))
-    lot_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    company_id: Mapped[int | None] = mapped_column(Integer, nullable=True)  # whose stock
-    run_id: Mapped[int | None] = mapped_column(Integer, nullable=True)  # the batch it is charged to
+    #: The part as the writer named it. `item_id` is its pool identity; these
+    #: three are what identity OVERLAP matches on (`run_actuals._identity_keys`).
+    component_id: Mapped[int | None] = mapped_column(Integer, nullable=True)  # soft ptr
+    mpn: Mapped[str] = mapped_column(String(200), default="")
+    lcsc: Mapped[str] = mapped_column(String(50), default="")
     qty: Mapped[float] = mapped_column(Float, default=0.0)
-    value_usd: Mapped[float | None] = mapped_column(Float, nullable=True)
-    lot_value_usd: Mapped[float | None] = mapped_column(Float, nullable=True)
-    #: frozen | invoice (a purchase line, landed) | adjustment (stored, plus
-    #: conversion costs on read) | average (the moving average at the replay)
-    value_source: Mapped[str] = mapped_column(String(20), default="frozen")
-    #: How the lot is known: reported | fifo | manual | stated | scanned |
-    #: unallocated | legacy_average, as `component_consumption_lots.source`.
-    bind_source: Mapped[str] = mapped_column(String(20), default="")
-    #: The day the quantity changed. Its event's day for new work. In history it
+    unit_cost_usd: Mapped[float | None] = mapped_column(Float, nullable=True)
+    #: ISO date; drives the replay. Its event's day for new work. In history it
     #: can differ: a rebuild fed a batch's earlier draws to later clicks.
     at: Mapped[str] = mapped_column(String(20), default="")
-    #: The pool's same-day order: 0 adjustment, 1 purchase, 2 draw.
-    rank: Mapped[int] = mapped_column(Integer, default=2)
-    #: The identity the pool files this move under (`run_actuals._key`). It is
-    #: the item's key, except for a lot of an internal part that a state map
-    #: turned into a state of another item. Phase 1 parity compares by it.
-    pool_key: Mapped[str] = mapped_column(String(220), default="")
-    source_kind: Mapped[str] = mapped_column(String(20), default="")
-    source_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    #: WHO PAYS. On a draw, NULL means the stock left and nobody is charged
+    #: yet: a draw JLC reported for an order not linked to a batch. Quantity is
+    #: reported by the supplier; attribution is a judgement, written at its own
+    #: time (2026-09-18). The only field a later correction may move (0029).
+    #: On an adjustment, the batch that carries the loss; NULL leaves it at
+    #: project level.
+    run_id: Mapped[int | None] = mapped_column(ForeignKey("production_runs.id"), nullable=True)
+    #: Whose stock moved (decision 0064). Stamped on insert (`companies.stamp_stock`).
+    company_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    project_id: Mapped[int | None] = mapped_column(ForeignKey("projects.id"), nullable=True)
+    #: A draw: how the quantity is known, so an estimate is never read as a
+    #: measurement: measured (JLC stock deltas), bom (BOM x units), allocated
+    #: (historical backfill), manual (typed), step, transformation, transfer.
+    basis: Mapped[str] = mapped_column(String(20), default="")
+    #: An adjustment: attrition | scrap | miscount | opening_balance |
+    #: correction | external_project | transformation | found
+    reason: Mapped[str] = mapped_column(String(30), default="")
+    #: Provenance of an IMPORTED move, backed by a partial unique index per
+    #: kind: a re-run of an import is a no-op, not a second draw.
+    import_ref: Mapped[str] = mapped_column(String(120), default="")
+    note: Mapped[str] = mapped_column(String(500), default="")
+    actor: Mapped[str] = mapped_column(String(100), default="")
+    #: A draw is retired by VOIDING it, never deleted: reversing the import
+    #: that superseded a forecast must put the forecast back. Every read goes
+    #: through `run_actuals.live_consumption`.
+    voided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    void_reason: Mapped[str] = mapped_column(String(40), default="")
+    #: The sender's side of an in-house transfer: the transfer document's
+    #: position that put this stock into the other company (0064).
+    transfer_line_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    #: A positive adjustment: the stock lot it made.
+    lot_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
+    __mapper_args__ = {"polymorphic_on": "kind", "polymorphic_identity": "move"}
     __table_args__ = (
         Index("ix_material_move_event", "event_id"),
         Index("ix_material_move_item", "item_id"),
-        Index("ix_material_move_lot", "lot_id"),
+        Index("ix_material_move_run", "run_id"),
+        Index("ix_material_move_component", "component_id"),
+        Index("uq_material_draw_import", "import_ref", unique=True,
+              postgresql_where=text("kind = 'draw' AND import_ref <> ''")),
+        Index("uq_material_adjust_import", "import_ref", unique=True,
+              postgresql_where=text("kind = 'adjust' AND import_ref <> ''")),
+    )
+
+
+class Draw(MaterialMove):
+    """What LEFT stock, and which batch pays for it. `taken` is the quantity
+    as a positive number; `qty` keeps the ledger's sign."""
+
+    __mapper_args__ = {"polymorphic_identity": "draw"}
+
+    @hybrid_property
+    def taken(self) -> float:
+        return -(self.qty or 0.0)
+
+    @taken.inplace.setter
+    def _taken_set(self, value: float) -> None:
+        self.qty = -(value or 0.0)
+
+    @taken.inplace.expression
+    @classmethod
+    def _taken_expr(cls):
+        return -cls.qty
+
+
+class Adjustment(MaterialMove):
+    """Attrition and reconciliation, a first-class part of the model: parts
+    get lost in production, so the platform's quantity is never expected to
+    match JLCPCB's exactly. A positive adjustment makes a stock lot (`lot_id`):
+    an opening balance, found units, a make's output."""
+
+    __mapper_args__ = {"polymorphic_identity": "adjust"}
+
+
+class MaterialMoveLot(Base):
+    """WHICH lot a move took from, and at what that lot really cost.
+
+    One move may have several: a draw across two lots splits. The move's
+    `unit_cost_usd` is the weighted average of its lots while it is priced by
+    them, so the two views always total the same figure. `lot_line_id` is a
+    purchase lot (its invoice line), `lot_id` a stored lot; NEITHER set means
+    the draw could not be attributed (priced from the average as before).
+
+    `source` records HOW it was decided, so an inference is never mistaken
+    for a fact: reported (the supplier said so, JLC `presaleGoodsKeyId`),
+    fifo (oldest eligible first), fifo_history (the 0073 history job), manual
+    (a person or a prepared-part pick), unallocated, legacy_average."""
+
+    __tablename__ = "material_move_lots"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    move_id: Mapped[int] = mapped_column(ForeignKey("material_moves.id", ondelete="CASCADE"))
+    lot_line_id: Mapped[int | None] = mapped_column(Integer, nullable=True)  # soft ptr
+    lot_id: Mapped[int | None] = mapped_column(Integer, nullable=True)  # soft ptr
+    qty: Mapped[float] = mapped_column(Float, default=0.0)
+    #: The LOT's landed unit cost, snapshotted at bind time.
+    unit_cost_usd: Mapped[float] = mapped_column(Float, default=0.0)
+    source: Mapped[str] = mapped_column(String(20), default="fifo")
+    ext_ref: Mapped[str] = mapped_column(String(120), default="")
+    note: Mapped[str] = mapped_column(String(500), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    __table_args__ = (
+        Index("ix_material_move_lot_move", "move_id"),
+        Index("ix_material_move_lot_line", "lot_line_id"),
+        Index("ix_material_move_lot_lot", "lot_id"),
     )
 
 
 class MaterialEventLot(Base):
-    """A lot a step acted on without a change of quantity: the units of a
-    click. Replaces `twin_steps` (0097 §6)."""
+    """A unit took part in a click. A unit's history is these rows."""
 
     __tablename__ = "material_event_lots"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    event_id: Mapped[int] = mapped_column(ForeignKey("material_events.id"))
-    lot_id: Mapped[int] = mapped_column(Integer)
+    event_id: Mapped[int] = mapped_column(ForeignKey("material_events.id", ondelete="CASCADE"))
+    lot_id: Mapped[int] = mapped_column(ForeignKey("material_lots.id", ondelete="CASCADE"))
+    #: The bench run that did this step on THIS unit, and the deployment
+    #: version it ran (decision 0074). NULL for a step no bench did.
     programming_run_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     deployment_version_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    source_id: Mapped[int | None] = mapped_column(Integer, nullable=True)  # the twin_steps row
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
     __table_args__ = (
         Index("ix_material_event_lot_event", "event_id"),
@@ -3211,9 +2998,49 @@ class MaterialEventLot(Base):
     )
 
 
+class MaterialCostAim(Base):
+    """An invoice position aimed at work (0097 §7). `click`: it paid for one
+    click (decisions 0060, 0061); the twins of all its clicks share it. `step`:
+    it paid for a WHOLE step of a batch (decision 0074), every click of
+    `step_key` in `run_id`, also the clicks the benches record later; each new
+    click gets its `click` aim when it is written. The money stays charged to
+    the position's batch: an aim is a label, not a destination."""
+
+    __tablename__ = "material_cost_aims"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    kind: Mapped[str] = mapped_column(String(10))  # click | step
+    line_id: Mapped[int] = mapped_column(ForeignKey("run_cost_lines.id", ondelete="CASCADE"))
+    event_id: Mapped[int | None] = mapped_column(ForeignKey("material_events.id", ondelete="CASCADE"),
+                                                 nullable=True)
+    run_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    step_key: Mapped[str] = mapped_column(String(40), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    __mapper_args__ = {"polymorphic_on": "kind"}
+    __table_args__ = (
+        Index("ix_material_cost_aim_event", "event_id"),
+        Index("uq_material_cost_aim_click", "line_id", "event_id", unique=True,
+              postgresql_where=text("kind = 'click'")),
+        Index("uq_material_cost_aim_step", "line_id", "run_id", "step_key", unique=True,
+              postgresql_where=text("kind = 'step'")),
+    )
+
+
+class ClickCost(MaterialCostAim):
+    """A position that paid for one click."""
+
+    __mapper_args__ = {"polymorphic_identity": "click"}
+
+
+class StepCost(MaterialCostAim):
+    """A position that paid for every click of one step in one batch."""
+
+    __mapper_args__ = {"polymorphic_identity": "step"}
+
+
 class MaterialLink(Base):
-    """A lot inside another lot: a bundle (0097 §4). Phase 1 projects none:
-    the history records draws, not where they went."""
+    """A lot inside another lot: a bundle (0097 §4)."""
 
     __tablename__ = "material_links"
 
@@ -3246,27 +3073,6 @@ class MaterialProperty(Base):
     cleared: Mapped[bool] = mapped_column(Boolean, default=False)
 
     __table_args__ = (Index("ix_material_property_lot", "lot_id"),)
-
-
-class MaterialCostAim(Base):
-    """An invoice position aimed at work (0097 §7): one event, or every event
-    of one step in one batch. Replaces `RunCostLine.transformation_id`,
-    `cost_line_steps` and `cost_line_step_keys`."""
-
-    __tablename__ = "material_cost_aims"
-
-    id: Mapped[int] = mapped_column(primary_key=True)
-    line_id: Mapped[int] = mapped_column(Integer)
-    event_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    run_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    step_key: Mapped[str] = mapped_column(String(40), default="")
-    #: transformation | click | step_key — the old row it was projected from.
-    source_kind: Mapped[str] = mapped_column(String(20), default="")
-
-    __table_args__ = (
-        Index("ix_material_cost_aim_line", "line_id"),
-        Index("ix_material_cost_aim_event", "event_id"),
-    )
 
 
 # ------------------------------------------------- firmware releases (flasher)

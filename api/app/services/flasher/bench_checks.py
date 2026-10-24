@@ -101,7 +101,7 @@ def _about_the_process(db: Session, run: M.ProgrammingRun, dev: M.DeviceUnit,
     kinds = [_OP_KIND[o] for o in sorted(ops) if o in _OP_KIND]
     if not kinds:
         return []
-    tw = db.query(M.Twin).filter_by(device_unit_id=dev.id).first()
+    tw = db.query(M.Unit).filter_by(device_unit_id=dev.id).first()
     if tw is None or tw.status != "active":
         return []
     batch = db.get(M.ProductionRun, tw.run_id)
@@ -258,10 +258,10 @@ def _about_the_batch(db: Session, batch: M.ProductionRun, dev: M.DeviceUnit, *,
             # A found pile's units name their origin in the key (found@<batch>).
             found = next((t.split("@", 1)[1] for t in key.split("|") if t.startswith("found@")), None)
             origin = int(found) if found and found.isdigit() else rid
-            if rid != batch.id and not (db.query(func.count(M.Twin.id))
-                                        .filter(M.Twin.origin_run_id == origin, M.Twin.found.is_(found is not None),
-                                                M.Twin.run_id == batch.id,
-                                                M.Twin.device_unit_id.isnot(None)).scalar() or 0):
+            if rid != batch.id and not (db.query(func.count(M.Unit.id))
+                                        .filter(M.Unit.origin_run_id == origin, M.Unit.found.is_(found is not None),
+                                                M.Unit.run_id == batch.id,
+                                                M.Unit.device_unit_id.isnot(None)).scalar() or 0):
                 src = db.get(M.ProductionRun, rid)
                 out.append(_notice(
                     "warn", "stack_of_other_batch",

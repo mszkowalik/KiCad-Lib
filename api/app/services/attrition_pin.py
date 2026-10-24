@@ -3,7 +3,7 @@
 One-shot and idempotent, run at startup after the phase-1 DDL. Decision 0044,
 item 6.
 
-`ComponentStockAdjustment.unit_cost_usd` is nullable and NULL has always meant
+`Adjustment.unit_cost_usd` (a move of the material ledger) is nullable and NULL has always meant
 "price it from the pool". The trouble is WHEN: `run_actuals._run_money` resolves
 it against `pool_state(db, project_id)` with no `as_of`, which is the average
 after every event in the database — including purchases made two years after the
@@ -41,9 +41,9 @@ log = logging.getLogger(__name__)
 def migrate(db: Session) -> int:
     """Pin every charged, unpinned adjustment. Returns how many were written."""
     rows = (
-        db.query(M.ComponentStockAdjustment)
-        .filter(M.ComponentStockAdjustment.charge_run_id.isnot(None),
-                M.ComponentStockAdjustment.unit_cost_usd.is_(None))
+        db.query(M.Adjustment)
+        .filter(M.Adjustment.run_id.isnot(None),
+                M.Adjustment.unit_cost_usd.is_(None))
         .all()
     )
     if not rows:

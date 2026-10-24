@@ -67,6 +67,7 @@ tracking.install()
 # Decision 0089: every ORM transaction tells the row-change trigger which
 # request, person and client it belongs to.
 from .services import row_changes as _row_changes
+from .services.material_ledger import cutover as _ledger_cutover
 
 _row_changes.install_tagging()
 
@@ -189,18 +190,6 @@ _DEDUP_INDEXES = (
             "GROUP BY supplier, external_id HAVING COUNT(*) > 1"
         ),
     ),
-    (
-        "uq_consumption_import",
-        (
-            "CREATE UNIQUE INDEX IF NOT EXISTS uq_consumption_import "
-            "ON component_consumptions (import_ref) WHERE import_ref <> ''"
-        ),
-        (
-            "SELECT import_ref, COUNT(*) n, STRING_AGG(id::text, ',') ids "
-            "FROM component_consumptions WHERE import_ref <> '' "
-            "GROUP BY import_ref HAVING COUNT(*) > 1"
-        ),
-    ),
     # Decision 0066: a sales invoice number is given out once per series, even
     # to two writers at once. The imported history keeps its own duplicates.
     (
@@ -314,25 +303,6 @@ _PHASE1_DDL = (
              ELSE (regexp_match(label, '(SMT[A-Za-z0-9-]+)'))[1]
          END
          WHERE external_line_id = '' AND label ~ 'SMT[A-Za-z0-9-]+'"""),
-    # Draws become voidable instead of deletable, so an import that superseded a
-    # forecast can be reversed. Every read filters `voided_at IS NULL`.
-    # A draw may now exist with no run: the stock left the shelf, and who pays
-    # is a later, separate judgement. See `ComponentConsumption.run_id`.
-    ("component_consumptions.run_id_nullable",
-     "ALTER TABLE component_consumptions ALTER COLUMN run_id DROP NOT NULL"),
-    ("component_consumptions.voided_at",
-     "ALTER TABLE component_consumptions ADD COLUMN IF NOT EXISTS voided_at timestamptz"),
-    ("component_consumptions.void_reason",
-     "ALTER TABLE component_consumptions ADD COLUMN IF NOT EXISTS "
-     "void_reason varchar(40) NOT NULL DEFAULT ''"),
-    # A constraint replacing the `note LIKE '%code%'` text scan that stood in for
-    # idempotency in `apply_external_movements`.
-    ("component_stock_adjustments.import_ref",
-     "ALTER TABLE component_stock_adjustments ADD COLUMN IF NOT EXISTS "
-     "import_ref varchar(120) NOT NULL DEFAULT ''"),
-    ("uq_stock_adj_import",
-     "CREATE UNIQUE INDEX IF NOT EXISTS uq_stock_adj_import "
-     "ON component_stock_adjustments (import_ref) WHERE import_ref <> ''"),
     # What a deployment IS, so the bench offers Program / Test from data rather
     # than from a name match. Backfilled from the names the retro import gave
     # them ("Dongle_V2 test", "Aqua_V2 test"); marking procedures come later.
@@ -763,15 +733,6 @@ _PHASE1_DDL = (
     # `create_all`; these are the links on tables that already existed.
     ("components.internal",
      "ALTER TABLE components ADD COLUMN IF NOT EXISTS internal boolean NOT NULL DEFAULT false"),
-    ("component_consumptions.transformation_id",
-     "ALTER TABLE component_consumptions ADD COLUMN IF NOT EXISTS transformation_id integer"),
-    ("component_consumptions.step_run_id",
-     "ALTER TABLE component_consumptions ADD COLUMN IF NOT EXISTS step_run_id integer"),
-    ("ix_consumption_step_run",
-     "CREATE INDEX IF NOT EXISTS ix_consumption_step_run "
-     "ON component_consumptions (step_run_id) WHERE step_run_id IS NOT NULL"),
-    ("component_stock_adjustments.transformation_id",
-     "ALTER TABLE component_stock_adjustments ADD COLUMN IF NOT EXISTS transformation_id integer"),
     ("production_runs.process_version_id",
      "ALTER TABLE production_runs ADD COLUMN IF NOT EXISTS process_version_id integer"),
     ("run_cost_lines.transformation_id",
@@ -793,12 +754,6 @@ _PHASE1_DDL = (
     # Decision 0064: stock per company, and the in-house transfers between them.
     ("run_cost_documents.counterparty_company_id",
      "ALTER TABLE run_cost_documents ADD COLUMN IF NOT EXISTS counterparty_company_id integer"),
-    ("component_consumptions.company_id",
-     "ALTER TABLE component_consumptions ADD COLUMN IF NOT EXISTS company_id integer"),
-    ("component_consumptions.transfer_line_id",
-     "ALTER TABLE component_consumptions ADD COLUMN IF NOT EXISTS transfer_line_id integer"),
-    ("component_stock_adjustments.company_id",
-     "ALTER TABLE component_stock_adjustments ADD COLUMN IF NOT EXISTS company_id integer"),
     # Decision 0067: the seller's tax id on a supplier document (KSeF imports).
     ("run_cost_documents.seller_tax_id",
      "ALTER TABLE run_cost_documents ADD COLUMN IF NOT EXISTS seller_tax_id varchar(40) NOT NULL DEFAULT ''"),
@@ -1059,6 +1014,20 @@ def _flasher_bundle_migration(conn) -> None:
     log.info("flasher: release tables retired")
 
 
+def _material_ledger_cutover() -> None:
+    """Decision 0098: move the old stock, work and unit tables into the
+    material ledger, once. Outside the startup block that swallows errors, on
+    purpose: a cut-over that fails rolls back whole and STOPS the start, so the
+    deploy fails visibly and the previous image runs again on untouched
+    tables. A half-migrated database is the one outcome this must not allow."""
+    with engine.begin() as conn:
+        if not _ledger_cutover.needed(conn):
+            _SCHEMA_RESULTS["ledger.cutover"] = "not needed"
+            return
+        got = _ledger_cutover.run(conn)
+    _SCHEMA_RESULTS["ledger.cutover"] = f"ok: {got}"
+
+
 @app.on_event("startup")
 def startup() -> None:
     try:
@@ -1066,6 +1035,9 @@ def startup() -> None:
         # the populated script ones (see _flasher_bundle_rename).
         with engine.begin() as conn:
             _flasher_bundle_rename(conn)
+            # The phase-1 shadow of decision 0097 has shapes the ledger no
+            # longer has: drop it before create_all builds the ledger.
+            _ledger_cutover.drop_shadow(conn)
         Base.metadata.create_all(engine)
         # Idempotent column adds on pre-existing tables (create_all only
         # creates missing tables, it never alters existing ones).
@@ -1201,16 +1173,6 @@ def startup() -> None:
             conn.execute(text(
                 "ALTER TABLE run_attachments ADD COLUMN IF NOT EXISTS document_id integer"
             ))
-            # Provenance of an IMPORTED draw. Empty for every hand-made row, so
-            # the unique index below constrains only what an importer wrote and
-            # can never reject existing data. This is the column that makes a
-            # re-run of a supplier import idempotent instead of additive —
-            # `component_consumptions` has had no uniqueness of any kind, which
-            # is how components 324/325 were drawn twice across five runs.
-            conn.execute(text(
-                "ALTER TABLE component_consumptions ADD COLUMN IF NOT EXISTS "
-                "import_ref varchar(120) NOT NULL DEFAULT ''"
-            ))
             # Lot identity on a purchase line. A LOT IS ALREADY A ROW — a leaf
             # part line with no run — so lots are made first-class by naming
             # them, not by copying them into a parallel table that could drift
@@ -1270,24 +1232,10 @@ def startup() -> None:
             conn.execute(text(
                 "ALTER TABLE conformance ADD COLUMN IF NOT EXISTS judgment jsonb"
             ))
-            # "Record assembly" (decision 0072): who assembled the boards and
-            # under which order or invoice, and the step a substitution was
+            # "Record assembly" (decision 0072): the click a substitution was
             # recorded with.
             conn.execute(text(
-                "ALTER TABLE step_runs ADD COLUMN IF NOT EXISTS assembler varchar(120) NOT NULL DEFAULT ''"
-            ))
-            conn.execute(text(
-                "ALTER TABLE step_runs ADD COLUMN IF NOT EXISTS reference varchar(200) NOT NULL DEFAULT ''"
-            ))
-            conn.execute(text(
                 "ALTER TABLE run_substitutions ADD COLUMN IF NOT EXISTS step_run_id integer"
-            ))
-            # Decision 0074: the bench run and deployment version per twin step.
-            conn.execute(text(
-                "ALTER TABLE twin_steps ADD COLUMN IF NOT EXISTS programming_run_id integer"
-            ))
-            conn.execute(text(
-                "ALTER TABLE twin_steps ADD COLUMN IF NOT EXISTS deployment_version_id integer"
             ))
             # The commit a firmware image was built from (bench gaps item 17).
             conn.execute(text(
@@ -1388,6 +1336,7 @@ def startup() -> None:
         # back every statement after it. Silently passing made a column add
         # vanish with no trace (2026-07-29) — always say which statement failed.
         log.warning(f"startup schema block did not complete: {type(e).__name__}: {e}")
+    _material_ledger_cutover()
     _ensure_phase1_schema()
     _ensure_dedup_indexes()
     # Datasheet bytes into the content-addressed `documents` table. Must run

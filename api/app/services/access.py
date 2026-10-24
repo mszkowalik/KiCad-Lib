@@ -147,18 +147,49 @@ def _attachment(db: Session, att_id) -> set[int]:
 
 
 def _stock_row(model) -> Callable:
+    """A move of the material ledger (a draw or an adjustment): the company
+    whose stock it moved, else the batch it is charged to, else its project."""
     def resolve(db: Session, ident) -> set[int]:
         row = db.get(model, int(ident))
         if row is None:
             return set()
         if row.company_id:
             return {row.company_id}
-        run_id = getattr(row, "run_id", None) or getattr(row, "charge_run_id", None)
-        if run_id:
-            return _run(db, run_id)
+        if getattr(row, "run_id", None):
+            return _run(db, row.run_id)
         project_id = getattr(row, "project_id", None)
         return _project(db, project_id) if project_id else {c.id for c in C.all_companies(db)}
     return resolve
+
+
+def _event(db: Session, event_id) -> set[int]:
+    """An event of the material ledger: a click or a make by its batch, any
+    event by its company, else its project."""
+    ev = db.get(M.MaterialEvent, int(event_id))
+    if ev is None:
+        return set()
+    if ev.run_id:
+        got = _run(db, ev.run_id)
+        if got:
+            return got
+    if ev.company_id:
+        return {ev.company_id}
+    return _project(db, ev.project_id) if ev.project_id else set()
+
+
+def _lot(db: Session, lot_id) -> set[int]:
+    """A lot of the material ledger: a unit by its origin batch, a stored lot
+    by its company, else by the adjustment that made it. The API names a
+    stored lot `lot_adjustment_id` or `adjustment_id`."""
+    lot = db.get(M.MaterialLot, int(lot_id))
+    if lot is None:
+        return set()
+    if lot.kind == "unit" and lot.origin_run_id:
+        return _run(db, lot.origin_run_id)
+    if lot.company_id:
+        return {lot.company_id}
+    made = db.query(M.Adjustment.id).filter(M.Adjustment.lot_id == lot.id).first()
+    return _stock_row(M.Adjustment)(db, made[0]) if made else set()
 
 
 def _deployment_version(db: Session, version_id) -> set[int]:
@@ -224,10 +255,14 @@ def _from_values(db: Session, values: dict) -> set[int]:
     journal row's `before` image, when the row itself is gone)."""
     if values.get("company_id"):
         return {int(values["company_id"])}
+    # The keys of the old tables stay: a batch journalled before the switch to
+    # the material ledger (decision 0098) keeps its `before` images, and the
+    # migration kept the ids of draws and clicks.
     for key, fn in (("document_id", _doc), ("run_id", _run), ("charge_run_id", _run),
-                    ("project_id", _project), ("consumption_id", _stock_row(M.ComponentConsumption)),
-                    ("line_id", _line), ("step_run_id", _via(M.StepRun, "run_id", _run)),
-                    ("origin_run_id", _run)):
+                    ("project_id", _project), ("consumption_id", _stock_row(M.Draw)),
+                    ("move_id", _stock_row(M.MaterialMove)),
+                    ("line_id", _line), ("step_run_id", _via(M.Click, "run_id", _run)),
+                    ("event_id", _event), ("origin_run_id", _run), ("lot_id", _lot)):
         if values.get(key):
             got = fn(db, values[key])
             if got:
@@ -248,22 +283,34 @@ def write_batch_companies(db: Session, batch_id) -> set[int]:
     if not _JOURNAL_TABLES:
         _JOURNAL_TABLES.update({
             "run_cost_documents": _doc, "run_cost_lines": _line,
-            "component_consumptions": _stock_row(M.ComponentConsumption),
-            "component_stock_adjustments": _stock_row(M.ComponentStockAdjustment),
-            "component_consumption_lots": _via(M.ComponentConsumptionLot, "consumption_id",
-                                               _stock_row(M.ComponentConsumption)),
+            # the material ledger (decisions 0097, 0098): moves, their lots,
+            # events (clicks, makes, stock events), the units a click acted on,
+            # lots, and the invoice positions aimed at work
+            "material_moves": _stock_row(M.MaterialMove),
+            "material_move_lots": _via(M.MaterialMoveLot, "move_id", _stock_row(M.MaterialMove)),
+            "material_events": _event,
+            "material_event_lots": _via(M.MaterialEventLot, "event_id", _event),
+            "material_lots": _lot,
+            "material_cost_aims": _via(M.MaterialCostAim, "line_id", _line),
             "run_substitutions": _via(M.RunSubstitution, "run_id", _run),
             "jlc_order_decisions": _via(M.JlcOrderDecision, "run_id", _run),
-            # "Record assembly" (decision 0072): its click, links and twins
-            "cost_line_steps": _via(M.CostLineStep, "line_id", _line),
-            "cost_line_step_keys": _via(M.CostLineStepKey, "line_id", _line),
-            "step_runs": _via(M.StepRun, "run_id", _run),
-            "twin_steps": _via(M.TwinStep, "step_run_id", _via(M.StepRun, "run_id", _run)),
-            "twins": _via(M.Twin, "origin_run_id", _run),
             # a scrap disposes of its named units (decision 0074)
             "device_units": _device,
             "device_events": _via(M.DeviceEvent, "device_id", _device),
             "programming_runs": _programming_run,
+            # A batch journalled before the switch names the old tables. The
+            # migration kept the ids of draws, adjustments, their lots, clicks,
+            # units, unit steps, click costs and makes (decision 0098), so each
+            # still resolves to its record. A whole-step cost link got a new id:
+            # it is read from its `before` image, or from the batch's own run.
+            "component_consumptions": _stock_row(M.Draw),
+            "component_stock_adjustments": _stock_row(M.Adjustment),
+            "component_consumption_lots": _via(M.MaterialMoveLot, "move_id", _stock_row(M.MaterialMove)),
+            "cost_line_steps": _via(M.ClickCost, "line_id", _line),
+            "step_runs": _via(M.Click, "run_id", _run),
+            "twin_steps": _via(M.MaterialEventLot, "event_id", _event),
+            "twins": _via(M.Unit, "origin_run_id", _run),
+            "process_transformations": _event,
         })
     out: set[int] = set()
     for row in wb.rows:
@@ -317,8 +364,7 @@ _add(["/api/run-attachments/"], "attachment_id", _attachment)
 _add(["/api/flasher/deployments/"], "deployment_id", _via(M.Deployment, "project_id", _project))
 _add(["/api/flasher/deployment-versions/"], "version_id", _deployment_version)
 _add(["/api/process-versions/"], "version_id", _via(M.ProcessVersion, "project_id", _project))
-_add(["/api/process-transformations/"], "transformation_id",
-     _via(M.ProcessTransformation, "project_id", _project))
+_add(["/api/process-transformations/"], "transformation_id", _via(M.Make, "project_id", _project))
 _add(["/api/flasher/firmware/"], "asset_id", _via(M.FirmwareAsset, "project_id", _project))
 _add(["/api/flasher/param-sets/"], "param_set_id", _via(M.ParamSet, "project_id", _project))
 _add(["/api/sales-invoices/"], "invoice_id", _via(M.SalesInvoice, "company_id", _company))
@@ -329,8 +375,8 @@ _add(["/api/sales-invoices/{invoice_id}/files/"], "file_id", _via(M.RecordFile, 
 _add(["/api/companies/{company_id}/tax-entries/"], "entry_id", _via(M.CompanyTaxEntry, "company_id", _company))
 _add(["/api/companies/{company_id}/tax-periods/"], "period_id", _via(M.CompanyTaxPeriod, "company_id", _company))
 _add(["/api/companies/{company_id}/tax-entries/{entry_id}/files/"], "file_id", _via(M.RecordFile, "company_id", _company))
-_add(["/api/consumption/"], "cons_id", _stock_row(M.ComponentConsumption))
-_add(["/api/stock-adjustments/"], "adj_id", _stock_row(M.ComponentStockAdjustment))
+_add(["/api/consumption/"], "cons_id", _stock_row(M.Draw))
+_add(["/api/stock-adjustments/"], "adj_id", _stock_row(M.Adjustment))
 
 #: Parameters that name data both companies share on purpose.
 NOT_COMPANY_DATA: set[str] = {
@@ -367,10 +413,12 @@ FIELD_RESOLVERS: dict[tuple[str, str], Callable[[Session, str], set[int]]] = {
     ("*", "company_id"): _company,
     ("*", "document_id"): _doc,
     ("*", "corrects_document_id"): _doc,
-    ("*", "transformation_id"): _via(M.ProcessTransformation, "project_id", _project),
+    # a make (decision 0058 §3, now a material-ledger event)
+    ("*", "transformation_id"): _via(M.Make, "project_id", _project),
     ("*", "lot_line_id"): _line,
-    ("*", "lot_adjustment_id"): _stock_row(M.ComponentStockAdjustment),
-    ("*", "adjustment_id"): _stock_row(M.ComponentStockAdjustment),
+    # the API's names for a stored lot of the material ledger (decision 0098)
+    ("*", "lot_adjustment_id"): _lot,
+    ("*", "adjustment_id"): _lot,
     ("*", "snapshot_id"): _via(M.ProjectSnapshot, "project_id", _project),
     ("*", "origin_run_id"): _run,
     ("*", "order_line_id"): _via(M.SalesOrderLine, "order_id", _order),
@@ -383,11 +431,11 @@ FIELD_RESOLVERS: dict[tuple[str, str], Callable[[Session, str], set[int]]] = {
     ("*", "serials"): _serial,
     ("*", "codes"): _serial,
     ("/api/runs/{run_id}/craft/costs", "line_ids"): _line,
-    ("/api/runs/{run_id}/craft/costs", "step_run_ids"): _via(M.StepRun, "run_id", _run),
+    ("/api/runs/{run_id}/craft/costs", "step_run_ids"): _via(M.Click, "run_id", _run),
     ("/api/run-documents/{doc_id}/lines", "deletes"): _line,
     ("/api/runs/{run_id}/craft/assembly", "line_ids"): _line,
     ("/api/runs/{run_id}/craft/assembly", "parent_line_id"): _line,
-    ("/api/runs/{run_id}/craft/assembly", "draw_ids"): _stock_row(M.ComponentConsumption),
+    ("/api/runs/{run_id}/craft/assembly", "draw_ids"): _stock_row(M.Draw),
     ("*", "attachment_id"): _attachment,
     ("*", "plan_item_id"): _via(M.ProjectCostItem, "project_id", _project),
     ("*", "firmware_asset_id"): _via(M.FirmwareAsset, "project_id", _project),

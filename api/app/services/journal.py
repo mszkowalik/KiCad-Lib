@@ -50,21 +50,21 @@ log = logging.getLogger("uvicorn.error")
 JOURNALLED = {
     "run_cost_documents",
     "run_cost_lines",
-    "component_consumptions",
-    "component_consumption_lots",
-    "component_stock_adjustments",
     "jlc_order_decisions",
     "jlc_imports",
     "run_attachments",
     "run_substitutions",
-    "process_transformations",
-    "cost_line_steps",
-    "cost_line_step_keys",
-    # "Record assembly" is one reversible write (decision 0072): its click,
-    # the twins it joins and their stack tokens.
-    "step_runs",
-    "twin_steps",
-    "twins",
+    # The material ledger (decisions 0097, 0098): draws and adjustments, their
+    # lots, makes and clicks, the units a click acted on, the positions aimed
+    # at clicks or steps, and the units and stored lots themselves. "Record
+    # assembly" is one reversible write (decision 0072): its click, the units
+    # it joins and their stack tokens.
+    "material_moves",
+    "material_move_lots",
+    "material_events",
+    "material_event_lots",
+    "material_cost_aims",
+    "material_lots",
     # A scrap on the batch screen disposes of the named units with their twins
     # (decision 0074), so undoing it must give both back.
     "device_units",
@@ -132,13 +132,15 @@ LATE_COLUMNS: dict[str, dict[str, object]] = {
                            # decision 0087: the legal kind and the VAT limit
                            "kind": "", "vat_rule": ""},
     "run_cost_lines": {"transformation_id": None, "overhead_category": ""},
-    "component_consumptions": {"transformation_id": None, "step_run_id": None, "company_id": None,
-                               "transfer_line_id": None},
-    "component_stock_adjustments": {"transformation_id": None, "company_id": None},
-    "step_runs": {"assembler": "", "reference": ""},            # decision 0072
     "run_substitutions": {"step_run_id": None},                 # decision 0072
-    "twin_steps": {"programming_run_id": None, "deployment_version_id": None},   # decision 0074
 }
+
+#: The tables the material ledger replaced (decision 0098). They were renamed
+#: `legacy_<name>` and are read only: a batch whose rows name one of them was
+#: written before the switch and cannot be put back.
+LEGACY_TABLES = {"component_consumptions", "component_consumption_lots", "component_stock_adjustments",
+                 "process_transformations", "cost_line_steps", "cost_line_step_keys", "step_runs",
+                 "twin_steps", "twins"}
 
 
 #: A journalled table other writers keep moving: only these columns are
@@ -300,10 +302,31 @@ def batch(db: Session, kind: str, source_ref: str = "", actor: str = "",
 
 # ----------------------------------------------------------------- reading
 def _model_for(table_name: str):
+    """The class of a table: its BASE class when several kinds share it (a
+    click and a make are both `material_events`), so a lookup by id finds
+    every kind."""
     for mapper in M.Base.registry.mappers:
-        if mapper.class_.__table__.name == table_name:
+        if mapper.class_.__table__.name == table_name and mapper.inherits is None:
             return mapper.class_
     return None
+
+
+def _class_of_row(table_name: str, state: dict):
+    """The class a row put back is built as: its own kind's class."""
+    model = _model_for(table_name)
+    if model is None:
+        return None
+    mapper = inspect(model)
+    if mapper.polymorphic_on is not None and state.get(mapper.polymorphic_on.key) in mapper.polymorphic_map:
+        return mapper.polymorphic_map[state[mapper.polymorphic_on.key]].class_
+    return model
+
+
+def _kind(db: Session, table_name: str, row_id: int) -> str | None:
+    """A ledger row's kind, read from the live row."""
+    model = _model_for(table_name)
+    obj = db.get(model, row_id) if model is not None else None
+    return getattr(obj, "kind", None) if obj is not None else None
 
 
 def batch_json(wb: M.WriteBatch, db: Session | None = None, rows: bool = False) -> dict:
@@ -348,6 +371,12 @@ def check_reversible(db: Session, wb: M.WriteBatch, *, stock: bool = True,
         # blockers where one is true reads like three problems.
         return {"blockers": [f"already reversed at {wb.reversed_at.isoformat()}"
                              f" by batch {wb.reversed_by_batch_id}"],
+                "edited": [], "missing": [], "blocking_batches": []}
+
+    old = sorted({r.table_name for r in wb.rows if r.table_name in LEGACY_TABLES})
+    if old:
+        return {"blockers": [f"it was written before the switch to the material ledger (decision 0098): "
+                             f"its rows are in {', '.join(old)}, which are kept read only"],
                 "edited": [], "missing": [], "blocking_batches": []}
 
     edited: list[str] = []
@@ -395,15 +424,17 @@ def check_reversible(db: Session, wb: M.WriteBatch, *, stock: bool = True,
     # the journal (decision 0074).
     own = {(r.table_name, r.row_id) for r in wb.rows}
     pointers = {
-        "step_runs": ((M.ComponentConsumption, "component_consumptions", M.ComponentConsumption.step_run_id),
-                      (M.RunSubstitution, "run_substitutions", M.RunSubstitution.step_run_id),
-                      (M.CostLineStep, "cost_line_steps", M.CostLineStep.step_run_id),
-                      (M.TwinStep, "twin_steps", M.TwinStep.step_run_id)),
-        "twins": ((M.TwinStep, "twin_steps", M.TwinStep.twin_id),),
+        ("material_events", "step"): ((M.Draw, "material_moves", M.Draw.event_id),
+                                      (M.RunSubstitution, "run_substitutions", M.RunSubstitution.step_run_id),
+                                      (M.ClickCost, "material_cost_aims", M.ClickCost.event_id),
+                                      (M.MaterialEventLot, "material_event_lots", M.MaterialEventLot.event_id)),
+        ("material_lots", "unit"): ((M.MaterialEventLot, "material_event_lots", M.MaterialEventLot.lot_id),),
     }
     stray = 0
     for tbl, sid in inserted:
-        for model, table, col in pointers.get(tbl, ()):
+        if tbl not in ("material_events", "material_lots"):
+            continue
+        for model, table, col in pointers.get((tbl, _kind(db, tbl, sid)), ()):
             for (oid,) in db.query(model.id).filter(col == sid).all():
                 if (table, oid) in own:
                     continue
@@ -413,7 +444,7 @@ def check_reversible(db: Session, wb: M.WriteBatch, *, stock: bool = True,
                 live = [b for b in writers if (db.get(M.WriteBatch, b) or wb).reversed_at is None]
                 if live:
                     later.update(live)
-                elif table != "cost_line_steps":
+                elif table != "material_cost_aims":
                     # A link no journal wrote (a split's copy, a bench click's
                     # whole-step link) goes with its click: the database
                     # deletes it on cascade, so it is in nobody's way.
@@ -423,23 +454,27 @@ def check_reversible(db: Session, wb: M.WriteBatch, *, stock: bool = True,
                         " — take them off it first")
     # A whole-step link this batch made has since linked bench clicks of its
     # own (decision 0074); an undo would leave those behind.
+    def step_cost(kid: int) -> M.MaterialCostAim | None:
+        k = db.get(M.MaterialCostAim, kid)
+        return k if k is not None and k.kind == "step" else None
+
     grown = 0
     for tbl, kid in inserted:
-        if tbl != "cost_line_step_keys":
+        if tbl != "material_cost_aims":
             continue
-        k = db.get(M.CostLineStepKey, kid)
+        k = step_cost(kid)
         if k is None:
             continue
-        for (cid,) in (db.query(M.CostLineStep.id).join(M.StepRun, M.StepRun.id == M.CostLineStep.step_run_id)
-                       .filter(M.CostLineStep.line_id == k.line_id, M.StepRun.run_id == k.run_id,
-                               M.StepRun.step_key == k.step_key,
-                               M.CostLineStep.created_at > wb.created_at).all()):
-            if ("cost_line_steps", cid) not in own:
+        for (cid,) in (db.query(M.ClickCost.id).join(M.Click, M.Click.id == M.ClickCost.event_id)
+                       .filter(M.ClickCost.line_id == k.line_id, M.Click.run_id == k.run_id,
+                               M.Click.step_key == k.step_key,
+                               M.ClickCost.created_at > wb.created_at).all()):
+            if ("material_cost_aims", cid) not in own:
                 grown += 1
     # A position split after the link copied the key to its children, outside
     # the journal: an undo would take it off the header alone (decision 0074).
     for tbl, kid in inserted:
-        k = db.get(M.CostLineStepKey, kid) if tbl == "cost_line_step_keys" else None
+        k = step_cost(kid) if tbl == "material_cost_aims" else None
         if k is None:
             continue
         frontier, seen_lines = [k.line_id], {k.line_id}
@@ -449,9 +484,9 @@ def check_reversible(db: Session, wb: M.WriteBatch, *, stock: bool = True,
                     if i not in seen_lines]
             seen_lines.update(kids)
             frontier = kids
-        theirs = [kid2 for (kid2,) in db.query(M.CostLineStepKey.id).filter(
-            M.CostLineStepKey.line_id.in_(seen_lines - {k.line_id}), M.CostLineStepKey.run_id == k.run_id,
-            M.CostLineStepKey.step_key == k.step_key).all() if ("cost_line_step_keys", kid2) not in own]
+        theirs = [kid2 for (kid2,) in db.query(M.StepCost.id).filter(
+            M.StepCost.line_id.in_(seen_lines - {k.line_id}), M.StepCost.run_id == k.run_id,
+            M.StepCost.step_key == k.step_key).all() if ("material_cost_aims", kid2) not in own]
         if theirs:
             blockers.append("the position was split since — unlink it with \"Unlink…\" under Cost by step on "
                             "the batch screen instead")
@@ -461,34 +496,38 @@ def check_reversible(db: Session, wb: M.WriteBatch, *, stock: bool = True,
     # What this batch DELETED is put back: a unique row made since in its place
     # would collide, and a whole-step link put back would skip the clicks of
     # its step recorded while it was gone (decision 0074).
-    restores = {((r.before or {}).get("line_id"), (r.before or {}).get("step_run_id"))
-                for r in wb.rows if r.table_name == "cost_line_steps" and r.op == "delete"}
+    restores = {((r.before or {}).get("line_id"), (r.before or {}).get("event_id"))
+                for r in wb.rows if r.table_name == "material_cost_aims" and r.op == "delete"
+                and (r.before or {}).get("kind") == "click"}
     comes_back = {(r.table_name, r.row_id) for r in wb.rows if r.op == "delete"}
+    points_at = {
+        "material_cost_aims": (("event_id", M.MaterialEvent), ("line_id", M.RunCostLine)),
+        "material_event_lots": (("event_id", M.MaterialEvent), ("lot_id", M.MaterialLot)),
+        "material_moves": (("event_id", M.MaterialEvent),),
+        "run_substitutions": (("step_run_id", M.MaterialEvent),),
+        "material_move_lots": (("move_id", M.MaterialMove),),
+    }
     for r in wb.rows:
         if r.op != "delete" or not r.before:
             continue
         b = r.before
         # A row put back must point at what still exists (decision 0074).
-        for col, model in (("step_run_id", M.StepRun), ("twin_id", M.Twin), ("line_id", M.RunCostLine),
-                           ("consumption_id", M.ComponentConsumption)):
-            if col in b and b[col] is not None and r.table_name in (
-                    "cost_line_steps", "cost_line_step_keys", "twin_steps", "component_consumptions",
-                    "run_substitutions", "component_consumption_lots") and db.get(model, b[col]) is None \
+        for col, model in points_at.get(r.table_name, ()):
+            if b.get(col) is not None and db.get(model, b[col]) is None \
                     and (model.__tablename__, b[col]) not in comes_back:
                 blockers.append(f"{r.table_name}#{r.row_id} pointed at {model.__tablename__}#{b[col]}, "
                                 "which no longer exists")
-        if r.table_name == "cost_line_steps":
-            twin = (db.query(M.CostLineStep.id).filter_by(line_id=b.get("line_id"),
-                                                          step_run_id=b.get("step_run_id")).first())
-        elif r.table_name == "cost_line_step_keys":
-            twin = (db.query(M.CostLineStepKey.id).filter_by(line_id=b.get("line_id"), run_id=b.get("run_id"),
-                                                             step_key=b.get("step_key")).first())
-            gap = sum(1 for (sid,) in db.query(M.StepRun.id)
-                      .filter(M.StepRun.run_id == b.get("run_id"), M.StepRun.step_key == b.get("step_key"),
-                              M.StepRun.qty > 0, M.StepRun.kind != "scrap", M.StepRun.chosen != "found",
-                              M.StepRun.created_at > wb.created_at,
-                              ~M.StepRun.id.in_(db.query(M.CostLineStep.step_run_id)
-                                                .filter(M.CostLineStep.line_id == b.get("line_id")))).all()
+        if r.table_name == "material_cost_aims" and b.get("kind") == "click":
+            twin = (db.query(M.ClickCost.id).filter_by(line_id=b.get("line_id"), event_id=b.get("event_id")).first())
+        elif r.table_name == "material_cost_aims" and b.get("kind") == "step":
+            twin = (db.query(M.StepCost.id).filter_by(line_id=b.get("line_id"), run_id=b.get("run_id"),
+                                                      step_key=b.get("step_key")).first())
+            gap = sum(1 for (sid,) in db.query(M.Click.id)
+                      .filter(M.Click.run_id == b.get("run_id"), M.Click.step_key == b.get("step_key"),
+                              M.Click.units > 0, M.Click.step_kind != "scrap", M.Click.chosen != "found",
+                              M.Click.created_at > wb.created_at,
+                              ~M.Click.id.in_(db.query(M.ClickCost.event_id)
+                                              .filter(M.ClickCost.line_id == b.get("line_id")))).all()
                       if (b.get("line_id"), sid) not in restores)
             if gap and twin is None:
                 blockers.append(f"{gap} click(s) of step {b.get('step_key')!r} were recorded while the position "
@@ -507,9 +546,9 @@ def check_reversible(db: Session, wb: M.WriteBatch, *, stock: bool = True,
     # An undo of a finish must not make a unit that has left us unfinished:
     # nothing could finish it again (decision 0074).
     for r in wb.rows:
-        if r.table_name != "twins" or r.op != "update" or (r.before or {}).get("status") == "finished":
+        if r.table_name != "material_lots" or r.op != "update" or (r.before or {}).get("status") == "finished":
             continue
-        tw = db.get(M.Twin, r.row_id)
+        tw = db.get(M.MaterialLot, r.row_id)
         if tw is None or tw.status != "finished" or not tw.device_unit_id or tw.id in leaving_twins:
             continue   # a twin the same undo deletes ("Undo rebuild") is no unit made unfinished
         dev = db.get(M.DeviceUnit, tw.device_unit_id)
@@ -558,8 +597,7 @@ class _Trial(Exception):
 
 
 #: Tables whose rows move part stock or a lot's capacity.
-STOCK_TABLES = {"component_consumptions", "component_stock_adjustments", "run_cost_lines",
-                "run_cost_documents", "component_consumption_lots"}
+STOCK_TABLES = {"material_moves", "run_cost_lines", "run_cost_documents", "material_move_lots"}
 
 
 def stock_blockers(db: Session, wb: M.WriteBatch, reverse=None) -> list[str]:
@@ -594,18 +632,18 @@ def stock_blockers(db: Session, wb: M.WriteBatch, reverse=None) -> list[str]:
     for r in rows:
         model = _model_for(r.table_name)
         cur = db.get(model, r.row_id) if model is not None else None
-        if r.table_name == "component_consumptions":
+        if r.table_name == "material_moves":
             # A draw made live again takes back the lots it is still bound to.
-            for b in db.query(M.ComponentConsumptionLot).filter_by(consumption_id=r.row_id).all():
-                lot_keys.add(lots._lot_key("L", b.lot_line_id) if b.lot_line_id
-                             else lots._lot_key("A", b.lot_adjustment_id))
+            for b in db.query(M.MaterialMoveLot).filter_by(move_id=r.row_id).all():
+                if lots.key_of(b.lot_line_id, b.lot_id):
+                    lot_keys.add(lots.key_of(b.lot_line_id, b.lot_id))
         states = [st for st in ((r.before if r.op != "insert" else None),
                                 (_row_dict(cur) if cur is not None else None)) if st]
         for st in states:
-            if r.table_name in ("component_consumptions", "component_stock_adjustments"):
+            if r.table_name == "material_moves":
                 part(st, st.get("company_id"))
-                if r.table_name == "component_stock_adjustments":
-                    lot_keys.add(lots._lot_key("A", r.row_id))
+                if st.get("kind") == "adjust" and st.get("lot_id"):
+                    lot_keys.add(lots._lot_key("A", st["lot_id"]))
             elif r.table_name == "run_cost_lines":
                 part(st, doc_company(st.get("document_id")))
                 lot_keys.add(lots._lot_key("L", r.row_id))
@@ -613,14 +651,14 @@ def stock_blockers(db: Session, wb: M.WriteBatch, reverse=None) -> list[str]:
                 for li in db.query(M.RunCostLine).filter_by(document_id=r.row_id).all():
                     part(_row_dict(li), st.get("company_id"))
                     lot_keys.add(lots._lot_key("L", li.id))
-            elif r.table_name == "component_consumption_lots":
+            elif r.table_name == "material_move_lots":
                 if st.get("lot_line_id"):
                     lot_keys.add(lots._lot_key("L", st["lot_line_id"]))
-                if st.get("lot_adjustment_id"):
-                    lot_keys.add(lots._lot_key("A", st["lot_adjustment_id"]))
+                if st.get("lot_id"):
+                    lot_keys.add(lots._lot_key("A", st["lot_id"]))
     targets, names = run_actuals.stock_targets(db, entries)
-    want_lots = any(r.table_name == "component_consumption_lots" for r in rows) or bool(
-        lot_keys and db.query(M.ComponentConsumptionLot.id).first())
+    want_lots = any(r.table_name == "material_move_lots" for r in rows) or bool(
+        lot_keys and db.query(M.MaterialMoveLot.id).first())
 
     def view() -> tuple[dict, dict]:
         pools = run_actuals.stock_view(db, targets)
@@ -631,11 +669,10 @@ def stock_blockers(db: Session, wb: M.WriteBatch, reverse=None) -> list[str]:
         # A lot that is gone while live draws are still bound to it holds
         # minus what they hold: `lot_state` lists no such lot.
         for k in lot_keys - set(out):
-            col = M.ComponentConsumptionLot.lot_line_id if k.startswith("L") else \
-                M.ComponentConsumptionLot.lot_adjustment_id
-            held = (db.query(M.ComponentConsumptionLot.qty, M.ComponentConsumption)
-                    .join(M.ComponentConsumption, M.ComponentConsumption.id == M.ComponentConsumptionLot.consumption_id)
-                    .filter(col == int(k[1:]), M.ComponentConsumption.voided_at.is_(None)).all())
+            col = M.MaterialMoveLot.lot_line_id if k.startswith("L") else M.MaterialMoveLot.lot_id
+            held = (db.query(M.MaterialMoveLot.qty, M.Draw)
+                    .join(M.Draw, M.Draw.id == M.MaterialMoveLot.move_id)
+                    .filter(col == int(k[1:]), M.Draw.voided_at.is_(None)).all())
             if held:
                 c0 = held[0][1]
                 out[k] = {"qty_remaining": -sum(q or 0.0 for q, _c in held), "mpn": c0.mpn, "lcsc": c0.lcsc,
@@ -762,12 +799,13 @@ def _reverse_rows(db: Session, wb: M.WriteBatch) -> None:
     without its journal batch or its checks."""
     # One device names one twin, and the database checks it row by row: a
     # swap's undo must release the device before the other twin takes it.
-    mine = {r.row_id for r in wb.rows if r.table_name == "twins"}
+    mine = {r.row_id for r in wb.rows if r.table_name == "material_lots"}
     for r in wb.rows:
-        if r.table_name == "twins" and r.op == "update" and (r.before or {}).get("device_unit_id") is not None:
-            for tw in db.query(M.Twin).filter(M.Twin.device_unit_id == r.before["device_unit_id"],
-                                              M.Twin.id != r.row_id, M.Twin.id.in_(mine)).all():
+        if r.table_name == "material_lots" and r.op == "update" and (r.before or {}).get("device_unit_id") is not None:
+            for tw in db.query(M.Unit).filter(M.Unit.device_unit_id == r.before["device_unit_id"],
+                                              M.Unit.id != r.row_id, M.Unit.id.in_(mine)).all():
                 tw.device_unit_id = None
+                tw.identifier = None
     db.flush()
     # A click's links no journal wrote (a split's copies, a bench click's
     # whole-step link) are deleted HERE, through the session, so this
@@ -775,9 +813,9 @@ def _reverse_rows(db: Session, wb: M.WriteBatch) -> None:
     # left to the cascade, a redo would lose them.
     own_rows = {(r.table_name, r.row_id) for r in wb.rows}
     for r in wb.rows:
-        if r.table_name == "step_runs" and r.op == "insert":
-            for x in db.query(M.CostLineStep).filter(M.CostLineStep.step_run_id == r.row_id).all():
-                if ("cost_line_steps", x.id) not in own_rows:
+        if r.table_name == "material_events" and r.op == "insert" and _kind(db, r.table_name, r.row_id) == "step":
+            for x in db.query(M.ClickCost).filter(M.ClickCost.event_id == r.row_id).all():
+                if ("material_cost_aims", x.id) not in own_rows:
                     db.delete(x)
     db.flush()
     # Newest row first. Inserts happen parents-then-children, so undoing in
@@ -801,7 +839,8 @@ def _reverse_rows(db: Session, wb: M.WriteBatch) -> None:
                     continue
                 setattr(obj, k, _coerce(model, k, v))
         elif r.op == "delete":
-            back[r.table_name].append(model(**{k: _coerce(model, k, v) for k, v in (r.before or {}).items()}))
+            cls = _class_of_row(r.table_name, r.before or {})
+            back[r.table_name].append(cls(**{k: _coerce(cls, k, v) for k, v in (r.before or {}).items()}))
     db.flush()
     # What the batch deleted comes back parents first, one table at a time:
     # a link has no ORM relationship to its click or its position, so one

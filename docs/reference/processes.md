@@ -78,10 +78,12 @@ to their devices by topic),
 
 ## Twins
 
-A twin is one unit's record from "receive" on (`M.Twin`). A click of a step on
-N twins is one `StepRun`; each twin is linked to it by a `TwinStep`, and the
-click's draws carry its `step_run_id`. A twin's history is its links, in the
-words each step had then.
+A twin is one unit's record from "receive" on: a UNIT lot of the material
+ledger (`M.Unit`, decisions 0097 and 0098). A click of a step on N twins is one
+event (`M.Click`); each twin is linked to it by an event lot
+(`M.MaterialEventLot`), and the click's draws are moves of that event. A twin's
+history is its links, in the words each step had then. The API keeps the old
+field names: `step_run_id` names a click, `twin_id` a unit.
 
 **An unnamed twin is never addressed by its id.** Before programming, units
 are taken as "N from this STACK": the unnamed active twins of one batch with
@@ -106,7 +108,7 @@ serials (0059, Consequences).
   purchases sit under (`run_actuals.resolve_pool_identity`), as the shortage
   check finds it.
 - **After programming, a twin is addressed by its DEVICE**, which can be
-  chosen by a scanned code or picked from a list. `StepRun.chosen` records
+  chosen by a scanned code or picked from a list. `Click.chosen` records
   which: `stack`, `scanned`, `list`, `bench`, `merge`, `found`, `supplier`
   (an assembly recorded from a JLC order), `manual` (an assembly recorded for
   another house), `rebuilt` (an old batch's records), `stated` (a bench step a
@@ -136,7 +138,7 @@ serials (0059, Consequences).
   swap, a relink and a cost link record no click, so they are undone on the
   Write log. A rebuild's clicks have no "Undo…": a rebuild is undone whole, by
   "Undo rebuild". `journal.check_reversible` refuses while a later click, a
-  bench step (a `TwinStep` outside the journal on a twin or click it made) or
+  bench step (an event lot outside the journal on a twin or click it made) or
   a link the click made has grown stands on it, while a link it removed has
   been made again, when it would make a unit that left us unfinished, and on
   a closed batch. Only an undo cancels a later batch out; a redo stands. The
@@ -192,12 +194,13 @@ and applying the JLC order only moves its positions and draws onto the batch.
   each child linked to the step), and records the replacements with the step
   (`run_costs.new_substitution`, `RunSubstitution.step_run_id`). It refuses a
   batch with no twins ("receive the boards first"), a closed batch, and a row
-  that was not offered. `StepRun.assembler` and `StepRun.reference` keep what
+  that was not offered. `Click.assembler` and `Click.reference` keep what
   the person typed. `chosen` is `supplier` with a JLC order, else `manual`.
 - **A dry run uses a SAVEPOINT** (`db.begin_nested()`), never
   `db.rollback()`: the figures are exact and only the plan is undone.
 - **A real write is one journal batch** (`craft.assembly`, `source_ref`
-  `run:<id>`), and `step_runs`, `twin_steps` and `twins` are journalled, so
+  `run:<id>`), and `material_events`, `material_event_lots` and `material_lots`
+  are journalled, so
   "Undo assembly" is the Ledger's reverse of that batch. A row that arrives
   later waits outside the step until the person adds it.
 
@@ -223,7 +226,7 @@ for the device page. Its designators are the supplier's.
 - **Another batch's stack is said once** (`stack_of_other_batch`): on the
   first board a batch names from another batch's pile. It is allowed (0059
   §12), and it is also what a wrong selection looks like.
-- **Each bench step on a twin names its run** (`TwinStep.programming_run_id`)
+- **Each bench step on a twin names its run** (`MaterialEventLot.programming_run_id`)
   **and that run's deployment version** (`deployment_version_id`). The twin
   card shows the version beside the step, and as a reflash every passing
   programming run (action `program`, a flash deployment) that started after
@@ -276,7 +279,7 @@ for the device page. Its designators are the supplier's.
 | What | Where its money goes |
 |---|---|
 | A click's draws | the batch where the step was done (`run_id`), like any draw, so run figures and the register see them with no new branch. Each twin owns 1/N of them |
-| A position linked to clicks (`cost_line_steps`) | still the batch it is charged to. The twins of ALL its clicks share it equally (`twins.line_shares`), valued by `run_actuals.leaf_line_usd` as the register values it. A link counts only while the position is charged to the clicks' batch |
+| A position linked to clicks (`ClickCost`, a row of `material_cost_aims`) | still the batch it is charged to. The twins of ALL its clicks share it equally (`twins.line_shares`), valued by `run_actuals.leaf_line_usd` as the register values it. A link counts only while the position is charged to the clicks' batch |
 | A prepared part | its stock lot: inputs drawn with no run (`transformation_id`), one positive adjustment as the output, conversion costs added on read (below) |
 | Everything else charged to a batch | that batch's ORIGIN BATCH COST: the register's `by_run_usd` total minus every step draw and every linked position charged to it |
 
@@ -314,7 +317,7 @@ the conditions in `devices_held`.
 - **`link_costs` points a position at the clicks it paid for**, one or
   several, or at whole steps by key: the final assembler's invoice pays for programming, the
   enclosure, the laser mark and the label at once. A whole-step link is stored
-  (`CostLineStepKey`) and `twins._new_run` links each later click of that step
+  (`StepCost`) and `twins._new_run` links each later click of that step
   in that batch, so a link made while the bench is still programming covers
   every unit. A split position keeps its whole-step links on the header,
   which takes the later clicks too and is valued at zero (`line_shares` leaves
@@ -356,7 +359,7 @@ the conditions in `devices_held`.
 A prepared-part transformation is written with the two event kinds every
 replayer already understands: its inputs are draws (no run,
 `transformation_id`), and its output is one positive
-`ComponentStockAdjustment`, which `lots.py` treats as a lot (`A<id>`). Do
+adjustment, which deposits a stored lot that `lots.py` reads (`A<lot id>`). Do
 not add an event kind for process work: that forks `_pool_events`, which
 decision 0058 forbids.
 
@@ -450,7 +453,7 @@ earlier one.
 - **An invoice position is money.** It never proves that a step happened on a
   unit. A position named in `costs` whose steps have no evidence stays in the
   origin batch cost (`lines_whose_steps_were_not_recorded`). A position linked
-  to steps is also stored as a whole-step link (`CostLineStepKey`), so a click
+  to steps is also stored as a whole-step link (`StepCost`), so a click
   of those steps recorded live later, a spare programmed at the bench,
   shares it.
 - **The status** comes from the device: disposed → scrapped, faulty or

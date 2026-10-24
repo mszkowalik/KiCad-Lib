@@ -20,6 +20,7 @@ from app.db import engine
 from app.services import appconfig
 from app.services import companies as C
 from app.services import run_actuals as ra
+from app.services.material_ledger import core as ledger
 
 
 @pytest.fixture
@@ -67,11 +68,21 @@ def _want(qty, run):
     return [{"mpn": "CS-PART-1", "qty": qty, "date": "2025-02-01"}], run
 
 
+def _draw(db, run, qty, day, unit=0.0, **kw):
+    """A draw of the test part (a ledger move; its `qty` is negative)."""
+    return ledger.draw(db, mpn=kw.pop("mpn", "CS-PART-1"), taken=qty, unit_cost_usd=unit, at=day,
+                       run_id=run.id if run else None, basis=kw.pop("basis", "manual"), **kw)
+
+
+def _adj(db, qty, day, unit=None, **kw):
+    """An adjustment of the test part; a positive one makes a stored lot."""
+    return ledger.adjustment(db, mpn="CS-PART-1", qty=qty, unit_cost_usd=unit, at=day,
+                             reason=kw.pop("reason", "attrition"), **kw)
+
+
 def test_a_draw_gets_its_batch_company(db, world):
-    c = M.ComponentConsumption(run_id=world.r9.id, mpn="CS-PART-1", qty=1, consumed_at="2025-02-01")
-    a = M.ComponentStockAdjustment(project_id=world.p.id, mpn="CS-PART-1", qty_delta=-1,
-                                   adjusted_at="2025-03-01")
-    db.add_all([c, a])
+    c = _draw(db, world.r9, 1, "2025-02-01")
+    a = _adj(db, -1, "2025-03-01", project_id=world.p.id)
     db.flush()
     assert c.company_id == world.s9.id      # the batch's company
     assert a.company_id == world.s7.id      # the project's owner on the day
@@ -93,8 +104,7 @@ def test_a_company_cannot_draw_the_other_company_s_stock(db, world, split):
 
 
 def test_each_company_replays_its_own_pool(db, world, split):
-    db.add(M.ComponentConsumption(run_id=world.r7.id, mpn="CS-PART-1", qty=30,
-                                  unit_cost_usd=0.1, consumed_at="2025-02-01"))
+    _draw(db, world.r7, 30, "2025-02-01", unit=0.1)
     db.flush()
     p7 = ra.pool_state(db, company_id=world.s7.id)
     p9 = ra.pool_state(db, company_id=world.s9.id)
@@ -107,8 +117,7 @@ def test_each_company_replays_its_own_pool(db, world, split):
 
 def test_a_purchase_loss_is_the_buyer_s(db, world, split):
     """Taking the purchase away strands the 7Sigma draw, not a 9Sigma one."""
-    db.add(M.ComponentConsumption(run_id=world.r7.id, mpn="CS-PART-1", qty=60,
-                                  unit_cost_usd=0.1, consumed_at="2025-02-01"))
+    _draw(db, world.r7, 60, "2025-02-01", unit=0.1)
     db.flush()
     line = world.doc.lines[0]
     loss = ra.purchase_loss_of(db, line, qty=50)
@@ -165,8 +174,7 @@ def test_a_used_transfer_cannot_be_reversed(db, world, split):
     res = T.create(db, sender_id=world.s7.id, receiver_id=world.s9.id, day="2025-01-15",
                    lines=[{"mpn": "CS-PART-1", "qty": 40}], dry_run=False)
     doc = db.get(M.RunCostDocument, res["document_id"])
-    db.add(M.ComponentConsumption(run_id=world.r9.id, mpn="CS-PART-1", qty=30,
-                                  unit_cost_usd=0.1, consumed_at="2025-02-01"))
+    _draw(db, world.r9, 30, "2025-02-01", unit=0.1)
     db.flush()
     with pytest.raises(HTTPException):
         T.reverse(db, doc, reason="test", dry_run=False)
@@ -185,8 +193,7 @@ def test_a_reversal_gives_the_stock_back(db, world, split):
 def test_the_history_moves_what_a_batch_drew_from_the_other_company(db, world):
     """A 9Sigma batch drew 30 that 7Sigma bought: the plan moves 30, at the
     average, dated with the draw."""
-    db.add(M.ComponentConsumption(run_id=world.r9.id, mpn="CS-PART-1", qty=30,
-                                  unit_cost_usd=0.1, consumed_at="2025-02-01"))
+    _draw(db, world.r9, 30, "2025-02-01", unit=0.1)
     db.flush()
     plan = T.plan_history(db)
     mine = [t for t in plan["transfers"] if t["run_id"] == world.r9.id]
@@ -201,13 +208,8 @@ def test_a_draw_bound_to_the_other_company_s_lot_moves_with_that_lot(db, world):
     """JLC said which purchase the 9Sigma order consumed: that lot moves, at its
     landed cost, and the draw's binding moves onto the transfer's position."""
     line = world.doc.lines[0]
-    c = M.ComponentConsumption(run_id=world.r9.id, mpn="CS-PART-1", qty=25,
-                               unit_cost_usd=0.1, basis="measured", consumed_at="2025-02-01")
-    db.add(c)
-    db.flush()
-    b = M.ComponentConsumptionLot(consumption_id=c.id, lot_line_id=line.id, qty=25,
-                                  unit_cost_usd=0.1, source="reported")
-    db.add(b)
+    c = _draw(db, world.r9, 25, "2025-02-01", unit=0.1, basis="measured")
+    b = ledger.bind(db, c, qty=25, unit_cost_usd=0.1, lot_line_id=line.id, source="reported")
     db.flush()
     plan = T.plan_history(db)
     mine = [t for t in plan["transfers"] if t["run_id"] == world.r9.id]
@@ -230,14 +232,9 @@ def _key_of(mpn="CS-PART-1"):
     return ra._key(SimpleNamespace(component_id=None, mpn=mpn, lcsc=""))
 
 
-def _bound_draw(db, run, qty, line_id=None, adj_id=None, day="2025-02-01", company_id=None, **kw):
-    c = M.ComponentConsumption(run_id=run.id if run else None, mpn="CS-PART-1", qty=qty, unit_cost_usd=0.1,
-                               basis="measured", consumed_at=day, company_id=company_id, **kw)
-    db.add(c)
-    db.flush()
-    b = M.ComponentConsumptionLot(consumption_id=c.id, lot_line_id=line_id, lot_adjustment_id=adj_id,
-                                  qty=qty, unit_cost_usd=0.1, source="reported")
-    db.add(b)
+def _bound_draw(db, run, qty, line_id=None, lot_id=None, day="2025-02-01", company_id=None, **kw):
+    c = _draw(db, run, qty, day, unit=0.1, basis="measured", company_id=company_id, **kw)
+    b = ledger.bind(db, c, qty=qty, unit_cost_usd=0.1, lot_line_id=line_id, lot_id=lot_id, source="reported")
     db.flush()
     return c, b
 
@@ -262,7 +259,7 @@ def test_a_partial_lot_transfer_splits_the_binding(db, world):
     c, _b = _bound_draw(db, world.r9, 25, line_id=line.id)
     res = T.create(db, sender_id=world.s7.id, receiver_id=world.s9.id, day="2025-01-20",
                    lines=[{"mpn": "CS-PART-1", "qty": 10, "lot_line_id": line.id}], dry_run=False)
-    rows = db.query(M.ComponentConsumptionLot).filter_by(consumption_id=c.id).all()
+    rows = db.query(M.MaterialMoveLot).filter_by(move_id=c.id).all()
     assert sorted((r.lot_line_id == line.id, r.qty) for r in rows) == [(False, 10), (True, 15)]
     assert res["lines"][0]["rebind"][0]["qty"] == pytest.approx(10)
 
@@ -272,8 +269,7 @@ def test_the_history_counts_a_lot_move_once(db, world):
     move covers the 25 only, so the 10 still needs a balance transfer."""
     line = world.doc.lines[0]
     _bound_draw(db, world.r9, 25, line_id=line.id)
-    db.add(M.ComponentConsumption(run_id=world.r9.id, mpn="CS-PART-1", qty=10, unit_cost_usd=0.1,
-                                  consumed_at="2025-03-01"))
+    _draw(db, world.r9, 10, "2025-03-01", unit=0.1)
     db.flush()
     plan = T.plan_history(db)
     mine = [t for t in plan["transfers"] if t["run_id"] == world.r9.id]
@@ -282,16 +278,14 @@ def test_the_history_counts_a_lot_move_once(db, world):
 
 
 def test_a_lot_that_is_an_adjustment_moves_with_its_draws(db, world, split):
-    a = M.ComponentStockAdjustment(mpn="CS-PART-1", qty_delta=50, unit_cost_usd=0.2, reason="opening_balance",
-                                   adjusted_at="2025-01-05", company_id=world.s7.id)
-    db.add(a)
-    db.flush()
-    _c, b = _bound_draw(db, world.r9, 20, adj_id=a.id, company_id=world.s9.id)
+    a = _adj(db, 50, "2025-01-05", unit=0.2, reason="opening_balance", company_id=world.s7.id)
+    _c, b = _bound_draw(db, world.r9, 20, lot_id=a.lot_id, company_id=world.s9.id)
+    # The API names a stored lot `lot_adjustment_id` (decision 0098).
     res = T.create(db, sender_id=world.s7.id, receiver_id=world.s9.id, day="2025-01-20",
-                   lines=[{"mpn": "CS-PART-1", "qty": 20, "lot_adjustment_id": a.id}], dry_run=False)
+                   lines=[{"mpn": "CS-PART-1", "qty": 20, "lot_adjustment_id": a.lot_id}], dry_run=False)
     assert res["lot_capacity"] == []
     db.refresh(b)
-    assert b.lot_adjustment_id is None and b.lot_line_id == res["lines"][0]["line_id"]
+    assert b.lot_id is None and b.lot_line_id == res["lines"][0]["line_id"]
 
 
 def test_one_pool_ignores_a_transfer(db, world):
@@ -335,10 +329,8 @@ def test_charging_an_order_moves_the_other_company_s_lots_first(db, world, split
 def test_charging_with_one_pool_stamps_the_batch_s_company(db, world):
     from app.services import jlc_apply
 
-    c = M.ComponentConsumption(run_id=None, mpn="CS-PART-1", qty=5, unit_cost_usd=0.1, basis="measured",
-                               consumed_at="2025-02-01", company_id=world.s7.id,
-                               import_ref="jlc:BCS1:SMT-CS-1:CS-PART-1")
-    db.add(c)
+    c = _draw(db, None, 5, "2025-02-01", unit=0.1, basis="measured", company_id=world.s7.id,
+              import_ref="jlc:BCS1:SMT-CS-1:CS-PART-1")
     db.flush()
     jlc_apply.charge_draws(db, {"smt_order_code": "SMT-CS-1", "batch_num": "BCS1"}, world.r9.id, dry_run=False)
     db.refresh(c)
@@ -358,11 +350,8 @@ def test_a_transfer_s_draw_is_not_deleted_alone(db, world, split):
 def test_a_moved_batch_takes_its_draws_and_losses(db, world, split):
     from app.routers import production_runs as pr
 
-    c = M.ComponentConsumption(run_id=world.r9.id, mpn="CS-PART-1", qty=30, unit_cost_usd=0.1,
-                               consumed_at="2025-02-01")
-    a = M.ComponentStockAdjustment(project_id=world.p.id, mpn="CS-PART-1", qty_delta=-5, reason="attrition",
-                                   charge_run_id=world.r9.id, adjusted_at="2025-02-02", unit_cost_usd=0.1)
-    db.add_all([c, a])
+    c = _draw(db, world.r9, 30, "2025-02-01", unit=0.1)
+    a = _adj(db, -5, "2025-02-02", unit=0.1, reason="attrition", project_id=world.p.id, run_id=world.r9.id)
     db.flush()
     assert (c.company_id, a.company_id) == (world.s9.id, world.s9.id)
     pr.update_run(world.r9.id, pr.RunPatch(company_id=world.s7.id), db=db)
@@ -376,8 +365,7 @@ def test_a_moved_batch_takes_its_draws_and_losses(db, world, split):
 def test_a_batch_moves_only_to_a_company_that_holds_its_stock(db, world, split):
     from app.routers import production_runs as pr
 
-    db.add(M.ComponentConsumption(run_id=world.r7.id, mpn="CS-PART-1", qty=30, unit_cost_usd=0.1,
-                                  consumed_at="2025-02-01"))
+    _draw(db, world.r7, 30, "2025-02-01", unit=0.1)
     db.flush()
     with pytest.raises(HTTPException) as e:
         pr.update_run(world.r7.id, pr.RunPatch(company_id=world.s9.id), db=db)
@@ -387,16 +375,13 @@ def test_a_batch_moves_only_to_a_company_that_holds_its_stock(db, world, split):
 def test_an_uncharged_draw_is_given_its_company(db, world, split):
     from app.routers import run_costs as rc
 
-    c = M.ComponentConsumption(run_id=None, mpn="CS-PART-1", qty=3, unit_cost_usd=0.1, basis="measured",
-                               consumed_at="2025-02-01", import_ref="jlcledger:999001")
-    db.add(c)
+    c = _draw(db, None, 3, "2025-02-01", unit=0.1, basis="measured", import_ref="jlcledger:999001")
     db.flush()
     assert c.company_id is None
     rc.set_draw_company(c.id, rc.DrawCompanyIn(company_id=world.s7.id, dry_run=False), db=db)
     db.refresh(c)
     assert c.company_id == world.s7.id
-    charged = M.ComponentConsumption(run_id=world.r7.id, mpn="CS-PART-1", qty=1, consumed_at="2025-02-01")
-    db.add(charged)
+    charged = _draw(db, world.r7, 1, "2025-02-01")
     db.flush()
     with pytest.raises(HTTPException):
         rc.set_draw_company(charged.id, rc.DrawCompanyIn(company_id=world.s9.id, dry_run=False), db=db)
@@ -494,8 +479,7 @@ def test_a_refused_charge_names_the_sender_s_short_parts(db, world, split):
 
     line = world.doc.lines[0]
     # 7Sigma's own batch takes 90 of the 100 first
-    db.add(M.ComponentConsumption(run_id=world.r7.id, mpn="CS-PART-1", qty=90, unit_cost_usd=0.1,
-                                  consumed_at="2025-01-10"))
+    _draw(db, world.r7, 90, "2025-01-10", unit=0.1)
     _bound_draw(db, None, 30, line_id=line.id, company_id=world.s7.id, import_ref="jlc:BCS3:SMT-CS-3:CS-PART-1")
     with pytest.raises(jlc_apply.ApplyRefused) as e:
         jlc_apply.charge_draws(db, {"smt_order_code": "SMT-CS-3", "batch_num": "BCS3"}, world.r9.id,
@@ -523,9 +507,7 @@ def test_the_history_uses_a_transfer_typed_without_a_lot(db, world):
 def test_a_moved_batch_s_loss_is_checked_in_the_new_company(db, world, split):
     from app.routers import production_runs as pr
 
-    a = M.ComponentStockAdjustment(project_id=world.p.id, mpn="CS-PART-1", qty_delta=-5, reason="attrition",
-                                   charge_run_id=world.r7.id, adjusted_at="2025-02-02", unit_cost_usd=0.1)
-    db.add(a)
+    _adj(db, -5, "2025-02-02", unit=0.1, reason="attrition", project_id=world.p.id, run_id=world.r7.id)
     db.flush()
     with pytest.raises(HTTPException) as e:
         pr.update_run(world.r7.id, pr.RunPatch(company_id=world.s9.id), db=db)
@@ -536,8 +518,7 @@ def test_a_batch_move_is_not_reversed_from_the_ledger(db, world, split):
     from app.routers import ledger
     from app.routers import production_runs as pr
 
-    db.add(M.ComponentConsumption(run_id=world.r9.id, mpn="CS-PART-1", qty=3, unit_cost_usd=0.1,
-                                  consumed_at="2025-02-01"))
+    _draw(db, world.r9, 3, "2025-02-01", unit=0.1)
     db.flush()
     pr.update_run(world.r9.id, pr.RunPatch(company_id=world.s7.id), db=db)
     wb = db.query(M.WriteBatch).filter_by(kind="run.company").order_by(M.WriteBatch.id.desc()).first()
@@ -570,13 +551,9 @@ def test_found_stock_on_a_moving_batch_counts_the_batch_s_own_draws_leaving(db, 
     r7b = M.ProductionRun(project_id=world.p.id, label="CS7B", run_date="2025-02-10", qty=5, company_id=world.s7.id)
     db.add(r7b)
     db.flush()
-    db.add_all([
-        M.ComponentConsumption(run_id=world.r7.id, mpn="CS-PART-1", qty=100, unit_cost_usd=0.1,
-                               consumed_at="2025-02-01"),
-        M.ComponentStockAdjustment(project_id=world.p.id, mpn="CS-PART-1", qty_delta=5, reason="found",
-                                   charge_run_id=world.r7.id, adjusted_at="2025-02-05", unit_cost_usd=0.1),
-        M.ComponentConsumption(run_id=r7b.id, mpn="CS-PART-1", qty=5, unit_cost_usd=0.1, consumed_at="2025-02-10"),
-    ])
+    _draw(db, world.r7, 100, "2025-02-01", unit=0.1)
+    _adj(db, 5, "2025-02-05", unit=0.1, reason="found", project_id=world.p.id, run_id=world.r7.id)
+    _draw(db, r7b, 5, "2025-02-10", unit=0.1)
     db.flush()
     pr.update_run(world.r7.id, pr.RunPatch(company_id=world.s9.id), db=db)
     assert ra.pool_state(db, company_id=world.s7.id)[_key_of()]["qty"] == pytest.approx(95.0)
