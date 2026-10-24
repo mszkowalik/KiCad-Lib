@@ -114,6 +114,19 @@
 - **The bench refuses an artwork that still holds a placeholder after the patch**, for example text
   that says `123456` beside a QR that says `123456789011`. Use one placeholder for each artwork.
 
+## 2026-10-15 (DotConnect boards on the shelf)
+
+- **The DotConnect boards are on the shelf.** Each DC batch is now one assembly (a JLCPCB order or a
+  hand build) with one placeholder unit per board, so finished stock reads DC_GPS 8, DC_LIDAR 5,
+  DC_BMS 15 and DC_Temp 7 (decision 0092). The three batches that were only a sale are gone.
+- **Every DotConnect sale is an order** with its proforma and VAT invoice: 15 delivered, and
+  PROF 01/09/2026 (6 × DC_GPS) open.
+- **The DC part invoices are itemized.** 18 Mouser, TME, DigiKey and LCSC invoices that were one
+  line each now list their parts, all in the stock pool. Each batch draws its hand-fitted parts
+  (ZED-F9P, NID65-12, plugs, enclosures) and each V1 hand build draws its kit.
+- **Mouser order 40196186** (10 × ZED-F9P-04B, 2026-08-20) is a placeholder document until its
+  invoice turns up.
+
 ## 2026-10-13 (a part the process draws is counted once)
 
 - **A part that a process step draws is no longer counted twice.** The
@@ -153,9 +166,6 @@
 - **Two more DotConnect batches:** DC_GPS Batch 6 (6 units, in production) and DC_BMS Batch 1b
   (the 10 V1 boards JLCPCB assembled in July 2023, with no sale recorded).
 - **Hammond 1551V3GY is in the library**, as a symbol with no footprint.
-- **Every symbol on the four DotConnect boards is a 7Sigma library symbol**, except DC_GPS U1. The
-  symbols that did not fit the old pin points are joined to their nets by labels; connectivity is
-  unchanged.
 - **Every symbol on the four DotConnect boards is a 7Sigma library symbol.** The symbols that did
   not fit the old pin points are joined to their nets by labels; connectivity is unchanged.
 

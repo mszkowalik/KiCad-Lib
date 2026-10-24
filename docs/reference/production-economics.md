@@ -844,3 +844,27 @@ value are computed on read and never stored.
   batch of kind `lots.history`.
 - **Planning keeps the moving average.** A batch that does not exist yet has no
   lots to take, so `project_bom` prices its plan from the pool average.
+
+## The DotConnect boards (decision 0092)
+
+DC_GPS, DC_LIDAR, DC_BMS and DC_Temp carry no MAC and never meet the
+flasher. Their records follow
+[0092](../decisions/0092-an-unserialised-product-ships-placeholder-units.md):
+
+- **A DC batch is one assembly, never a sale.** Its label names the JLC order
+  (`JLC Y84 — 10 boards`) or the hand build. Every assembled board has one
+  placeholder unit (`mac` NULL, `serial` empty, `condition` ok), created by
+  `scripts/dc-placeholder-units-2026-10-15.py`. A new DC assembly needs the
+  same: no API creates a device unit.
+- **A sale is an order of customer DotConnect** with its proforma and VAT
+  invoice. Its shipment names the units of the assembly made for that sale,
+  lowest id first.
+- **A hand-fitted part is a typed draw dated the day the units left**
+  (`POST /api/runs/{id}/consumption`, basis `allocated`): ZED-F9P (two a
+  DC_GPS unit), NID65-12 (two a DC_LIDAR unit), the 3.81 mm plugs, the
+  Hammond 1551V3GY enclosure. A V1 hand build draws its whole Mouser kit.
+  Units still on the shelf have none of these yet. Draw the parts when the
+  units ship.
+- **JLC's consigned-stock draws on the DC orders stay uncharged** (USD 17.40,
+  2026-10-15). Their orders carry `external` decisions applied on 2026-07-28,
+  and re-deciding one means reversing that write batch.
