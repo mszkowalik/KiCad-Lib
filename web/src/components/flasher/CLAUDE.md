@@ -173,25 +173,51 @@ text applied to another.
   layout — there is one laser, one device at a time; programming alone keeps
   up to four. A station has ONE run button for the selection (plus Erase on a
   programming station); there is no separate Test or Mark button.
-- **Automatic is ONE switch on the page**, ARMED ONCE per device: the arm
-  drops when the port goes live and only returns when it goes away, so a
-  finished part left in the fixture is not run twice. Keep the once-per-device
-  arm: a retry loop on a failing unit is the failure mode it exists to
-  prevent. A marking press also waits for the device's serial and for the
-  machines it needs. It is off by default, because a programming run erases
-  the device before it writes.
+- **Automatic is ONE switch on the page**, and it fires ONCE per ARRIVAL. An
+  arrival is a NEW unit in the socket: another USB serial number (a C6
+  reports its MAC there), or the socket empty for `REPLUG_GAP_MS` (6 s) with
+  the station idle; for a bridge, which stays on the bus when the chip
+  resets, any idle gap counts. Nothing counts while the station works. A
+  node that merely comes back is NOT an arrival — a C6 leaves the bus for
+  2 to 3 s on every reset of its own run, and counting that would run it
+  again after it finished. Any press uses the arrival up. Keep the rule: a
+  retry loop on a failing unit is the failure mode it exists to prevent. A
+  marking press also waits for the device's serial and for the machines it
+  needs. It is off by default, because a programming run erases the device
+  before it writes.
+- **Stations run side by side, one esptool job and one console per port**
+  ([0099](../../../../docs/decisions/0099-the-agent-serves-each-port-on-its-own.md)).
+  With an agent that lacks `per_port` the page lets ONE station work: a press
+  takes `claimSole` in `station.ts` SYNCHRONOUSLY, because two devices that
+  appear in the same port poll start both stations in one render, before any
+  busy flag reaches the page. The port list is one poll for the whole page
+  (`watchSerialPorts`).
+- **Abort, Abort during Erase and "Stop waiting" stop the agent's esptool**
+  (`Station.cancelEsp`, `POST /esp/cancel`), and so does the end of a run
+  however it ended (`RunClient`). Abort reaching the engine alone left the
+  agent writing a unit the record called aborted.
+- **The PASS and FAIL sounds play once per press**, after every selected step
+  has ended, never for an Abort (`flasher/sound.ts`, Web Audio, no file to
+  fetch). "Play a sound when a device is finished" on the page turns them off.
+- **Firmware and artwork are kept in the browser** (`flasher/fileCache.ts`):
+  firmware by SHA-256, checked again on every use, artwork by set and name.
+  Both are immutable under those keys. The agent keeps its own copy of each
+  image, so a flash names images by hash and sends bytes only for the ones
+  the agent answers `missing`.
 - **A VERDICT BELONGS TO THE DEVICE THAT EARNED IT** (user report 2026-09-17).
   PASS, FAIL and ABORTED used to survive a device swap — `syncPort` only ever
   promoted `empty` to `ready` — so the next unit arrived under the last one's
   result. A third arm beside the marking read and the automatic start clears
   the verdict, the step label, the progress, the engraved/printed readouts and
-  the run link when the NEXT device ARRIVES, not when the finished one is taken
-  out: the operator still reads PASS with the part in their hand. Both benches
-  get it, because both are `BenchStation`. **The log is NOT cleared** — it is
-  the station's record and a failure is usually read after the part is out — so
-  a separator line marks where one device ends and the next begins. The arm is
-  consumed only when the reset actually runs, so a verdict that lands while a
-  device is already in the socket still clears on the next arrival.
+  the run link when the NEXT device ARRIVES — an arrival as Automatic counts
+  it, so a C6 back from the reset that ends its run keeps its PASS — not when
+  the finished one is taken out: the operator still reads PASS with the part
+  in their hand. Both benches get it, because both are `BenchStation`. **The
+  log is NOT cleared** — it is the station's record and a failure is usually
+  read after the part is out — so a separator line marks where one device ends
+  and the next begins. An arrival is handled only once the station is idle,
+  so a verdict that lands while a device is already in the socket still clears
+  on the next arrival.
 - **The socket picker WATCHES, because a port name identifies nothing**
   (`SocketPicker.tsx`, user request 2026-09-17). Four identical CH340s give
   four `/dev/cu.usbserial-*` names an operator cannot tell apart, so the picker

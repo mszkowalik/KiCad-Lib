@@ -275,6 +275,12 @@ def firmware_usage(asset_id: int, db: Session = Depends(get_db)):
     return {"versions": _firmware_usage(db, asset_id)}
 
 
+# What an address whose bytes can never change is served with. `private` keeps
+# it out of the Cloudflare edge: these routes sit behind the session gate, and
+# an edge copy would outlive a deleted set.
+IMMUTABLE_PRIVATE = "private, max-age=31536000, immutable"
+
+
 @router.get("/firmware/{asset_id}/bin")
 def firmware_bin(asset_id: int, db: Session = Depends(get_db)):
     asset = db.get(M.FirmwareAsset, asset_id)
@@ -285,7 +291,10 @@ def firmware_bin(asset_id: int, db: Session = Depends(get_db)):
         raise HTTPException(410, "firmware bytes missing from storage")
     return Response(
         content=data, media_type="application/octet-stream",
-        headers={"Content-Disposition": content_disposition("attachment", asset.filename)},
+        headers={"Content-Disposition": content_disposition("attachment", asset.filename),
+                 # The bytes never change under an asset id (`patch_firmware`),
+                 # so the bench's browser keeps them. `private`: never the edge.
+                 "Cache-Control": IMMUTABLE_PRIVATE, "ETag": f'"{asset.sha256}"'},
     )
 
 
@@ -526,7 +535,10 @@ def serve_set_file(set_id: int, filename: str, db: Session = Depends(get_db)):
     e = next((x for x in (s.entries if s else []) if x.filename == filename), None)
     if e is None:
         raise HTTPException(404, "no such file in this set")
-    return Response(content=bundle.blob_bytes(e.blob), media_type="application/octet-stream")
+    # A set is an immutable manifest (decision 0029), so the bench's browser
+    # keeps the artwork it marks with. The device's UrlFetch caches nothing.
+    return Response(content=bundle.blob_bytes(e.blob), media_type="application/octet-stream",
+                    headers={"Cache-Control": IMMUTABLE_PRIVATE})
 
 
 # --------------------------------------------------------------- deployments

@@ -38,6 +38,7 @@ import {
 import BenchStation, { type BenchSegment, type MarkOp } from "../components/flasher/BenchStation";
 import {
   canProgram,
+  canRunStationsTogether,
   listPrinters,
   MarkAgent,
   NEEDS_PROTOCOL,
@@ -88,6 +89,9 @@ type AgentState =
       cannotProgram: boolean;
       /** this agent is too old to print; it still marks */
       cannotPrint: boolean;
+      /** several stations may run at once (decision 0099); an older agent
+       *  has one console and one esptool job for the whole machine */
+      stationsTogether: boolean;
       /** the machines, asked only while a marking step is selected */
       lightburn: boolean;
       busy: boolean | null;
@@ -130,6 +134,7 @@ function useBenchAgent(watchMachines: boolean): { state: AgentState; checkedAt: 
         kind: "up",
         cannotProgram: !canProgram(hello),
         cannotPrint: (hello.protocol ?? 0) < NEEDS_PROTOCOL,
+        stationsTogether: canRunStationsTogether(hello),
         lightburn,
         busy,
         laserUsb,
@@ -193,6 +198,15 @@ export default function Bench() {
   const [trialVersionId, setTrialVersionId] = useStickyState<number | null>("bench.versionv2", null);
   const [simPin, setSimPin] = useState("");
   const [autoStart, setAutoStart] = useStickyState<boolean>("bench.autostart", false);
+  /** The PASS / FAIL sound when a device is finished (user request 2026-10-24). */
+  const [sound, setSound] = useStickyState<boolean>("bench.sound", true);
+  /** Which stations are working, for an agent that serves one at a time. */
+  const [busySlots, setBusySlots] = useState<number[]>([]);
+  const busySetters = useMemo(
+    () => Array.from({ length: MAX_STATIONS }, (_, i) => (busy: boolean) =>
+      setBusySlots((cur) => (busy ? (cur.includes(i) ? cur : [...cur, i]) : cur.filter((x) => x !== i)))),
+    [],
+  );
   const [slots, setSlots] = useState(readStationCount);
   const [meta, setMeta] = useState<FlasherMeta | null>(null);
   /** Another version than a procedure's current one, by deployment, and why. */
@@ -352,6 +366,10 @@ export default function Bench() {
 
   const stationCount = marking ? 1 : slots;
   const agentUp = agent.kind === "up";
+  /** One station runs at a time unless `/hello` has said the agent serves
+   *  every port on its own — also while it has not answered yet, because the
+   *  port poll reaches the stations before the next `/hello` does. */
+  const oneAtATime = !(agent.kind === "up" && agent.stationsTogether);
 
   return (
     <div className="main-solo">
@@ -546,10 +564,24 @@ export default function Bench() {
           <CheckField
             checked={autoStart}
             onChange={setAutoStart}
-            title="Each station runs the selected steps the moment a device appears on its socket, once per device. A marking run also waits for the device's serial and for the machines it needs."
+            title="Each station runs the selected steps the moment a new device appears on its socket, once per device. A unit that resets itself during or after its run is not run again. A marking run also waits for the device's serial and for the machines it needs."
           >
             Run the selected steps automatically when a device is plugged in
           </CheckField>
+          <CheckField
+            checked={sound}
+            onChange={setSound}
+            title="One sound for PASS and another for FAIL, once every selected step has ended. Nothing for an Abort."
+          >
+            Play a sound when a device is finished
+          </CheckField>
+          {agent.kind === "up" && !agent.stationsTogether && stationCount > 1 ? (
+            <p className="banner-warn">
+              This bench agent runs one station at a time: the others wait until it is done. Download it
+              again below, replace the copy in Applications and restart it, to program several devices at
+              once.
+            </p>
+          ) : null}
           {trialIsDraft ? (
             <p className="banner-warn">
               Trying a DRAFT version. Each run is marked as a draft run and cannot be counted as batch
@@ -570,6 +602,10 @@ export default function Bench() {
                 segments={segments}
                 productionRunId={validRun}
                 autoStart={autoStart}
+                sound={sound}
+                oneAtATime={oneAtATime}
+                othersBusy={oneAtATime && busySlots.some((x) => x !== i)}
+                onBusyChange={busySetters[i]}
                 overrideReason={overridden ? overrideReason : ""}
                 // A hidden box must not still be sending a value.
                 simPin={wantsSimPin ? simPin : ""}

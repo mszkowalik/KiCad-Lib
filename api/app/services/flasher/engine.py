@@ -543,6 +543,8 @@ class RunEngine:
                 return None
             if pattern is not None and pattern.search(line):
                 return line
+            if protocol.is_echo(line):
+                continue   # the command coming back, not the answer to it
             parsed = protocol.parse_line(line)
             if parsed is not None and key and protocol.matches(parsed, key):
                 return parsed

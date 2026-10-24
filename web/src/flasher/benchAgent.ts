@@ -31,6 +31,8 @@
  *     a token in a page is not a secret.
  */
 
+import { setFileText } from "./fileCache";
+
 const AGENT_URL = "http://127.0.0.1:19842";
 /** What this page needs the agent to speak. 3 added the printer routes.
  *
@@ -55,6 +57,28 @@ export const NEEDS_PROTOCOL = 3;
  *  download stops lying about what it is. */
 export function canProgram(hello: { esptool?: string | null }): boolean {
   return Boolean(hello.esptool);
+}
+
+/** What `/hello` says this agent can do. Each flag is a CAPABILITY, for the
+ *  reason `canProgram` gives: an agent from before it simply does not send it. */
+export interface AgentHello {
+  agent: string;
+  protocol: number;
+  lightburn_host: string;
+  esptool?: string | null;
+  /** One console and one esptool job PER PORT (decision 0099). Without it the
+   *  agent has one of each for the whole machine, and a second station's
+   *  console closes the first one's (runs 8964 and 8966). */
+  per_port?: boolean;
+  /** `POST /esp/cancel` exists: Abort and "Stop waiting" stop esptool. */
+  esp_cancel?: boolean;
+  /** Flash images may be named by SHA-256, from the agent's own cache. */
+  image_cache?: boolean;
+}
+
+/** Can several stations run at the same time on this agent? */
+export function canRunStationsTogether(hello: AgentHello): boolean {
+  return Boolean(hello.per_port);
 }
 /** How often a running job's log is collected. Fast enough that the operator
  *  sees the laser start, slow enough to be free. */
@@ -141,6 +165,10 @@ export interface AgentPort {
   device: string;
   /** The process holding it open, from lsof, or "" when free. */
   held_by: string;
+  /** The USB serial number, "" when the device has none. An ESP32-C6 reports
+   *  its MAC here, so a NEW unit can be told from the same unit coming back
+   *  after its own reset; a CH340 reports none. An older agent omits it. */
+  serial_number?: string;
 }
 
 /** Every USB serial node on the bench machine, and who holds each.
@@ -153,6 +181,52 @@ export interface AgentPort {
 export async function listSerialPorts(): Promise<AgentPort[]> {
   const r = await new MarkAgent().call("/serial-ports");
   return (r.ports ?? []) as AgentPort[];
+}
+
+/** How often the stations learn what is plugged in. */
+const PORT_POLL_MS = 2000;
+const portWatchers = new Set<(ports: AgentPort[] | null) => void>();
+let portTimer = 0;
+let lastPorts: AgentPort[] | null = null;
+/** Which poll loop is current. A loop whose tick was in flight when the last
+ *  station left must not reschedule beside the one the next station starts. */
+let portLoop = 0;
+
+/** The agent's port list, ONE poll for the whole page.
+ *
+ *  Every station used to poll on its own, and each answer ran lsof once per
+ *  node, so four stations cost twenty lsof runs every two seconds. Now the
+ *  page asks once and every station hears the same answer — which also means
+ *  two stations never disagree about what is plugged in. `null` = the agent
+ *  is not answering. Returns the unsubscribe.
+ */
+export function watchSerialPorts(onPorts: (ports: AgentPort[] | null) => void): () => void {
+  portWatchers.add(onPorts);
+  if (lastPorts) onPorts(lastPorts);
+  if (portWatchers.size === 1) {
+    const loop = ++portLoop;
+    const tick = async () => {
+      let got: AgentPort[] | null = null;
+      try {
+        got = await listSerialPorts();
+      } catch {
+        got = null; // the agent is not running
+      }
+      if (loop !== portLoop) return; // stopped while this tick was out
+      lastPorts = got;
+      for (const w of portWatchers) w(got);
+      if (portWatchers.size) portTimer = window.setTimeout(tick, PORT_POLL_MS);
+    };
+    void tick();
+  }
+  return () => {
+    portWatchers.delete(onPorts);
+    if (!portWatchers.size) {
+      window.clearTimeout(portTimer);
+      portLoop++;
+      lastPorts = null;
+    }
+  };
 }
 
 /** What `/health` says. `laserUsb` is whether the laser CONTROLLER is on the
@@ -195,11 +269,11 @@ export async function runMarkJob(
   job: MarkJob,
   onLog: (dir: string, text: string) => void,
 ): Promise<MarkResult> {
-  const url = `${apiBase}/api/flasher/files/${job.fileSetId}/${encodeURIComponent(job.filename)}`;
-  onLog("app", `fetching ${job.filename}`);
-  const res = await fetch(url);
-  if (!res.ok) throw new Error(`could not fetch ${job.filename}: HTTP ${res.status}`);
-  const patched = patchTemplate(await res.text(), job.value, job.placeholders);
+  // Kept in the browser by set and name: a set never changes (decision 0029),
+  // and the bench marks the same drawing all day.
+  onLog("app", `artwork ${job.filename}`);
+  const xml = await setFileText(job.fileSetId, job.filename, apiBase);
+  const patched = patchTemplate(xml, job.value, job.placeholders);
   onLog("app", `patched ${job.filename} with ${job.value}`);
 
   const agent = new MarkAgent();
@@ -308,6 +382,20 @@ export class MarkAgent {
     init?: RequestInit,
     timeoutMs = 10000,
   ): Promise<Record<string, unknown>> {
+    const { ok, status, body } = await this.request(path, init, timeoutMs);
+    if (!ok) {
+      throw new Error(String(body.error ?? `the bench agent answered HTTP ${status}`));
+    }
+    return body;
+  }
+
+  /** `call` without the throw: the answer whatever its status, for a refusal
+   *  that carries something to act on (`missing` images). */
+  async request(
+    path: string,
+    init?: RequestInit,
+    timeoutMs = 10000,
+  ): Promise<{ ok: boolean; status: number; body: Record<string, unknown> }> {
     const ac = new AbortController();
     const timer = setTimeout(() => ac.abort(), timeoutMs);
     let res: Response;
@@ -326,24 +414,15 @@ export class MarkAgent {
       clearTimeout(timer);
     }
     const body = (await res.json().catch(() => ({}))) as Record<string, unknown>;
-    if (!res.ok) {
-      throw new Error(String(body.error ?? `the bench agent answered HTTP ${res.status}`));
-    }
-    return body;
+    return { ok: res.ok, status: res.status, body };
   }
 
   // Nothing to close: each call is its own request. Kept so callers can go on
   // using the agent the same way whatever it speaks underneath.
   close() {}
 
-  async hello(): Promise<{
-    agent: string; protocol: number; lightburn_host: string; esptool?: string | null;
-  }> {
-    return (await this.call("/hello")) as unknown as {
-      agent: string;
-      protocol: number;
-      lightburn_host: string;
-    };
+  async hello(): Promise<AgentHello> {
+    return (await this.call("/hello")) as unknown as AgentHello;
   }
 
   /** PING and STATUS. `responsive: false` means LightBurn is not running, or a
@@ -391,7 +470,16 @@ export class MarkAgent {
   async esp(
     body: { op: string; port: string } & Record<string, unknown>,
     onLog?: (l: MarkLog) => void,
-  ): Promise<{ status: "pass" | "fail"; error?: string; info?: Record<string, unknown> }> {
+    opts: {
+      /** The agent's job id, the moment it exists, so the station can cancel it. */
+      onJob?: (id: number) => void;
+      /** The agent lacks these images (by SHA-256): return the request's
+       *  images again, with `data` on those. Called at most once. */
+      supplyImages?: (missing: string[]) => Promise<Record<string, unknown>[]>;
+    } = {},
+  ): Promise<{
+    status: "pass" | "fail"; error?: string; info?: Record<string, unknown>; cancelled?: boolean;
+  }> {
     const timeoutS = body.op === "flash" ? 900 : body.op === "erase" ? 240 : 90;
     // Ask WHO is answering before handing it a device. An agent from before
     // decision 0023 has no `/esp` at all and returns its own 404 — the run then
@@ -405,18 +493,43 @@ export class MarkAgent {
         + "Download it again, replace the copy in Applications, and restart it",
       );
     }
-    const started = await this.call("/esp", {
+    const post = (b: Record<string, unknown>) => this.request("/esp", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
-    if (started.error) throw new Error(String(started.error));
-    const r = await this.watch(Number(started.job), timeoutS, `${body.op} on the agent`, onLog);
+      body: JSON.stringify(b),
+    }, 60000);
+    let started = await post(body);
+    const missing = started.body.missing;
+    if (!started.ok && Array.isArray(missing) && opts.supplyImages) {
+      // The agent keeps images by SHA-256 (decision 0099). It said which ones
+      // it lacks; send those bytes once and ask again.
+      started = await post({ ...body, images: await opts.supplyImages(missing.map(String)) });
+    }
+    if (!started.ok || started.body.error) {
+      throw new Error(String(started.body.error ?? `the bench agent answered HTTP ${started.status}`));
+    }
+    const id = Number(started.body.job);
+    opts.onJob?.(id);
+    const r = await this.watch(id, timeoutS, `${body.op} on the agent`, onLog);
     return {
       status: r.status,
       error: r.error,
       info: (r.info ?? undefined) as Record<string, unknown> | undefined,
+      cancelled: Boolean(r.cancelled),
     };
+  }
+
+  /** Stop an esptool job: Abort, Abort during Erase, "Stop waiting" for BOOT.
+   *  The agent answers once the job has ended. An agent from before
+   *  `esp_cancel` answers 404, and there is then nothing this page can do —
+   *  the job runs to its end, which is what Abort always did. */
+  async cancelEsp(target: { job?: number; port?: string }): Promise<boolean> {
+    const r = await this.request("/esp/cancel", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(target),
+    });
+    return r.ok;
   }
 
   /** The device console, held open by the AGENT (decision 0023).
@@ -438,6 +551,7 @@ export class MarkAgent {
    *    Long polling, so a device reply reaches the engine in a round trip
    *    rather than at the next tick of a timer. */
   async monitorLines(
+    port: string,
     since: number,
     waitS = 0,
   ): Promise<{ open: boolean; seen: number; lines: string[]; error?: string }> {
@@ -446,7 +560,7 @@ export class MarkAgent {
     // device produced "the bench agent did not answer within 10s" on a poll
     // that was working correctly (run 6442, 2026-09-17).
     const r = await this.call(
-      `/monitor?since=${since}&wait=${waitS}`,
+      `/monitor?port=${encodeURIComponent(port)}&since=${since}&wait=${waitS}`,
       undefined,
       Math.max(10000, waitS * 1000 + 5000),
     );
@@ -460,29 +574,33 @@ export class MarkAgent {
     };
   }
 
-  async monitorWrite(text: string): Promise<void> {
+  /** Every console call names its PORT (decision 0099): the agent keeps one
+   *  console per port, and a call for a port with no open console fails
+   *  rather than reaching another station's unit. An older agent ignores the
+   *  field and uses its one console, which is right for one station. */
+  async monitorWrite(port: string, text: string): Promise<void> {
     const r = await this.call("/monitor/write", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ text }),
+      body: JSON.stringify({ port, text }),
     });
     if (r.error) throw new Error(String(r.error));
   }
 
-  async monitorReset(): Promise<void> {
+  async monitorReset(port: string): Promise<void> {
     const r = await this.call("/monitor/reset", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({}),
+      body: JSON.stringify({ port }),
     });
     if (r.error) throw new Error(String(r.error));
   }
 
-  async monitorClose(): Promise<void> {
+  async monitorClose(port: string): Promise<void> {
     await this.call("/monitor/close", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({}),
+      body: JSON.stringify({ port }),
     });
   }
 

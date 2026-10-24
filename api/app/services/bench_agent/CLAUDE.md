@@ -38,10 +38,11 @@ the label printer (`/printers`, `/print`) and, since
 **every byte of serial the bench sends**: `POST /esp` (connect, erase, flash,
 reset, through the vendored esptool) and `/monitor/*` plus `GET /monitor?since=`
 (the device console). `GET /serial-ports` names the sockets a station can be
-bound to
+bound to, with each node's USB serial number — the page tells a new C6 from
+the same one back from its own reset by it
 ([reference/bench-serial-ports.md](../../../../docs/reference/bench-serial-ports.md)).
 
-Three things that follow, and are easy to break:
+What follows, and is easy to break:
 
 - **Everything is addressed by NODE**, so nothing here works for a station with
   no socket assigned. That is the contract, not a limitation to route around.
@@ -52,16 +53,27 @@ Three things that follow, and are easy to break:
   every reset, so its node is gone for a moment, and run 8868 failed
   `esp_reset` on "could not open port". The connect ladder does not use it:
   there, a port that cannot be opened is not a rung.
-- **One console session at a time**, and `/monitor/open` closes any previous
-  one. The page's identity probe relies on that, and so does the hand-off
-  between the esptool phase and the dialog phase.
-- **A failed esptool call keeps the port open for as long as its exception
-  lives** (bench, 2026-09-17: "held by Python" — the agent refusing its own
-  handle, unfixable without a restart). The loader that opened the port hangs
-  off the exception's traceback. So `EspRun` keeps MESSAGES, never exception
-  objects, raises `from None`, and calls `release_own_port` AFTER the `except`
-  block — inside it the exception is still alive and `gc.collect()` frees
-  nothing. And an own-process hold is released, never refused.
+- **Everything is PER PORT: one console and one esptool job each**
+  ([0099](../../../../docs/decisions/0099-the-agent-serves-each-port-on-its-own.md)).
+  Every console route names its port, and a call for a port with no open
+  console fails — never "the console that happens to be open", which let one
+  station's commands reach another station's unit (runs 8964, 8966). A call
+  with no port comes from an older page and reaches a console only when
+  exactly one is open. An esptool job closes its own port's console first.
+- **esptool runs as a PROCESS per call, never `esptool.main` in a thread**
+  (`EspRun._esptool`). In a thread, two jobs swap the one `sys.stdout` under
+  each other, nothing can stop a job, and a failed connect kept its port open
+  through the exception's traceback ("held by Python", 2026-09-17). Three
+  consequences: the failure text is read from esptool's own last words
+  (`esptool_failure`), so check it when `vendor.zip` changes esptool; every
+  wait in the ladder waits on `cancelled`, which is how `POST /esp/cancel`
+  ends a job within one kill; and the console and `_pulse_enable` still open
+  pyserial in THIS process, so their exceptions keep MESSAGES only and
+  `release_own_port` stays.
+- **Flash images are kept by SHA-256 on the machine** (`resolve_images`,
+  `~/Library/Caches/7Sigma Agent/images`). The hash is checked on every write
+  and every use. A request naming an image the cache lacks is refused before a
+  job exists, with `missing`, and the page sends exactly those bytes.
 - **The device console reads ONE byte and then drains `in_waiting`.**
   `ser.read(4096)` with a 200 ms timeout waits for the full count or the
   timeout — a latency floor on every reply, which paced every Tasmota command
@@ -116,12 +128,12 @@ and `bench_actions()` turns each state into a button on the status page.
   attempt per printer per run, so deleting a queue on purpose is not argued
   with ten seconds later.
 - **A console nobody is using is closed and its port given back**
-  (`watch_monitor`, 120 s). Nothing tells the agent that a tab was closed,
-  reloaded or crashed, so until this the port stayed held until the agent was
-  quit and every other program asking for it was refused. Never while a mark, a
-  print or a flash is running: those own the bench even when the console is
-  quiet. The touch is taken BEFORE the long poll waits, or a slow device would
-  look like an abandoned tab.
+  (`watch_monitor`, 120 s, per port). Nothing tells the agent that a tab was
+  closed, reloaded or crashed, so until this the port stayed held until the
+  agent was quit and every other program asking for it was refused. Never
+  while a mark or a print runs, or an esptool job on that port: those own the
+  device even when the console is quiet. The touch is taken BEFORE the long
+  poll waits, or a slow device would look like an abandoned tab.
 - **The status page is where actions live**, because this Tk draws no text and
   the window is a launcher for that page. A link opens, a command is shown to
   copy, and anything that CHANGES the machine is a form POST — never a link,
@@ -175,13 +187,15 @@ the page saw nothing wrong, and a run failed part-way with the agent's own 404
 2026-09-17). The operator's agent was five weeks old and nothing had said so.
 
 - **Bump `PROTOCOL_VERSION` in the same change that adds a route a page
-  depends on.** It is 4 now. Forgetting it is the whole defect above.
+  depends on.** It is 5 now. Forgetting it is the whole defect above.
 - **But the flashing bench tests the CAPABILITY, not the number**
   (`canProgram` in `web/src/flasher/benchAgent.ts`): `/hello` reports the
   esptool it carries, and that IS the question. Raising `NEEDS_PROTOCOL`
   instead would have been tidy and wrong — it would also condemn every agent
   that programs perfectly well, for a download nobody needs. A version number
-  is a proxy; ask the real question when `/hello` can answer it.
+  is a proxy; ask the real question when `/hello` can answer it. The same
+  goes for `per_port`, `esp_cancel` and `image_cache`: with an agent that
+  lacks `per_port` the page runs one station at a time.
 - **Anything a page must know before it commits an operator to something goes
   in `/hello`.** It is the one call made before work starts.
 

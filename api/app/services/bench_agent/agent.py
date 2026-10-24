@@ -40,18 +40,24 @@ The API, all on 127.0.0.1:19842:
     GET  /                      the status page — every fact and the log, as HTML
     GET  /hello                 what this is
     GET  /health                PING + STATUS, and whether the laser board is on USB
-    GET  /serial-ports          the USB serial nodes, and who holds each
+    GET  /serial-ports          the USB serial nodes, who holds each, and the USB
+                                serial number (a C6 reports its MAC there)
     GET  /lasers                the laser sources LightBurn is configured for
     POST /mark                  {name, lbrn2(base64), start, job_timeout} -> {job}
     GET  /printers              the print queues, and what each one reports
     POST /print                 {value, printer, size, dots, rotate, copies} -> {job}
     POST /esp                   {op: connect|erase|flash|reset, port, chip, baud, images, flash_config} -> {job}
-    POST /monitor/open          {port, baud, signals} — the device console, held here
-    GET  /monitor?since=<n>&wait=<s>  console lines after `n`; `wait` long-polls;
-                                `error` once the device left the bus
-    POST /monitor/write         {text}
-    POST /monitor/reset         pulse EN for a normal boot
-    POST /monitor/close
+                                ONE job per port, each in its own esptool process. A
+                                flash image is {address, name, sha256, data?}: without
+                                `data` it comes from this machine's image cache, and
+                                `missing` names the images the page has to send
+    POST /esp/cancel            {job} or {port} — kill that job's esptool; it ends "cancelled"
+    POST /monitor/open          {port, baud, signals} — ONE console per port, held here
+    GET  /monitor?port=<node>&since=<n>&wait=<s>  console lines after `n`; `wait`
+                                long-polls; `error` once the device left the bus
+    POST /monitor/write         {port, text}
+    POST /monitor/reset         {port} — pulse EN for a normal boot
+    POST /monitor/close         {port}
     GET  /job/<id>?since=<n>    lines since `n`, and the result once done
 """
 
@@ -755,12 +761,17 @@ def watch_monitor(agent: "Agent") -> None:
     while True:
         time.sleep(MONITOR_CHECK_S)
         try:
-            if not agent.monitor or agent.busy or agent.printing or agent.flashing:
+            if agent.busy or agent.printing:
                 continue
-            idle = time.time() - agent.monitor_touched
-            if idle > MONITOR_IDLE_S:
-                say(f"console untouched for {int(idle)}s — closing it and giving the port back")
-                agent.monitor_close()
+            # Per port: one station's quiet console is closed while another
+            # station's flash runs on its own port.
+            for port in list(agent.monitors):
+                if port in agent.esp_runs:
+                    continue
+                idle = time.time() - agent.monitor_touched.get(port, 0.0)
+                if idle > MONITOR_IDLE_S:
+                    say(f"console on {port} untouched for {int(idle)}s — closing it and giving the port back")
+                    agent.monitor_close({"port": port})
         except Exception as exc:  # noqa: BLE001 — a watcher must not die
             say(f"console watch: {exc}")
 
@@ -950,9 +961,12 @@ DEFAULT_ORIGINS = ("https://disfunction.cc",)
 # in the socket (bench, 2026-09-17). BUMP THIS whenever a route the page
 # depends on is added, and raise `NEEDS_PROTOCOL` in `web/src/flasher/benchAgent.ts`
 # in the same change.
-PROTOCOL_VERSION = 4
+# 5 = one console and one esptool job PER PORT, `POST /esp/cancel`, and the
+# image cache (decision 0099). The page asks `/hello` for `per_port` and
+# `esp_cancel` rather than for this number, for the reason given above.
+PROTOCOL_VERSION = 5
 # A job's lines and result are kept so a page that reloads mid-mark can still
-# read the outcome. Only the last few matter; a bench runs one at a time.
+# read the outcome. Only the last few finished ones matter (`_keep_job`).
 KEEP_JOBS = 20
 
 
@@ -1052,7 +1066,86 @@ def import_vendor() -> "str | None":
     except Exception as exc:  # noqa: BLE001
         say(f"esptool: cannot import the vendored copy: {exc}")
         return None
+    global VENDOR_PATH
+    VENDOR_PATH = str(cache)
     return str(getattr(esptool, "__version__", "?"))
+
+
+# Where the extracted vendor tree is, for the esptool PROCESSES (`EspRun._esptool`):
+# they import esptool from it through PYTHONPATH. None until `import_vendor` ran.
+VENDOR_PATH: "str | None" = None
+
+
+def image_cache_dir() -> Path:
+    """Firmware images this machine has been given, one file per SHA-256.
+
+    An image never changes under its asset id (`routers/flasher.py`
+    `patch_firmware`: "the bytes are the identity"), so the hash is a safe key.
+    Run 8994 spent 2.5 s fetching a 2.46 MB image from the platform and 0.9 s
+    handing it to this agent, on every unit. With the cache the page sends the
+    bytes once per machine.
+    """
+    base = (Path.home() / "Library" / "Caches" / "7Sigma Agent" if sys.platform == "darwin"
+            else Path(tempfile.gettempdir()) / "7sigma-agent")
+    out = base / "images"
+    out.mkdir(parents=True, exist_ok=True)
+    return out
+
+
+# Old images are dropped once the cache holds more than this. A V3 factory image
+# is 2.5 MB, so this is about 40 images: every version a bench runs in a month.
+IMAGE_CACHE_BYTES = 100 * 1024 * 1024
+
+
+def _prune_image_cache(keep: "set[str]") -> None:
+    """Drop the least recently used images beyond `IMAGE_CACHE_BYTES`, never `keep`."""
+    try:
+        files = sorted(image_cache_dir().glob("*.bin"), key=lambda p: p.stat().st_mtime, reverse=True)
+        total = 0
+        for f in files:
+            total += f.stat().st_size
+            if total > IMAGE_CACHE_BYTES and f.stem not in keep:
+                f.unlink()
+    except OSError:
+        pass  # a cache that cannot be tidied still works
+
+
+def resolve_images(images: list) -> "tuple[list, list]":
+    """The flash images as files on disk: `(paths, missing)`.
+
+    An image with `data` is checked against its `sha256` and stored; one
+    without `data` is read from the cache. `missing` names the hashes the cache
+    does not hold, so the page sends exactly those and asks again.
+    """
+    import hashlib
+    out, missing = [], []
+    for img in images:
+        sha = str(img.get("sha256") or "").lower()
+        if img.get("data"):
+            data = base64.b64decode(img["data"])
+            got = hashlib.sha256(data).hexdigest()
+            if sha and got != sha:
+                raise MarkError(f"{img.get('name', 'image')}: the bytes hash to {got[:12]}…, "
+                                f"the platform says {sha[:12]}… — not flashing them")
+            path = image_cache_dir() / f"{got}.bin"
+            if not path.is_file():
+                tmp = path.with_suffix(f".{os.getpid()}.{threading.get_ident()}.part")
+                tmp.write_bytes(data)
+                tmp.replace(path)   # atomic: a reader never sees half an image
+            out.append((img, path))
+        elif sha and (image_cache_dir() / f"{sha}.bin").is_file():
+            path = image_cache_dir() / f"{sha}.bin"
+            # Hashed again on every use: 5 ms for 2.5 MB, and a damaged file
+            # on disk must cost a re-send, not a unit.
+            if hashlib.sha256(path.read_bytes()).hexdigest() != sha:
+                path.unlink()
+                missing.append(sha)
+                continue
+            os.utime(path)          # recently used, for the pruning
+            out.append((img, path))
+        else:
+            missing.append(sha or str(img.get("name") or "?"))
+    return out, missing
 
 
 class _JobWriter:
@@ -1088,6 +1181,34 @@ class _JobWriter:
         self.buf = ""
 
 
+CANCELLED = "cancelled by the bench"
+
+
+def esptool_command(argv: list) -> list:
+    """The command line of one esptool process. A function so a test can put a
+    stand-in in its place; nothing else should."""
+    return [sys.executable, "-u", "-m", "esptool", *argv]
+
+
+def esptool_failure(lines: list) -> str:
+    """What went wrong, from esptool's own last words.
+
+    `python -m esptool` ends in `_main()`, which prints "A fatal error
+    occurred: …" (or "A serial exception error occurred: …") and exits non-zero.
+    The text after it — and the lines that continue it, such as the
+    "([Errno 2] could not open port …)" under a busy port — is the message the
+    ladder reads, exactly as `str(exc)` was when esptool ran in this process.
+    """
+    for i, line in enumerate(lines):
+        for prefix in ("A fatal error occurred:", "A serial exception error occurred:"):
+            if line.startswith(prefix):
+                rest = [line[len(prefix):].strip()] + [
+                    x for x in lines[i + 1:]
+                    if not x.startswith(("Note: This error", "For troubleshooting"))]
+                return " ".join(x for x in rest if x)
+    return ""
+
+
 class EspRun:
     """One ESP operation on one port: connect, erase, flash or reset.
 
@@ -1108,36 +1229,81 @@ class EspRun:
         self.boot_wait = float(body.get("boot_wait") or BOOT_WAIT_S)
         self.job_dir = job_dir
         self.saw_baud_change = False
+        # Set by `cancel()`. Every wait in the ladder is a wait ON this, so a
+        # cancel ends the job within one esptool kill, not after the BOOT rung.
+        self.cancelled = threading.Event()
+        self.proc: "subprocess.Popen | None" = None
+        self.proc_lock = threading.Lock()
+        # The flash images as files, from `resolve_images`; None = not yet.
+        self.resolved: "list | None" = None
 
-    # -- esptool as a library, with its stdout caught ---------------------
+    def cancel(self) -> None:
+        """Stop this job now: kill its esptool process and end the ladder.
+
+        A thread cannot be stopped from outside, which is why esptool runs in
+        a PROCESS (decision 0099): the kill closes the port with it, and the
+        next job on the port can start at once.
+        """
+        if self.cancelled.is_set():
+            return
+        self.cancelled.set()
+        self.job.add("app", "cancelled by the bench — stopping esptool")
+        with self.proc_lock:
+            proc = self.proc
+        if proc is not None and proc.poll() is None:
+            proc.kill()
+
+    def _check_cancel(self) -> None:
+        if self.cancelled.is_set():
+            raise MarkError(CANCELLED)
+
+    # -- esptool in its own process, its output read line by line -----------
 
     def _esptool(self, argv: list) -> list:
-        """Run one esptool command line; return its lines; raise on failure."""
-        import contextlib
-        import esptool
+        """Run one esptool command line; return its lines; raise on failure.
+
+        A PROCESS per call, not `esptool.main` in a thread (decision 0099).
+        In a thread, two stations' jobs swapped the one process-wide
+        `sys.stdout` under each other and mixed their logs, nothing could stop
+        a job, and a failed connect kept its port open for as long as the
+        exception lived. The process costs 0.06 s to start (measured
+        2026-10-24, macOS Python 3.9.6) and gives back all three.
+        """
+        import codecs
+        self._check_cancel()
         writer = _JobWriter(self.job)
         start = len(self.job.lines)
         self.job.add("app", "esptool " + " ".join(argv))
+        env = dict(os.environ)
+        env["PYTHONPATH"] = os.pathsep.join(x for x in (VENDOR_PATH, env.get("PYTHONPATH")) if x)
+        env["PYTHONUNBUFFERED"] = "1"
+        proc = subprocess.Popen(esptool_command(argv), stdout=subprocess.PIPE,
+                                stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL, env=env)
+        with self.proc_lock:
+            self.proc = proc
+        decoder = codecs.getincrementaldecoder("utf-8")("replace")
         try:
-            with contextlib.redirect_stdout(writer):
-                esptool.main(argv)
-        except SystemExit as exc:  # argparse, or esptool's own exit code
-            writer.flush()
-            code = exc.code
-            del exc
-            if code not in (0, None):
-                raise MarkError(f"esptool exited with {code}") from None
-        except Exception as exc:  # FatalError and friends
-            writer.flush()
-            # The MESSAGE only. Chaining or keeping `exc` keeps its traceback,
-            # and the traceback keeps esptool's loader and its open port alive
-            # — which is how the agent came to refuse its own port.
-            msg = str(exc)
-            del exc
-            raise MarkError(msg) from None
+            if self.cancelled.is_set():   # a cancel that came while it started
+                proc.kill()
+            assert proc.stdout is not None
+            while True:
+                chunk = proc.stdout.read1(4096)
+                if not chunk:
+                    break
+                writer.write(decoder.decode(chunk))
+            code = proc.wait()
         finally:
+            writer.write(decoder.decode(b"", final=True))
             writer.flush()
+            with self.proc_lock:
+                self.proc = None
+            if proc.poll() is None:
+                proc.kill()
+                proc.wait()
         lines = [l["text"] for l in self.job.lines[start:]]
+        self._check_cancel()
+        if code != 0:
+            raise MarkError(esptool_failure(lines) or f"esptool exited with {code}")
         if any("Changing baud rate" in l or "Changed." in l for l in lines):
             self.saw_baud_change = True
         return lines
@@ -1171,10 +1337,9 @@ class EspRun:
                 return why
             except MarkError as exc:
                 failed = str(exc)
-            # Outside the handler on purpose: inside it the exception — and
-            # through its traceback esptool's loader and the OPEN PORT — is
-            # still alive, and the next rung found the port busy with itself.
-            release_own_port(self.port, self.job)
+            # esptool ran in its own process, so its port closed when it
+            # exited: nothing of it is left in this one to release.
+            self._check_cancel()
             last = failed
             # A port that cannot be OPENED is not a rung: holding BOOT will
             # not make a node appear or free it from another process.
@@ -1187,6 +1352,7 @@ class EspRun:
         deadline = time.time() + self.boot_wait
         baud = self.fast
         for try_no in range(1, 10_000):
+            self._check_cancel()
             try:
                 self._pulse_enable()
                 self._esptool(self._common("no_reset", baud, after) + command)
@@ -1195,9 +1361,9 @@ class EspRun:
                 return why
             except (MarkError, OSError) as exc:
                 last = str(exc)
-            # Only reached on failure (success returned above). Outside the
-            # handler, so the failed attempt's port is really let go.
-            release_own_port(self.port, self.job)
+            # Only reached on failure (success returned above). The pulse's
+            # own port is closed by its `with`; esptool's died with its process.
+            self._check_cancel()
             if baud != ROM_BAUD and self.saw_baud_change:
                 baud = ROM_BAUD
                 self.job.add("app", f"this board will not hold {self.fast} baud — dropping to {ROM_BAUD}")
@@ -1205,7 +1371,9 @@ class EspRun:
                 raise MarkError(f"BOOT was not held within {int(self.boot_wait)}s ({last})")
             if try_no % 4 == 0:
                 self.job.add("app", f"still waiting for BOOT (attempt {try_no})")
-            time.sleep(1.2)
+            # On the cancel event, not `time.sleep`: "Stop waiting" ends the
+            # BOOT rung at once rather than after its 30 s.
+            self.cancelled.wait(1.2)
         raise MarkError(last or "could not connect")
 
     # -- the four operations ------------------------------------------------
@@ -1244,15 +1412,21 @@ class EspRun:
             argv = ["write_flash", "--flash_size", str(self.flash_config.get("size") or "detect"),
                     "--flash_mode", str(self.flash_config.get("mode") or "keep"),
                     "--flash_freq", str(self.flash_config.get("freq") or "keep"), "-z"]
-            for i, img in enumerate(self.images):
-                data = base64.b64decode(img["data"])
-                path = self.job_dir / f"fw-{self.job.id}-{i}.bin"
-                path.write_bytes(data)
-                self.job.add("app", f"image {img.get('name', path.name)} = {len(data)} bytes @ {img['address']}")
+            # `start_esp` resolved them already, so a missing image is refused
+            # before a job exists. Resolved again here only for a direct caller.
+            resolved = self.resolved
+            if resolved is None:
+                resolved, missing = resolve_images(self.images)
+                if missing:
+                    raise MarkError(f"flash: images not on this machine: {', '.join(missing)}")
+            for img, path in resolved:
+                self.job.add("app", f"image {img.get('name') or path.name} = {path.stat().st_size} bytes "
+                                    f"@ {img['address']}" + ("" if img.get("data") else " (from this machine's cache)"))
                 argv += [str(img["address"]), str(path)]
             mode = self._connect_ladder(argv, "hard_reset")
             return {"connect_mode": mode}
         if self.op == "reset":
+            self._check_cancel()
             with open_port(self.port, ROM_BAUD, 0.1, self.job) as s:
                 s.dtr = False   # IO0 high: a normal boot
                 s.rts = True    # EN low
@@ -1404,14 +1578,25 @@ class Agent:
         # health() reports it as such — a label must not make the laser look
         # busy, and the two hardware pieces are independent.
         self.printing = False
-        # Programming holds a serial port for a minute; one at a time, like a mark.
-        self.flashing = False
-        # When the page last touched the console. A held port that nobody is
+        # The esptool job on each port. ONE per port and as many ports as the
+        # bench has stations (decision 0099): one job for the whole agent was
+        # the reason a second station failed with "the agent is already
+        # programming a device" (runs 8957, 8958, 8968).
+        self.esp_runs: dict[str, EspRun] = {}
+        # When the page last touched each console. A held port that nobody is
         # using is the thing this timestamp exists to end: nothing tells the
         # agent a tab was closed, and until this it kept the port until quit.
-        self.monitor_touched = 0.0
-        # The console port, held open between steps for the whole dialog phase.
-        self.monitor: Monitor | None = None
+        self.monitor_touched: dict[str, float] = {}
+        # The device consoles, by port, each held open between steps for the
+        # whole dialog phase of its run. One slot for the whole agent let one
+        # station's open close another's console (runs 8964 and 8966).
+        self.monitors: dict[str, Monitor] = {}
+        # Ports whose console is being opened right now. `open_port` may wait
+        # 5 s for a C6 to come back, and that wait must not hold `self.lock`
+        # against every other station.
+        self.opening: "set[str]" = set()
+        # Ports whose console was closed while it was still opening.
+        self.close_wanted: "set[str]" = set()
         self.esptool_version: str | None = None
         self.lock = threading.Lock()
         # One health probe at a time, and its answer kept. Two probes would try
@@ -1473,6 +1658,16 @@ class Agent:
             self.last_health, self.last_health_at = out, time.time()
             return out
 
+    def _keep_job(self, job: "Job") -> None:
+        """Add a job, and forget the oldest FINISHED ones beyond `KEEP_JOBS`.
+        Call with `self.lock` held. A running job is never forgotten: with four
+        stations, one slow flash outlives twenty other jobs, and its page then
+        read "no such job" while the agent went on writing (review, 2026-10-24)."""
+        self.jobs[job.id] = job
+        done = [i for i in sorted(self.jobs) if self.jobs[i].done]
+        for old in done[:max(0, len(self.jobs) - KEEP_JOBS)]:
+            del self.jobs[old]
+
     def start_mark(self, body: dict) -> dict:
         with self.lock:
             if self.busy:
@@ -1486,9 +1681,7 @@ class Agent:
                 return {"error": f"no usable lbrn2 in the request: {exc}"}
             self.next_id += 1
             job = Job(self.next_id)
-            self.jobs[job.id] = job
-            for old in sorted(self.jobs)[:-KEEP_JOBS]:
-                del self.jobs[old]
+            self._keep_job(job)
             self.busy = True
 
         name = str(body.get("name") or "job")
@@ -1590,16 +1783,34 @@ class Agent:
                 return {"error": "the agent is already printing"}
             self.next_id += 1
             job = Job(self.next_id)
-            self.jobs[job.id] = job
-            for old in sorted(self.jobs)[:-KEEP_JOBS]:
-                del self.jobs[old]
+            self._keep_job(job)
             self.printing = True
         threading.Thread(target=self._print, args=(
             job, pdf, value, queue, size, max(1, min(20, int(body.get("copies") or 1))),
             float(body.get("job_timeout", 120))), daemon=True).start()
         return {"job": job.id}
 
-    # -- the device console, so the browser needs no serial at all ----------
+    # -- the device consoles, so the browser needs no serial at all ---------
+    #
+    # ONE console PER PORT (decision 0099). Every route names its port, and a
+    # call for a port with no open console fails: before this the routes named
+    # none, so whichever console was open took the call — one station's
+    # commands could reach the unit in another station's socket.
+
+    def _console(self, port: str) -> "tuple[Monitor | None, str]":
+        """The console a call means, and its port.
+
+        A call without a port comes from a page older than this agent, which
+        ran one station. It gets the one open console, and nothing when
+        there are several — guessing which unit it meant is the defect.
+        """
+        with self.lock:
+            if port:
+                return self.monitors.get(port), port
+            if len(self.monitors) == 1:
+                only = next(iter(self.monitors))
+                return self.monitors[only], only
+        return None, ""
 
     def monitor_open(self, body: dict) -> dict:
         port = str(body.get("port") or "")
@@ -1608,40 +1819,65 @@ class Agent:
         if not self.esptool_version:
             return {"error": "this agent has no pyserial — vendor.zip is missing or broken"}
         with self.lock:
-            if self.monitor:
-                self.monitor.close()
-                self.monitor = None
+            if port in self.esp_runs:
+                return {"error": f"{port} is being programmed — its console opens when that job ends"}
+            if port in self.opening:
+                return {"error": f"the console on {port} is already being opened"}
+            old = self.monitors.pop(port, None)
+            self.opening.add(port)
+            self.close_wanted.discard(port)
+        # Outside the lock: closing joins a reader thread and opening may wait
+        # for a C6 to come back, and neither may stall the other stations.
+        try:
+            if old:
+                old.close()
             release_own_port(port)
             held = "" if _held_by_me(port) else _holders([port]).get(port, "")
             if held:
                 return {"error": f"{port} is held by {held} — close it there first"}
             try:
-                self.monitor = Monitor(port, int(body.get("baud") or 115200), body.get("signals"))
+                m = Monitor(port, int(body.get("baud") or 115200), body.get("signals"))
             except Exception as exc:  # noqa: BLE001
                 return {"error": f"could not open {port}: {exc}"}
-        self.monitor_touched = time.time()
+            # The lock was let go for the open, so ask again: an esptool job
+            # that started meanwhile owns the port, and a close that came
+            # meanwhile meant this console.
+            with self.lock:
+                refused = ("being programmed" if port in self.esp_runs
+                           else "closed while it opened" if port in self.close_wanted else "")
+                self.close_wanted.discard(port)
+                if not refused:
+                    self.monitors[port] = m
+                    self.monitor_touched[port] = time.time()
+            if refused:
+                m.close()
+                return {"error": f"the console on {port} was {refused}"}
+        finally:
+            with self.lock:
+                self.opening.discard(port)
         say(f"monitor open on {port} @ {body.get('baud')}")
         return {"open": True, "port": port}
 
-    def monitor_lines(self, since: int, wait: float = 0.0) -> dict:
-        m = self.monitor
+    def monitor_lines(self, port: str, since: int, wait: float = 0.0) -> dict:
+        m, port = self._console(port)
         if not m:
             return {"open": False, "seen": since, "lines": []}
         # Before the wait, not after: a long poll that is still out IS the page
         # holding the console, and timing it from the answer would make a slow
         # device look like an abandoned tab.
-        self.monitor_touched = time.time()
+        self.monitor_touched[port] = time.time()
         seen, lines = m.since(since, wait)
-        out = {"open": True, "seen": seen, "lines": lines}
+        out = {"open": True, "seen": seen, "lines": lines, "port": port}
         if m.error:
             out["error"] = m.error   # the device left the bus: the page tells the engine
         return out
 
     def monitor_write(self, body: dict) -> dict:
-        m = self.monitor
+        m, port = self._console(str(body.get("port") or ""))
         if not m:
-            return {"error": "the monitor is not open"}
-        self.monitor_touched = time.time()
+            return {"error": "the monitor is not open"
+                             + (f" on {body.get('port')}" if body.get("port") else "")}
+        self.monitor_touched[port] = time.time()
         try:
             m.write(str(body.get("text") or ""))
         except Exception as exc:  # noqa: BLE001
@@ -1649,45 +1885,120 @@ class Agent:
         return {"ok": True}
 
     def monitor_reset(self, body: dict) -> dict:
-        m = self.monitor
+        m, port = self._console(str(body.get("port") or ""))
         if not m:
-            return {"error": "the monitor is not open"}
-        self.monitor_touched = time.time()
+            return {"error": "the monitor is not open"
+                             + (f" on {body.get('port')}" if body.get("port") else "")}
+        self.monitor_touched[port] = time.time()
         try:
             m.reset()
         except Exception as exc:  # noqa: BLE001
             return {"error": f"reset failed: {exc}"}
         return {"ok": True}
 
-    def monitor_close(self) -> dict:
+    def monitor_close(self, body: "dict | None" = None) -> dict:
+        port = str((body or {}).get("port") or "")
         with self.lock:
-            if self.monitor:
-                self.monitor.close()
-                self.monitor = None
-                say("monitor closed")
+            if not port and len(self.monitors) == 1:
+                port = next(iter(self.monitors))   # a page from before per-port consoles
+            m = self.monitors.pop(port, None) if port else None
+            self.monitor_touched.pop(port, None)
+            if port in self.opening:
+                self.close_wanted.add(port)        # `monitor_open` drops it when done
+        if m:
+            m.close()
+            say(f"monitor closed on {port}")
         return {"ok": True}
 
+    # -- esptool, one job per port ------------------------------------------
+
     def start_esp(self, body: dict) -> dict:
-        """Connect to, erase, flash or reset an ESP on one of this machine's ports."""
+        """Connect to, erase, flash or reset an ESP on one of this machine's ports.
+
+        One job per PORT: a second job on the same port is refused, and a job
+        on another port runs beside it (decision 0099).
+        """
         if not self.esptool_version:
             return {"error": "this agent has no esptool — vendor.zip is missing or broken (see its log)"}
+        port = str(body.get("port") or "")
+        if not port:
+            return {"error": "no port: assign this station's socket first"}
+        resolved = None
+        if str(body.get("op") or "") == "flash":
+            # Before a job exists, so the page hears `missing` in the answer,
+            # sends exactly those images, and asks again.
+            try:
+                resolved, missing = resolve_images(list(body.get("images") or []))
+            except (MarkError, OSError, ValueError) as exc:
+                return {"error": str(exc)}
+            if missing:
+                return {"error": "these images are not on this machine yet", "missing": missing}
         with self.lock:
-            if self.flashing:
-                return {"error": "the agent is already programming a device"}
+            if port in self.esp_runs:
+                return {"error": f"the agent is already programming the device on {port}"}
+            if port in self.opening:
+                return {"error": f"a console is opening on {port} — close it before programming"}
             self.next_id += 1
             job = Job(self.next_id)
-            self.jobs[job.id] = job
-            for old in sorted(self.jobs)[:-KEEP_JOBS]:
-                del self.jobs[old]
-            self.flashing = True
-        threading.Thread(target=self._esp, args=(job, body), daemon=True).start()
+            try:
+                run = EspRun(job, body, self.job_dir)
+            except (TypeError, ValueError) as exc:
+                return {"error": f"bad request: {exc}"}
+            run.resolved = resolved
+            self._keep_job(job)
+            self.esp_runs[port] = run
+            # The console on this port talks to the same device, and esptool
+            # needs the port to itself. The page closes it first; a tab that
+            # did not (a stale one, an older page) must not leave two handles.
+            stale = self.monitors.pop(port, None)
+            self.monitor_touched.pop(port, None)
+        if stale:
+            stale.close()
+            job.add("app", f"closed the console on {port} so esptool can use the port")
+        if resolved:
+            _prune_image_cache({str(i.get("sha256") or "").lower() for i, _ in resolved})
+        threading.Thread(target=self._esp, args=(job, run, port), daemon=True).start()
         return {"job": job.id}
 
-    def _esp(self, job: Job, body: dict) -> None:
+    def cancel_esp(self, body: dict) -> dict:
+        """Stop an esptool job: Abort in a run, Abort during Erase, Stop waiting.
+
+        Answers once the job has ended (within 3 s), so the page can start the
+        next job on the port at once. Cancelling a job that already ended is
+        not an error: the page cannot know which one it raced.
+        """
+        job_id, port = body.get("job"), str(body.get("port") or "")
+        with self.lock:
+            if job_id not in (None, ""):
+                try:
+                    wanted = int(job_id)
+                except (TypeError, ValueError):
+                    return {"error": f"no such job {job_id!r}"}
+                run = next((r for r in self.esp_runs.values() if r.job.id == wanted), None)
+            else:
+                run = self.esp_runs.get(port)
+        if run is None:
+            return {"ok": True, "running": False}
+        run.cancel()
+        deadline = time.time() + 3
+        while not run.job.done and time.time() < deadline:
+            time.sleep(0.05)
+        say(f"esp {run.op} on {run.port}: cancelled")
+        return {"ok": True, "running": True, "job": run.job.id, "done": run.job.done}
+
+    def child_pids(self) -> "set[int]":
+        """The esptool processes this agent is running, so the port list calls
+        their ports held by the agent and not by "Python"."""
+        with self.lock:
+            runs = list(self.esp_runs.values())
+        procs = [r.proc for r in runs]   # read once: `_esptool` clears it
+        return {proc.pid for proc in procs if proc is not None}
+
+    def _esp(self, job: Job, run: EspRun, port: str) -> None:
         result: dict = {"status": "fail"}
         t0 = time.time()
         try:
-            info = EspRun(job, body, self.job_dir).run()
+            info = run.run()
             result = {"status": "pass", "info": info, "job_seconds": time.time() - t0}
         except (MarkError, OSError) as exc:
             result["error"] = str(exc)
@@ -1696,11 +2007,16 @@ class Agent:
             result["error"] = f"{type(exc).__name__}: {exc}"
             job.add("err", result["error"])
         finally:
+            if run.cancelled.is_set():
+                result = {"status": "fail", "error": CANCELLED, "cancelled": True}
+            # The port is free BEFORE the job reads as done: a page that sees
+            # `done` starts the next job on this port at once.
             with self.lock:
-                self.flashing = False
+                if self.esp_runs.get(port) is run:
+                    del self.esp_runs[port]
             job.result = result
             job.done = True
-            say(f"esp {body.get('op')} on {body.get('port')}: {result['status']}"
+            say(f"esp {run.op} on {port}: {result['status']}"
                 + (f" — {result.get('error')}" if result.get("error") else ""))
 
     def _print(self, job: Job, pdf: bytes, value: str, queue: str, size: str,
@@ -1873,7 +2189,13 @@ class Handler(BaseHTTPRequestHandler):
             return self.reply(200, {"agent": "7sigma-agent",
                                     "protocol": PROTOCOL_VERSION,
                                     "lightburn_host": self.agent.lb_host,
-                                    "esptool": self.agent.esptool_version}, origin)
+                                    "esptool": self.agent.esptool_version,
+                                    # What the page asks before it lets two
+                                    # stations run at once, and before it
+                                    # offers a cancel (decision 0099).
+                                    "per_port": True,
+                                    "esp_cancel": True,
+                                    "image_cache": True}, origin)
         if url.path == "/health":
             return self.reply(200, self.agent.health(), origin)
         if url.path == "/lasers":
@@ -1884,9 +2206,10 @@ class Handler(BaseHTTPRequestHandler):
             # Held for up to `wait` seconds. Capped well under any browser or
             # proxy idle timeout, and the page simply asks again.
             wait = max(0.0, min(20.0, float((q.get("wait") or ["0"])[0])))
-            return self.reply(200, self.agent.monitor_lines(since, wait), origin)
+            port = (q.get("port") or [""])[0]
+            return self.reply(200, self.agent.monitor_lines(port, since, wait), origin)
         if url.path == "/serial-ports":
-            return self.reply(200, {"ports": list_serial_ports()}, origin)
+            return self.reply(200, {"ports": list_serial_ports(self.agent.child_pids())}, origin)
         if url.path == "/ready":
             port_no = self.server.server_address[1]
             facts = bench_facts(self.agent, port_no)
@@ -1919,7 +2242,7 @@ class Handler(BaseHTTPRequestHandler):
         if origin is None:
             return self.refuse()
         path = urlparse(self.path).path
-        if path not in ("/mark", "/print", "/esp", "/monitor/open", "/monitor/write",
+        if path not in ("/mark", "/print", "/esp", "/esp/cancel", "/monitor/open", "/monitor/write",
                         "/monitor/reset", "/monitor/close",
                         "/printer/setup", "/printer/remove", "/lightburn/open"):
             return self.reply(404, {"error": "no such path"}, origin)
@@ -1944,9 +2267,10 @@ class Handler(BaseHTTPRequestHandler):
             printer_snapshot(self.agent)
         elif path.startswith("/monitor/"):
             verb = path.rsplit("/", 1)[1]
-            out = ({"open": self.agent.monitor_open, "write": self.agent.monitor_write,
-                    "reset": self.agent.monitor_reset}[verb](body)
-                   if verb != "close" else self.agent.monitor_close())
+            out = {"open": self.agent.monitor_open, "write": self.agent.monitor_write,
+                   "reset": self.agent.monitor_reset, "close": self.agent.monitor_close}[verb](body)
+        elif path == "/esp/cancel":
+            out = self.agent.cancel_esp(body)
         else:
             out = (self.agent.start_mark(body) if path == "/mark"
                    else self.agent.start_print(body) if path == "/print"
@@ -1986,20 +2310,29 @@ def _holders(nodes: list[str]) -> dict[str, str]:
     page can open one port, ask who holds what, and learn which socket the
     browser just opened — a correlation neither side can make on its own.
     """
+    return {node: command for node, (_pid, command) in _holder_pids(nodes).items()}
+
+
+def _holder_pids(nodes: list[str]) -> "dict[str, tuple[int, str]]":
+    """`_holders` with the process id: {node: (pid, command)}. ONE lsof for
+    every node, so the port list costs the same with four stations as with
+    one."""
     if not nodes:
         return {}
     try:
-        out = subprocess.run(["lsof", "-F", "cn", "--", *nodes],
+        out = subprocess.run(["lsof", "-F", "pcn", "--", *nodes],
                              capture_output=True, text=True, timeout=10).stdout
     except (OSError, subprocess.SubprocessError):
         return {}
-    held: dict[str, str] = {}
-    command = ""
+    held: dict[str, tuple[int, str]] = {}
+    pid, command = 0, ""
     for line in out.splitlines():
-        if line.startswith("c"):
+        if line.startswith("p"):
+            pid = int(line[1:] or 0)
+        elif line.startswith("c"):
             command = line[1:]
         elif line.startswith("n"):
-            held.setdefault(line[1:], command)
+            held.setdefault(line[1:], (pid, command))
     return held
 
 
@@ -2059,10 +2392,44 @@ def list_lasers() -> "list[str]":
     return []
 
 
-def list_serial_ports() -> list[dict]:
+def usb_serial_numbers(nodes: "list[str]") -> "dict[str, str]":
+    """{node: USB serial number}, from the IOKit registry through pyserial.
+
+    Reading the registry opens no port. An ESP32-C6 on USB-Serial/JTAG reports
+    its MAC there (`98:A3:16:BE:DA:EC`, read 2026-10-24), so the page can tell
+    a NEW unit in a socket from the same unit coming back after its own reset —
+    which a C6 does several times in every run. A CH340 reports none, and a
+    bridge never re-enumerates, so "the node went away" is enough there.
+    """
+    key = tuple(sorted(nodes))
+    if _SERIALS["nodes"] == key and time.time() - _SERIALS["at"] < SERIALS_REFRESH_S:
+        return _SERIALS["map"]
+    try:
+        from serial.tools import list_ports
+        found = {p.device: str(p.serial_number or "") for p in list_ports.comports()}
+    except Exception:  # noqa: BLE001 — no vendor, or not macOS: just no numbers
+        found = {}
+    _SERIALS.update(nodes=key, at=time.time(), map=found)
+    return found
+
+
+# The registry is read again only when the set of nodes changes, or after this
+# long. pyserial's macOS lookup never releases the CFString key it makes for
+# every property it reads (`list_ports_osx.get_string_property`), so reading
+# it on every 2 s port poll would grow the agent all day.
+SERIALS_REFRESH_S = 60
+_SERIALS: dict = {"nodes": None, "at": 0.0, "map": {}}
+
+
+def list_serial_ports(own_pids: "set[int] | None" = None) -> list[dict]:
     nodes = sorted({n for pattern in SERIAL_GLOBS for n in glob.glob(pattern)})
-    held = _holders(nodes)
-    return [{"device": n, "held_by": ("7Sigma agent" if _held_by_me(n) else held.get(n, ""))}
+    held = _holder_pids(nodes)
+    mine = {os.getpid()} | set(own_pids or ())
+    serials = usb_serial_numbers(nodes)
+    return [{"device": n,
+             "held_by": ("7Sigma agent" if n in held and held[n][0] in mine
+                         else held.get(n, (0, ""))[1]),
+             "serial_number": serials.get(n, "")}
             for n in nodes]
 
 
@@ -2291,8 +2658,13 @@ def bench_facts(agent: "Agent", port: int) -> "list[tuple[str, str, str]]":
                                         "waiting for a click, or the licence is Core — "
                                         "Core cannot drive a galvo."))
 
+    with agent.lock:
+        flashing, consoles = sorted(agent.esp_runs), sorted(agent.monitors)
     out.append(("Programming", "ok" if agent.esptool_version else "warn",
-                f"esptool {agent.esptool_version} ready" if agent.esptool_version
+                (f"esptool {agent.esptool_version} ready"
+                 + (f" — programming on {', '.join(flashing)}" if flashing else "")
+                 + (f" — console open on {', '.join(consoles)}" if consoles else ""))
+                if agent.esptool_version
                 else "no esptool — vendor.zip missing beside the agent"))
 
     usb = laser_usb()

@@ -148,14 +148,21 @@ export class RunClient {
           this.done = true;
           this.events.onDone("aborted", "connection to the engine lost", {});
         }
+        // The run is over, however it ended. An esptool job still running on
+        // the agent would go on programming a unit the record calls finished
+        // (work list row 51), so it is stopped here too.
+        void this.station.cancelEsp();
         void this.station.cleanup();
         resolve();
       };
     });
   }
 
+  /** Abort reaches the engine AND the agent. The engine alone ended the run
+   *  while the agent went on erasing or writing (work list row 51). */
   abort() {
     if (this.ws?.readyState === WebSocket.OPEN) this.ws.send(JSON.stringify({ t: "abort" }));
+    void this.station.cancelEsp();
   }
 
   private send(msg: Record<string, unknown>) {

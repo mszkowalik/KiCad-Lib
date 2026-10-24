@@ -65,6 +65,13 @@ Full design: `docs/flasher/design.md` (§15 = file sets, §14 = the bundle model
   expected key passed, so a pulled device looked like a run still going.
   `tests/flasher/test_device_lost.py`.
 
+- **A command ECHO is never a reply** (`protocol.is_echo`, `wait_for`).
+  Tasmota repeats each command as `CMD: <command>`, and `parse_line` takes the
+  text after the first `=` of any line, so a command with an `=` in it matched
+  its own key: run 8980's `Br` download held `SOLIS_HYBRID.json` after its
+  `=`, "hy-BR-id" matched `Br`, and the size check read `None`. A `pattern`
+  still sees the echo. `tests/flasher/test_command_echo.py`.
+
 - **"Which devices did this batch BUILD?" and "which did it PROGRAM?" are two
   questions with two answers.** Built is `DeviceUnit.production_run_id`, set
   once from the `produced` event and never moved by a later pass — it carries
@@ -93,7 +100,9 @@ Full design: `docs/flasher/design.md` (§15 = file sets, §14 = the bundle model
   `esp_connect`, `erase`, `flash` and `esp_reset` are relayed by
   `Station.agentEsp` to `POST /esp`, which runs Python's esptool against the
   station's socket; the device console is `POST /monitor/open` plus a poll of
-  `GET /monitor?since=`. `connect_mode` comes back prefixed `agent:`. The PAGE
+  `GET /monitor?since=`, both per port so stations run side by side
+  ([0099](../../../../docs/decisions/0099-the-agent-serves-each-port-on-its-own.md)).
+  `connect_mode` comes back prefixed `agent:`. The PAGE
   still fetches the firmware and passes the bytes on loopback, because the
   agent holds no token. **There is no browser fallback** — `station.ts` lost
   948 lines, esptool-js included — so a bench with no agent cannot program,

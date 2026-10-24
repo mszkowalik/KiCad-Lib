@@ -12,16 +12,22 @@ import {
   type FlasherMeta,
 } from "../../api";
 import {
-  listSerialPorts,
   runMarkJob,
   runPrintJob,
+  watchSerialPorts,
   type AgentPort,
   type AgentPrinter,
   type AgentRoll,
 } from "../../flasher/benchAgent";
 import { RunClient, type BenchNotice, type RunSpec } from "../../flasher/runClient";
+import { playVerdict } from "../../flasher/sound";
 import {
+  CANCELLED,
   Station,
+  canClaimSole,
+  claimSole,
+  releaseSole,
+  watchSole,
   readStationName,
   readStationSocket,
   writeStationName,
@@ -72,6 +78,17 @@ export interface StationSlotProps {
    *  device first. A marking run also waits until the device has said who it
    *  is and the machines it needs are ready. */
   autoStart?: boolean;
+  /** Play the PASS or FAIL sound when the selected steps have all ended
+   *  (user request 2026-10-24). On by default; the page has the switch. */
+  sound?: boolean;
+  /** The agent serves one station at a time — it is from before per-port
+   *  consoles (decision 0099). A press then claims the bench (`claimSole`),
+   *  and an automatic start waits until the claim is free. */
+  oneAtATime?: boolean;
+  /** Another station is working under that rule: the buttons say so. */
+  othersBusy?: boolean;
+  /** This station started or stopped working, for the rule above. */
+  onBusyChange?: (busy: boolean) => void;
   /** Marking only: what the bench agent reports, polled by the page. The
    *  station shows each machine above its own button, because "the laser is
    *  not answering" and "the printer has no roll" are fixed in two different
@@ -110,6 +127,13 @@ type PortState = "none" | "empty" | "waiting" | "working" | "gone";
 const MAX_SLOTS = 4;
 
 const ERASE_ESTIMATE_MS = 6000;
+
+/** How long a socket must stay empty, with the station idle, before the SAME
+ *  unit coming back counts as a new arrival. A C6 on USB-Serial/JTAG leaves
+ *  the bus for 2 to 3 s on each of its own resets (runs 8981, 8994), and one
+ *  that reset after its run must not start that run again. A different unit
+ *  needs no wait: its USB serial number (its MAC) says so at once. */
+const REPLUG_GAP_MS = 6000;
 
 /** What a serial may be, for anything that goes ON a part (user decision
  *  2026-09-17). The same bounds the engine enforces in `_identity_value`: the
@@ -213,27 +237,39 @@ export default function BenchStation(props: StationSlotProps) {
    *  any more — all serial work is the agent's (decision 0023). */
   const [agentPorts, setAgentPorts] = useState<AgentPort[] | null>(null);
   const [picking, setPicking] = useState(false);
+  /** Two counters, read off the agent's port list. `appeared` goes up every
+   *  time the socket's node comes back, the station's own resets included.
+   *  `arrival` goes up only for a NEW device: another USB serial number, or
+   *  the socket empty for a while with the station idle. The verdict clear
+   *  and the automatic start act once per ARRIVAL — acting on every
+   *  reappearance would run a C6 again after the reset that ends its own run.
+   *  The marking read acts once per appearance, since asking is harmless. */
+  const [appeared, setAppeared] = useState(0);
+  const [arrival, setArrival] = useState(0);
+  const presence = useRef<{ present: boolean; serial: string; gapSince: number | null }>(
+    { present: false, serial: "", gapSince: null },
+  );
+  const appearedRef = useRef(0);
+  /** Forget what was in the socket: it is another socket now. */
+  const resetPresence = () => {
+    presence.current = { present: false, serial: "", gapSince: null };
+    appearedRef.current = 0;
+  };
+  /** `busy` and `arrival` for callbacks that must read the latest value. */
+  const busyRef = useRef(false);
+  const arrivalRef = useRef(0);
+  /** The arrival the automatic start last acted on, or a press used up. */
+  const autoHandled = useRef(0);
+  /** Goes up when another station lets go of the bench (`releaseSole`). */
+  const [soleTick, setSoleTick] = useState(0);
+  useEffect(() => watchSole(() => setSoleTick((n) => n + 1)), []);
   /** Open by default: the log is what an operator watches during a run, and a
    *  fold they have to open every time is one they stop opening. Remembered
    *  per station once they close it. */
   const [logOpen, setLogOpen] = useStickyState<boolean>(`flasher.log-open.${nameKey}`, true);
-  useEffect(() => {
-    let alive = true;
-    const look = async () => {
-      try {
-        const ports = await listSerialPorts();
-        if (alive) setAgentPorts(ports);
-      } catch {
-        if (alive) setAgentPorts(null); // the agent is not running
-      }
-    };
-    void look();
-    const t = window.setInterval(() => void look(), 2000);
-    return () => {
-      alive = false;
-      window.clearInterval(t);
-    };
-  }, []);
+  // ONE poll for the whole page (`watchSerialPorts`): four stations asking on
+  // their own cost twenty lsof runs every two seconds on the bench machine.
+  useEffect(() => watchSerialPorts(setAgentPorts), []);
   /** The roll is the PROCEDURE's: its label step names it (decision 0076).
    *  This is the bench's override, for the rare day another roll is loaded —
    *  empty means "the procedure's". A new key, so a roll remembered under the
@@ -267,6 +303,8 @@ export default function BenchStation(props: StationSlotProps) {
   const modal = useModal(null, { active: !!prompt });
   const noticeModal = useModal(null, { active: !!notice });
   const clientRef = useRef<RunClient | null>(null);
+  /** Abort was pressed: what is running stops, and nothing after it starts. */
+  const stopRef = useRef(false);
   const logBox = useRef<HTMLDivElement>(null);
   /** Follow the tail only while the operator is already AT the tail. Read on
    *  every scroll rather than measured after the append, because by then the
@@ -328,10 +366,60 @@ export default function BenchStation(props: StationSlotProps) {
     [station, agentPorts],
   );
 
-  // A cable arriving or leaving is a change in the agent's list.
+  // A cable arriving or leaving is a change in the agent's list. While a run
+  // works the pill keeps saying so: a C6 leaves the bus on every reset of its
+  // run, and the pill flickering "socket empty" mid-run read as a fault.
   useEffect(() => {
-    syncPort();
+    syncPort(busyRef.current);
   }, [agentPorts, syncPort]);
+
+  // Is this a NEW device? See `appeared` and `arrival` above.
+  useEffect(() => {
+    if (!agentPorts) return; // the agent is not answering: no news either way
+    const node = station.socket;
+    const entry = node ? agentPorts.find((x) => x.device === node) : undefined;
+    const p = presence.current;
+    const now = Date.now();
+    if (!entry) {
+      p.present = false;
+      // A gap counts only while the station is idle. During a run the
+      // station's own resets take the node away, and that is not a removal.
+      if (busyRef.current) p.gapSince = null;
+      else p.gapSince ??= now;
+      return;
+    }
+    const serial = entry.serial_number ?? "";
+    // Still there, and still the same unit. A swap quicker than one poll
+    // shows only as another serial number.
+    if (p.present && (!serial || serial === p.serial)) return;
+    if (busyRef.current) {
+      // Nothing is an arrival while the station works on its unit: whatever
+      // the bus says meanwhile — a reset, a serial read differently in ROM
+      // mode — is the unit under the run. Counting it would start the run
+      // again the moment this one ends.
+      p.present = true;
+      if (serial) p.serial = serial;
+      appearedRef.current += 1;
+      setAppeared((n) => n + 1);
+      return;
+    }
+    const gap = p.gapSince === null ? null : now - p.gapSince;
+    // Does this unit leave the bus when it resets? The run's transport says
+    // so once a run has had one (a C6 on USB-Serial/JTAG does; a bridge stays
+    // on the bus whatever the chip does). Before that, a USB serial number is
+    // the hint: the C6 has one, a CH340 has none.
+    const resets = station.transport ? station.transport.reenumerates_on_reset : Boolean(serial);
+    const isNew =
+      appearedRef.current === 0 || // the first device this station has seen
+      (Boolean(serial) && Boolean(p.serial) && serial !== p.serial) ||
+      (gap !== null && gap >= (resets ? REPLUG_GAP_MS : 0));
+    p.present = true;
+    p.gapSince = null;
+    if (serial) p.serial = serial;
+    appearedRef.current += 1;
+    setAppeared((n) => n + 1);
+    if (isNew) setArrival((n) => n + 1);
+  }, [agentPorts, station]);
 
   // The station talks BEFORE a run too. RunClient wires this up when a run
   // starts, which left port adoption, re-acquisition and every open failure
@@ -398,6 +486,10 @@ export default function BenchStation(props: StationSlotProps) {
       setError(errorMessage(err));
       return;
     }
+    if (props.oneAtATime && !claimSole(props.index)) {
+      setError("Another station is working, and this bench agent runs one station at a time.");
+      return;
+    }
     setError(null);
     setHint(null);
     setStatus("busy");
@@ -420,10 +512,13 @@ export default function BenchStation(props: StationSlotProps) {
       const share = Math.min(1, (performance.now() - started) / ERASE_ESTIMATE_MS);
       setProgress(Math.round(share * 90));
     }, 100);
+    stopRef.current = false;
     try {
       // 115200: no baud change, so a marginal board cannot fall over on the
       // one step an erase does not need. See Station.espOpen.
       ({ mac, chip } = await station.espOpen("", 115200));
+      // Abort between the two agent jobs: there is no job to cancel then.
+      if (stopRef.current) throw new Error(CANCELLED);
       await station.espErase();
       setProgress(100);
       statusRef.current = "pass";
@@ -432,13 +527,19 @@ export default function BenchStation(props: StationSlotProps) {
       setStepLabel("flash erased");
     } catch (err) {
       const message = errorMessage(err);
-      statusRef.current = "fail";
+      // Abort during Erase stops esptool on the agent (work list row 51). The
+      // flash may be half erased, so the record keeps it — as aborted.
+      const stopped = message === CANCELLED;
+      statusRef.current = stopped ? "aborted" : "fail";
       errorRef.current = message;
-      setError(message);
-      setHint(hintFor(message));
-      setStatus("fail");
-      setStepLabel("erase failed");
+      if (!stopped) {
+        setError(message);
+        setHint(hintFor(message));
+      }
+      setStatus(stopped ? "aborted" : "fail");
+      setStepLabel(stopped ? "erase stopped" : "erase failed");
     } finally {
+      releaseSole(props.index);
       clearInterval(ticker);
       station.onEvent = record;
       await station.cleanup();
@@ -766,19 +867,45 @@ export default function BenchStation(props: StationSlotProps) {
       setError("Select the steps to run.");
       return "fail";
     }
-    setLog([]);
-    let st: SlotStatus = "pass";
-    for (const seg of segments) {
-      const skip = seg.markOps.length
-        ? [...MARK_OPS.filter((o) => !seg.markOps.includes(o)), ...skipRead]
-        : [];
-      st = await run(seg.versionId, skip);
-      if (st !== "pass") break;
+    if (props.oneAtATime && !claimSole(props.index)) {
+      setError("Another station is working, and this bench agent runs one station at a time.");
+      return "fail";
     }
+    setLog([]);
+    // Any press uses up this device's automatic start: a unit already run by
+    // hand must not run again because Automatic was ticked afterwards.
+    autoHandled.current = arrivalRef.current;
+    stopRef.current = false;
+    let st: SlotStatus = "pass";
+    try {
+      for (const seg of segments) {
+        const skip = seg.markOps.length
+          ? [...MARK_OPS.filter((o) => !seg.markOps.includes(o)), ...skipRead]
+          : [];
+        st = await run(seg.versionId, skip);
+        if (st !== "pass" || stopRef.current) break;
+      }
+    } finally {
+      releaseSole(props.index);
+    }
+    finished(st);
     return st;
   };
 
-  const abort = () => clientRef.current?.abort();
+  /** The end of a press, once EVERY selected step has ended: the PASS or the
+   *  FAIL sound (user request 2026-10-24). Not for an Abort — the operator
+   *  caused it and is looking at the station already. */
+  const finished = (st: SlotStatus) => {
+    if (props.sound !== false && (st === "pass" || st === "fail")) playVerdict(st);
+  };
+
+  /** Abort reaches the engine (a run) AND the agent's esptool (a run, or an
+   *  Erase, which is not a run) — work list row 51. */
+  const abort = () => {
+    stopRef.current = true;
+    clientRef.current?.abort();
+    void station.cancelEsp();
+  };
 
   const answerPrompt = (value: string) => {
     prompt?.resolve(value);
@@ -791,8 +918,19 @@ export default function BenchStation(props: StationSlotProps) {
   };
 
   const busy = status === "busy";
+  busyRef.current = busy;
+  arrivalRef.current = arrival;
   const devicePresent = portState === "waiting" || portState === "working";
-  const canRun = devicePresent && !busy && props.segments.length > 0;
+  // `othersBusy`: an agent from before per-port consoles serves one station at
+  // a time, so this one waits for the other (decision 0099).
+  const canRun = devicePresent && !busy && props.segments.length > 0 && !props.othersBusy;
+  // The page keeps which stations are working, for the rule above.
+  const busyReport = useRef(props.onBusyChange);
+  busyReport.current = props.onBusyChange;
+  useEffect(() => {
+    busyReport.current?.(busy);
+  }, [busy]);
+  useEffect(() => () => busyReport.current?.(false), []);
   /** The device answered a moment ago, so the run has nothing to wait for. The
    *  identity is still read inside the run, by the step after this one. */
   const skipRead = preread ? ["wait_boot"] : [];
@@ -864,27 +1002,23 @@ export default function BenchStation(props: StationSlotProps) {
             }`,
           };
 
-  // Start by itself when a device arrives, ONCE per device. The arm is dropped
-  // when the port goes live and only restored when it goes away again, so a
-  // finished part sitting in the fixture is not marked twice — the operator
-  // has to take it out, which they were going to do anyway.
-  // Once per device. Re-armed only when the port goes away, so a finished part
-  // sitting in the fixture is not re-read every render.
-  const readArmed = useRef(true);
+  // The marking read, once per APPEARANCE of the device: asking it who it is
+  // costs nothing, and a unit that went away and came back may be another.
+  // Cleared while the socket is empty, so no serial is shown for nothing.
+  const readHandled = useRef(0);
   useEffect(() => {
     if (!marking || !firstMarks) return;
     if (portState !== "waiting") {
       if (portState === "none" || portState === "gone" || portState === "empty") {
-        readArmed.current = true;
         setPreread(null);
         setPrereadError(null);
       }
       return;
     }
-    if (!readArmed.current || busy || !markVersion) return;
-    readArmed.current = false;
+    if (readHandled.current === appeared || busy || !markVersion) return;
+    readHandled.current = appeared;
     void preRead();
-  }, [marking, firstMarks, portState, busy, markVersion, preRead]);
+  }, [marking, firstMarks, portState, busy, markVersion, preRead, appeared]);
 
   /** A VERDICT BELONGS TO THE DEVICE THAT EARNED IT (user report 2026-09-17).
    *
@@ -894,28 +1028,20 @@ export default function BenchStation(props: StationSlotProps) {
    *
    *  It is cleared when the NEXT device ARRIVES, not when the finished one is
    *  taken out, so the operator still reads PASS with the part in their hand.
-   *  Armed on removal, exactly like the marking read and the automatic start
-   *  above — and for the same reason those are: the port going away is the only
-   *  event that says a device is finished with.
+   *  An arrival is a new USB serial number or a socket left empty for a while
+   *  (see `arrival`): a C6 leaves the bus on the resets of its own run, and
+   *  counting those cleared every C6 verdict the moment its run ended.
    *
    *  The LOG is not cleared. It is the station's record and the failure it
    *  explains is often read after the part is out; a separator line says where
    *  one device ends and the next begins. The run LINK goes, because "run #N"
    *  beside a fresh device reads as this device's run.
    */
-  const verdictArmed = useRef(false);
+  // 1, not 0: the first device a station sees has no verdict before it.
+  const verdictHandled = useRef(1);
   useEffect(() => {
-    if (portState !== "waiting") {
-      // Any state where the socket is not holding a device re-arms it. A run
-      // reports `working`, which deliberately does not.
-      if (portState === "none" || portState === "gone" || portState === "empty") {
-        verdictArmed.current = true;
-      }
-      return;
-    }
-    if (!verdictArmed.current || busy) return;
-    verdictArmed.current = false;
-    // Nothing to clear on a station that has not run: this is the first device.
+    if (arrival <= verdictHandled.current || busy) return;
+    verdictHandled.current = arrival;
     setStatus((cur) => (cur === "busy" ? cur : "ready"));
     setStepLabel("idle");
     setStepNo(null);
@@ -927,9 +1053,8 @@ export default function BenchStation(props: StationSlotProps) {
     setRunId(null);
     setTyped("");
     pushLog("app", "— a new device is in the socket —");
-  }, [portState, busy, pushLog]);
+  }, [arrival, busy, pushLog]);
 
-  const autoArmed = useRef(true);
   // Nothing starts until the device has said who it is (user decision
   // 2026-09-17): a press that cannot name the part is not worth the label.
   const identified = !marking || !firstMarks || Boolean(preread);
@@ -943,19 +1068,24 @@ export default function BenchStation(props: StationSlotProps) {
   // ONE switch for the bench: it runs the selected steps, and a marking press
   // waits for the serial and the machines it needs.
   const autoOn = Boolean(props.autoStart) && (!marking || (identified && machinesReady));
+  // Start by itself ONCE per ARRIVAL. The arrival count goes up for a new unit
+  // only (see `arrival`), so a finished part left in the fixture is not run
+  // again, a C6 coming back from the reset at the end of its run is not run
+  // again, and a failing unit is never retried in a loop. Any press uses the
+  // arrival up as well (`runPlan`). Until 2026-10-24 the arm returned only
+  // when the station lost its socket, so Automatic ran the first device of a
+  // session and no other (user report).
   useEffect(() => {
-    if (!autoOn) return;
-    if (portState !== "waiting") {
-      if (portState === "none" || portState === "gone") autoArmed.current = true;
-      return;
-    }
-    if (!autoArmed.current || busy || !canRun) return;
-    autoArmed.current = false;
+    if (!autoOn || arrival === autoHandled.current) return;
+    if (portState !== "waiting" || busy || !canRun) return;
+    // Another station holds the bench: wait, and fire when it lets go.
+    if (props.oneAtATime && !canClaimSole(props.index)) return;
+    autoHandled.current = arrival;
     void runPlan();
     // `runPlan` is stable for the life of the slot; listing it would re-fire
     // this on every render that redefines it.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [autoOn, portState, busy, canRun]);
+  }, [autoOn, portState, busy, canRun, arrival, props.oneAtATime, props.othersBusy, soleTick]);
 
   /** The one marking button, read or typed. Typed runs no procedure, so it
    *  engraves and then prints by the bench agent alone, unrecorded. */
@@ -964,14 +1094,16 @@ export default function BenchStation(props: StationSlotProps) {
       await runPlan();
       return;
     }
-    if (wantsLaser && !(await markTyped())) return;
-    if (wantsLabel) await printTyped();
+    let ok = true;
+    if (wantsLaser) ok = await markTyped();
+    if (ok && wantsLabel) ok = await printTyped();
+    finished(ok ? "pass" : "fail");
   };
 
   /** Redo one marking action — a spoiled label, a faint engraving. */
   const again = async (op: MarkOp) => {
     if (manual) {
-      await (op === "mark_laser" ? markTyped() : printTyped());
+      finished((await (op === "mark_laser" ? markTyped() : printTyped())) ? "pass" : "fail");
       return;
     }
     if (!markSeg) return;
@@ -1117,6 +1249,7 @@ export default function BenchStation(props: StationSlotProps) {
                         className="btn btn-sm"
                         onClick={() => {
                           station.unbind();
+                          resetPresence();
                           syncPort();
                         }}
                         disabled={busy}
@@ -1260,7 +1393,11 @@ export default function BenchStation(props: StationSlotProps) {
                     className="btn btn-primary btn-sm"
                     onClick={() => void runPlan()}
                     disabled={!canRun}
-                    title={props.segments.length ? "Run the selected steps on this device" : "Select the steps to run"}
+                    title={
+                      props.othersBusy
+                        ? "This bench agent runs one station at a time and another station is working. Download the agent again to run several at once."
+                        : props.segments.length ? "Run the selected steps on this device" : "Select the steps to run"
+                    }
                   >
                     {planLabel || "Run"}
                   </button>
@@ -1296,9 +1433,7 @@ export default function BenchStation(props: StationSlotProps) {
                 <button
                   type="button"
                   className="btn btn-sm"
-                  onClick={() => {
-                    station.cancelBootWait = true;
-                  }}
+                  onClick={() => void station.cancelEsp()}
                 >
                   Stop waiting
                 </button>
@@ -1324,6 +1459,7 @@ export default function BenchStation(props: StationSlotProps) {
                     className="btn btn-sm"
                     onClick={() => {
                       station.unbind();
+                      resetPresence();
                       syncPort();
                     }}
                     disabled={busy}
@@ -1370,6 +1506,7 @@ export default function BenchStation(props: StationSlotProps) {
           onPick={(node) => {
             setPicking(false);
             station.assignSocket(node);
+            resetPresence();
             syncPort();
           }}
         />

@@ -1,5 +1,30 @@
 # Changelog
 
+## 2026-10-24 (bench: several stations at once, Abort that stops esptool, sounds, cached firmware)
+
+- **Several stations program at the same time** (decision 0099, work list row 49). The bench
+  agent keeps one device console and one esptool job per port, and each esptool call runs in a
+  process of its own. Before, a second station closed the first station's console (runs 8964 and
+  8966) or was refused with "the agent is already programming a device". Download the agent
+  again from the bench page to use it. With an older agent the page runs one station at a time
+  and says so.
+- **Abort stops the agent** (row 51). Abort in a run, Abort during Erase and "Stop waiting" for
+  BOOT now stop esptool on the agent within 2 s, and the port is free for the next job at once.
+  Before, the agent went on erasing or writing a unit that the record showed as aborted. The
+  BOOT notice now appears when the agent waits for the button.
+- **Automatic starts every new device, and only new ones.** It ran the first device of a session
+  and no other, because it re-armed only when the station lost its socket. A new device is now
+  another USB serial number (a CE_Dongle_V3 reports its MAC there), or a socket left empty for
+  6 s. A C6 that resets during or after its own run is not run again, and keeps its PASS.
+- **The bench plays a sound** when every selected step of a device has ended: one for PASS, one
+  for FAIL, nothing for an Abort. "Play a sound when a device is finished" on the bench turns it
+  off.
+- **Firmware is fetched once per bench, not once per unit.** The agent keeps each image by
+  SHA-256 on the bench machine, and the browser keeps the images and the marking artwork. Run
+  8994 spent 3.4 s of each unit fetching the 2.46 MB image and handing it to the agent.
+- **A run no longer takes the device's command echo as its reply** (row 50). Run 8980 failed its
+  size check because the echo of a `Br` command matched the key `Br`.
+
 ## 2026-10-24 (Select Similar in the Plugin and Content Manager)
 
 - **Select Similar installs from the 7Sigma repository** (decision 0100). It is Altium's Find

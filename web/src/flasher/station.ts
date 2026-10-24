@@ -20,8 +20,8 @@
  *  `monitor_signals` is null and the agent leaves DTR/RTS alone, because the
  *  peripheral resets the chip on DTR=0 while RTS=1.
  */
-import { API_URL } from "../api";
 import { MarkAgent } from "./benchAgent";
+import { firmwareBytes } from "./fileCache";
 
 /** The DTR/RTS line states the agent sets when it opens the console, sent as
  *  JSON to `POST /monitor/open`. The key names are Web Serial's on purpose —
@@ -76,6 +76,10 @@ export type LogDir = "app" | "err" | "tx" | "rx" | "esptool";
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+/** The error an esptool job ends with when the bench stopped it — the agent's
+ *  own wording (`agent.py` `CANCELLED`), so a run log reads the same either way. */
+export const CANCELLED = "cancelled by the bench";
+
 /** Firmware to the agent as base64: a 2.4 MB image is 3.2 MB on loopback. */
 function bytesToBase64(bytes: Uint8Array): string {
   let bin = "";
@@ -88,6 +92,41 @@ function bytesToBase64(bytes: Uint8Array): string {
 /** Live stations, so an arriving port can go to the lowest-numbered one that
  *  has none. Without this every empty slot races for the same port. */
 const STATIONS = new Set<Station>();
+
+/** The one station allowed to work, on an agent from before per-port consoles
+ *  (decision 0099). A CLAIM, taken synchronously as a press starts, and not
+ *  React state: two stations whose devices appear in the same port poll both
+ *  start in one render, before either one's busy flag reaches the page — the
+ *  first browser check of this rule started both (2026-10-24). */
+let soleStation: number | null = null;
+
+export function canClaimSole(slot: number): boolean {
+  return soleStation === null || soleStation === slot;
+}
+
+export function claimSole(slot: number): boolean {
+  if (!canClaimSole(slot)) return false;
+  soleStation = slot;
+  return true;
+}
+
+export function releaseSole(slot: number) {
+  if (soleStation !== slot) return;
+  soleStation = null;
+  // A station waiting to start by itself hears it at once, not at its next
+  // render — which may never come while nothing else on it changes.
+  for (const w of soleWatchers) w();
+}
+
+const soleWatchers = new Set<() => void>();
+
+/** Be told when the claim is released. Returns the unsubscribe. */
+export function watchSole(onRelease: () => void): () => void {
+  soleWatchers.add(onRelease);
+  return () => {
+    soleWatchers.delete(onRelease);
+  };
+}
 
 
 
@@ -160,20 +199,29 @@ export class Station {
   onEvent: (dir: LogDir, text: string) => void = () => {};
   /** Tell the UI the bench is waiting for a hand on the BOOT button, and when
    *  it stops. NOT a question: the operator may be reaching for the device, so
-   *  the bench keeps trying rather than gating on an answer. */
+   *  the bench keeps trying rather than gating on an answer. Driven by the
+   *  agent's job log, since the BOOT rung is the agent's (decision 0023);
+   *  "Stop waiting" is `cancelEsp()`. */
   onBootWait: ((waiting: boolean) => void) | null = null;
-  /** Set by the UI to stop waiting for BOOT. */
-  cancelBootWait = false;
   onLine: (line: string) => void = () => {};
   onProgress: (pct: number | null) => void = () => {};
   /** The console port died under a run — the device was unplugged. The run
    *  client tells the engine, which fails the run at once. */
   onDeviceLost: (error: string) => void = () => {};
 
-  /** The agent's console session, while one is open. */
+  /** The agent's console session, while one is open, and the port it is on.
+   *  Every console call names that port (decision 0099). */
   private monitorAgent: MarkAgent | null = null;
+  private monitorPort = "";
   private monitorSeen = 0;
   private monitorRunning = false;
+  /** The esptool job this station has running on the agent, so Abort can stop
+   *  it. `cancelWanted` covers the moment between asking for a job and the
+   *  agent naming it. */
+  private espJob: { agent: MarkAgent; id: number } | null = null;
+  private espStarting = false;
+  private cancelWanted = false;
+  private cancelSentFor = 0;
   /** Set when esptool logged "Changing baudrate": the sync and the stub worked,
    *  and only the speed switch is in question. That tells the BOOT rung to drop
    *  to the ROM baud instead of waiting out the whole 30 s at a speed the board
@@ -320,28 +368,48 @@ export class Station {
   ): Promise<void> {
     // The PAGE fetches the firmware — the agent holds no platform token and
     // makes no outbound connection — and hands the bytes over on loopback.
-    const payload: { address: string; name: string; data: string }[] = [];
-    for (const img of images) {
-      const res = await fetch(`${API_URL}${img.url}`);
-      if (!res.ok) throw new Error(`firmware fetch failed for ${img.filename}: ${res.status}`);
-      const data = new Uint8Array(await res.arrayBuffer());
-      if (data.length !== img.size)
-        throw new Error(`${img.filename}: fetched ${data.length} B, platform stored ${img.size} B`);
-      this.emit("app", `image ${img.filename} = ${data.length} bytes @ ${img.address}`);
-      payload.push({ address: img.address, name: img.filename, data: bytesToBase64(data) });
-    }
-    await this.agentEsp("flash", {
-      baud: baudOverride ?? this.profile().flash_baud,
-      images: payload,
-      flash_config: flashConfig,
-    });
+    // Both ends keep them (decision 0099): the agent by SHA-256 on its disk,
+    // so the request names the images and the bytes cross only when the agent
+    // says it lacks one; the browser in `fileCache`, so even then they come
+    // from the network once. Run 8994 spent 3.4 s per unit on the two hops.
+    const refs = images.map((img) => ({ address: img.address, name: img.filename, sha256: img.sha256 }));
+    const withData = async (missing: string[] | null) => {
+      const out: Record<string, unknown>[] = [];
+      for (const [i, img] of images.entries()) {
+        if (missing && !missing.includes(img.sha256.toLowerCase()) && !missing.includes(img.filename)) {
+          out.push(refs[i]);
+          continue;
+        }
+        const data = await firmwareBytes(img);
+        this.emit("app", `image ${img.filename} = ${data.length} bytes @ ${img.address} — sent to the agent`);
+        out.push({ ...refs[i], data: bytesToBase64(data) });
+      }
+      return out;
+    };
+    const cachedOnAgent = Boolean((await new MarkAgent().hello().catch(() => null))?.image_cache);
+    await this.agentEsp(
+      "flash",
+      {
+        baud: baudOverride ?? this.profile().flash_baud,
+        images: cachedOnAgent ? refs : await withData(null),
+        flash_config: flashConfig,
+      },
+      (missing) => withData(missing),
+    );
   }
 
   /** One ESP operation through the agent: the agent runs esptool on the
    *  station's socket, this tab relays its log and progress into the run. */
-  private async agentEsp(op: string, extra: Record<string, unknown>): Promise<Record<string, unknown>> {
+  private async agentEsp(
+    op: string,
+    extra: Record<string, unknown>,
+    supplyImages?: (missing: string[]) => Promise<Record<string, unknown>[]>,
+  ): Promise<Record<string, unknown>> {
     const node = readStationSocket(this.slot);
     if (!node) throw new Error("this station has no socket assigned — Assign socket… first, the agent programs by socket");
+    // Starting from here, so an Abort during the cleanup below still counts.
+    this.espStarting = true;
+    this.cancelWanted = false;
     // The browser must not hold the port while the agent uses it.
     await this.cleanup();
     const agent = new MarkAgent();
@@ -353,15 +421,58 @@ export class Station {
         // moved after the move to the agent (bench, 2026-09-17).
         const m = /\((\d+)\s*%\)/.exec(l.text);
         if (m) { this.progress = Number(m[1]); this.onProgress(this.progress); }
+        // The BOOT rung is the agent's; its log is how this page knows the
+        // operator's hand is wanted, and when it no longer is.
+        if (l.text.startsWith("waiting for the BOOT button")) this.onBootWait?.(true);
+        else if (l.text.startsWith("connected:")) this.onBootWait?.(false);
         this.emit((["app", "err", "esptool"].includes(l.dir) ? l.dir : "app") as LogDir, l.text);
+      }, {
+        onJob: (id) => {
+          this.espJob = { agent, id };
+          this.espStarting = false;
+          // Job ids start at 1 again when the agent restarts.
+          this.cancelSentFor = 0;
+          // Abort was pressed while the job was being asked for.
+          if (this.cancelWanted) void agent.cancelEsp({ job: id });
+        },
+        supplyImages,
       });
+      if (r.cancelled) throw new Error(CANCELLED);
       if (r.status !== "pass") throw new Error(r.error ?? `${op} failed on the agent`);
       return r.info ?? {};
     } finally {
+      this.espJob = null;
+      this.espStarting = false;
+      this.onBootWait?.(false);
       this.progress = null;
       this.onProgress(null);
       agent.close();
     }
+  }
+
+  /** Stop this station's esptool job, if it has one (work list row 51).
+   *
+   *  Abort in a run, Abort during Erase and "Stop waiting" for BOOT all come
+   *  here. Before, Abort reached the engine only, and the agent went on erasing
+   *  or writing a unit the record already showed as aborted. An agent from
+   *  before `POST /esp/cancel` answers 404, and the job then runs to its end.
+   */
+  async cancelEsp(): Promise<void> {
+    const job = this.espJob;
+    if (job) {
+      // Abort, the run's end and the engine's close all ask; once is enough.
+      if (this.cancelSentFor === job.id) return;
+      this.cancelSentFor = job.id;
+      this.emit("app", "stopping esptool on the agent");
+      await job.agent.cancelEsp({ job: job.id }).catch(() => false);
+    } else if (this.espStarting) {
+      this.cancelWanted = true;
+    }
+  }
+
+  /** Is an esptool job of this station running on the agent? */
+  get espRunning(): boolean {
+    return this.espStarting || this.espJob !== null;
   }
 
   async espReset() {
@@ -381,6 +492,7 @@ export class Station {
     const node = this.requireSocket();
     const profile = this.profile();
     this.monitorAgent = new MarkAgent();
+    this.monitorPort = node;
     await this.monitorAgent.monitorOpen(node, baud, profile.monitor_signals);
     this.monitorSeen = 0;
     this.emit("app", `monitor open on ${node} @ ${baud} (agent)`);
@@ -392,7 +504,7 @@ export class Station {
   async serialClose() {
     this.monitorRunning = false;
     if (this.monitorAgent) {
-      await this.monitorAgent.monitorClose().catch(() => {});
+      await this.monitorAgent.monitorClose(this.monitorPort).catch(() => {});
       this.monitorAgent.close();
       this.monitorAgent = null;
     }
@@ -414,7 +526,7 @@ export class Station {
     if (!agent) return;
     while (this.monitorRunning && this.monitorAgent === agent) {
       try {
-        const r = await agent.monitorLines(this.monitorSeen, 10);
+        const r = await agent.monitorLines(this.monitorPort, this.monitorSeen, 10);
         if (!this.monitorRunning || this.monitorAgent !== agent) return;
         this.monitorSeen = r.seen;
         for (const line of r.lines) this.onLine(line);
@@ -444,7 +556,7 @@ export class Station {
 
   async write(text: string) {
     if (!this.monitorAgent) throw new Error("monitor serial not open");
-    await this.monitorAgent.monitorWrite(text);
+    await this.monitorAgent.monitorWrite(this.monitorPort, text);
   }
 
   /** Ask the device who it is, with no run in progress.
@@ -513,7 +625,7 @@ export class Station {
    *  SerialPort handle that no longer exists here. */
   async monitorReset(monitorBaud: number) {
     if (!this.monitorAgent) throw new Error("monitor serial not open");
-    await this.monitorAgent.monitorReset();
+    await this.monitorAgent.monitorReset(this.monitorPort);
     this.emit("app", "reset pulsed (agent)");
     if (this.profile().reenumerates_on_reset) {
       await this.serialClose();
