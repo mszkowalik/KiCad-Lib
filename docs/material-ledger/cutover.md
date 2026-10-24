@@ -127,7 +127,17 @@ spans a write reads as a difference. The user says when.
    image revision label equal to the pushed commit.
 6. **Capture the answers after** the same way, into `/tmp/golden-after`, and
    `compare`. No difference may be `real`.
-7. **If the start fails**: nothing was migrated (one transaction). Run the
+7. **The rundown** (rehearsed on the production copy, 2026-10-24):
+   1. `python3 -I scripts/ledger-rebuild-old-batches.py <base> <token>` (dry
+      run), then with `--write`: CE_Dongle_V2 Batches 1–7. Then
+      `--runs=17,18,20,10729,10730 --write`: the V3 and V2 prototype runs.
+      Every batch total stays the same; units take their twin's price.
+   2. `POST /api/companies/lot-history` with `dry_run: true`, then `false`:
+      every draw is bound to its lots (decision 0073 §5). On the copy: 471
+      draws, none uncovered, batch costs +$184.19 in total. `lot_pricing`
+      stays off until the user says otherwise.
+   3. The register's identities: `gap_usd` 0, the pool balanced.
+8. **If the start fails**: nothing was migrated (one transaction). Run the
    previous image again (`KICADLIB_TAG=sha-37424e3`, `up -d kicadlib-api`).
    **If a real difference shows after a migration that succeeded**: fix
    forward if the cause is clear; otherwise restore the backup and run the
