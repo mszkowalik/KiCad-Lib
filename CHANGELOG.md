@@ -127,6 +127,12 @@
 - **Mouser order 40196186** (10 × ZED-F9P-04B, 2026-08-20) is a placeholder document until its
   invoice turns up.
 
+## 2026-10-14 (AP63357 pin 7)
+
+- **AP63357QZV-7 pin 7 (NC) can be wired now.** The symbol typed it `no_connect`, so KiCad cut it
+  from any net. The datasheet says the pin has no internal connection and may be tied to any pin;
+  boards tie it to SW for routing. It is typed `free` (symbol AP6335XQ v5).
+
 ## 2026-10-13 (a part the process draws is counted once)
 
 - **A part that a process step draws is no longer counted twice.** The
