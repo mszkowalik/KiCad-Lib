@@ -298,6 +298,25 @@ def test_a_gross_priced_row_and_a_fine_unit_price_read_back():
     assert (b["net"], b["unit_net"]) == ("12.50", "0.0125")
 
 
+def test_a_printed_price_that_misses_the_net_gives_way_to_the_net():
+    """Tesla states 1.54 per kWh and a net of 78.49 for 50.81 kWh (4033P0000784517):
+    the cost line multiplies the net over the quantity, so the document adds up,
+    while the parsed position keeps the price as printed."""
+    xml = (b'<?xml version="1.0" encoding="UTF-8"?><Faktura xmlns="http://crd.gov.pl/wzor/2025/06/25/13775/">'
+           b'<Podmiot1><DaneIdentyfikacyjne><NIP>5252776145</NIP><Nazwa>T</Nazwa></DaneIdentyfikacyjne></Podmiot1>'
+           b'<Podmiot2><DaneIdentyfikacyjne><NIP>8513262910</NIP><Nazwa>B</Nazwa></DaneIdentyfikacyjne></Podmiot2>'
+           b'<Fa><KodWaluty>PLN</KodWaluty><P_1>2049-09-11</P_1><P_2>4033P1</P_2><P_13_1>78.49</P_13_1>'
+           b'<P_14_1>18.05</P_14_1><P_15>96.54</P_15><RodzajFaktury>VAT</RodzajFaktury>'
+           b'<FaWiersz><NrWierszaFa>1</NrWierszaFa><P_7>Energia</P_7><P_8A>KWH</P_8A><P_8B>50.81</P_8B>'
+           b'<P_9A>1.54</P_9A><P_11>78.49</P_11><P_11Vat>18.05</P_11Vat><P_12>23</P_12></FaWiersz>'
+           b'<FaWiersz><NrWierszaFa>2</NrWierszaFa><P_7>Kolejka</P_7><P_8B>3</P_8B>'
+           b'<P_9A>2.00</P_9A><P_11>6.00</P_11><P_12>23</P_12></FaWiersz></Fa></Faktura>')
+    energy, queue = parse(xml)["body"]["lines"]
+    assert (energy["unit_net"], energy["net"]) == ("1.54", "78.49")
+    assert Y.line_price(energy) == 1.54477465 and round(50.81 * Y.line_price(energy), 2) == 78.49
+    assert Y.line_price(queue) == 2.0
+
+
 def test_a_purchase_entered_by_hand_is_not_doubled(db, seven, store):
     hand = M.RunCostDocument(doc_type="invoice", supplier="Dostawca", doc_number="FV 07/2049", doc_date="2049-03-12",
                              currency="PLN", company_id=seven.c.id, total_amount=100.0)

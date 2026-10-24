@@ -61,6 +61,20 @@ are Admin → Companies (tokens, "Sync now") and Production → KSeF (the inbox)
 * **The parser keeps what the invoice states.** A unit price keeps up to 8
   decimals. A position priced gross (P_9B, P_11A) has the net of its gross
   less its VAT.
+* **A cost line's price is the net over the quantity when the printed price
+  misses it** (`sync.line_price`). Tesla prints its per-kWh price to the
+  grosz and the net from the exact price, so 50.81 kWh at 1.54 read 78.25
+  against a printed 78.49, and 64 charging invoices showed as "lines do not
+  add up" (2026-10-20). The parsed position, and so the printed page, keeps
+  the price as printed.
+* **An advance invoice and its settlement are one purchase, entered once.**
+  KSeF's advance (ZAL) has no positions and states the advance; its
+  settlement (ROZ) has the positions and states 0.00 left to pay. On the
+  platform the settlement carries the goods and their net as `total_amount`,
+  and the advance keeps `total_amount` 0 with its VAT, which the books
+  deduct at the advance. Written by hand after the import, with a note on
+  each document (TME 1267010240, 1267046910, 1267068399 on 2026-10-20);
+  the import still enters each as KSeF states it.
 * **The QR hash comes from the metadata** (`invoiceHash`, base64, turned into
   base64url by `sync.b64_to_b64url`), so a linked draft prints its QR code even
   before its XML is downloaded.

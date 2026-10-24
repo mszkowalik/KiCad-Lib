@@ -483,6 +483,20 @@ def _link(db: Session, row: M.KsefInvoice, doc: M.RunCostDocument) -> None:
     db.flush()
 
 
+def line_price(ln: dict) -> float:
+    """The price a cost line multiplies: the position's own unit price, unless
+    that price times the quantity misses the position's net. Tesla prints its
+    per-kWh price to the grosz and the net from the exact price, so 50.81 kWh
+    at 1.54 reads 78.25 against a printed 78.49; then the net over the quantity
+    is the price, and the lines add up to the invoice (2026-10-20: 64 charging
+    invoices read unreconciled this way). The parsed position keeps the price
+    as printed, because the printed page (`body`) shows the invoice."""
+    qty, unit, net = Decimal(ln["qty"]), Decimal(ln["unit_net"]), Decimal(ln["net"])
+    if qty and A.d2(unit * qty) != A.d2(net):
+        return float(A.price(net / qty))
+    return float(unit)
+
+
 def import_purchase(db: Session, row: M.KsefInvoice, actor: str = "", client_factory=K.Client, *,
                     force: bool = False, link_to: int | None = None) -> M.RunCostDocument:
     """A purchase from the inbox as a supplier document, billed to the company
@@ -568,7 +582,7 @@ def import_purchase(db: Session, row: M.KsefInvoice, actor: str = "", client_fac
     else:
         for i, ln in enumerate(b.get("lines") or []):
             db.add(M.RunCostLine(document_id=doc.id, position=i, label=(ln["name"] or "")[:300],
-                                 qty=float(ln["qty"]), unit_price=float(ln["unit_net"]), currency=doc.currency,
+                                 qty=float(ln["qty"]), unit_price=line_price(ln), currency=doc.currency,
                                  notes=f"VAT {ln['vat_rate']}"))
     row.status, row.document_id = "imported", doc.id
     storage.put_bytes(f"documents/{doc.id}/ksef-{row.ksef_number}.xml", xml, "application/xml")

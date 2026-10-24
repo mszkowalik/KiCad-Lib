@@ -27,6 +27,21 @@
   (`PUT /api/material-ledger/state-maps`), for example "SIM6-12-3W cut" is SIM6-12-3W with four
   `cut_*` properties. Only the shadow reads it.
 
+## 2026-10-20 (invoices that did not add up)
+
+- **64 supplier documents read "lines do not add up to the printed total"; none does now.**
+  61 Tesla charging invoices multiplied the kWh by the per-kWh price KSeF prints to the grosz; each
+  line now carries the net over the quantity, so it adds up to the invoice. Another 21 Tesla
+  invoices with the same slip under the 5-grosz tolerance, TME 1261348231 and the February Tesla
+  invoice whose positions KSeF states gross were corrected the same way. Every change is in the
+  activity log.
+- **A TME advance invoice and its settlement are entered once.** The settlement (1261081852 +
+  1261114124, 1261444150, 1261648083) carries the goods and the order's net; the advance (1267010240,
+  1267046910, 1267068399) keeps a net of 0 and its VAT. Rule in
+  [docs/reference/ksef.md](docs/reference/ksef.md).
+- **The KSeF import now prices a cost line from the position's net when the printed unit price
+  misses it** (`ksef.sync.line_price`), so the next Tesla invoice reconciles on import.
+
 ## 2026-10-18 (CE Dongle V3 bench gaps)
 
 - **The bench agent waits up to 5 s for the port after a reset.** A C6 re-enumerates after the flash,
@@ -141,6 +156,8 @@
 - **Every symbol on the four DotConnect boards is a 7Sigma library symbol**, except DC_GPS U1. The
   symbols that did not fit the old pin points are joined to their nets by labels; connectivity is
   unchanged.
+- **Every symbol on the four DotConnect boards is a 7Sigma library symbol.** The symbols that did
+  not fit the old pin points are joined to their nets by labels; connectivity is unchanged.
 
 ## 2026-10-12 (faster batch, order and stock pages)
 
