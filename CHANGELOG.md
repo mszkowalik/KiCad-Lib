@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-10-24 (Select Similar in the Plugin and Content Manager)
+
+- **Select Similar installs from the 7Sigma repository** (decision 0100). It is Altium's Find
+  Similar Objects for the KiCad 10 PCB editor: select an object, set each attribute to Any, Same
+  or Different, and the plugin selects every match, so KiCad's Properties panel edits them
+  together. In KiCad, open the Plugin and Content Manager, click Refresh, and install Select
+  Similar from Plugins. If the KiCad API is off, KiCad offers to switch it on. Later versions
+  arrive as ordinary PCM updates. The library, the 3D models and the sync plugin keep their
+  versions, so the PCM offers no update for them.
+
 ## 2026-10-24 (material ledger cut-over)
 
 - **Stock, work and units are stored in the material ledger only** (decision 0098). Draws,

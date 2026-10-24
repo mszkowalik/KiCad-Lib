@@ -11,16 +11,22 @@ of all resistors. Set their height in the Properties panel.
 
 ## Install
 
-1. Run `python3 build_package.py`. It writes
-   `dist/com.sevensigma.select-similar-<version>.zip`.
-2. In KiCad, open **Plugin and Content Manager** and click **Install from File…**.
-   Select the zip.
-3. In the PCB editor, open **Preferences > Plugins**. Make sure that **Enable
-   KiCad API** is on.
+The plugin is in the 7Sigma repository, the same one that installs the
+library. Your personal repository URL is on the platform's **Account** page.
+
+1. In KiCad, open **Plugin and Content Manager** and select the **7Sigma
+   Library Platform** repository. Click **Refresh** if Select Similar is not
+   listed.
+2. On the **Repository** tab, open **Plugins**, find **Select Similar** and
+   click **Install**. Then click **Apply Pending Changes**.
+3. If the KiCad API is off, KiCad asks to switch it on. Click **Yes**. The
+   setting is **Preferences > Plugins > Enable KiCad API**.
 4. Restart the PCB editor. On the first start, KiCad installs `kicad-python`
    into the plugin's own Python environment. This needs network access and
    takes some seconds. Then the button (four squares) appears at the right end
    of the top toolbar.
+
+Later versions arrive as updates in the Plugin and Content Manager.
 
 To show the batch edit, keep KiCad's Properties panel open: **View > Panels >
 Properties**. The plugin cannot open it for you (see Limits).
@@ -71,7 +77,7 @@ primitives (except pads).
 * **The panel floats.** A KiCad 10 plugin that uses the supported API runs in
   its own process and cannot dock. On macOS the panel shows as a separate
   "Python" application. Decision
-  [0096](../../docs/decisions/0096-select-similar-is-an-ipc-plugin-with-a-floating-panel.md)
+  [0096](../../../../docs/decisions/0096-select-similar-is-an-ipc-plugin-with-a-floating-panel.md)
   gives the reasons.
 * **No Mask, Dim or Open Properties.** The API has no per-item dimming. KiCad's
   Properties action is a toggle and the API cannot read its state, so the

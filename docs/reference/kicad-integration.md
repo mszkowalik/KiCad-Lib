@@ -14,6 +14,11 @@ Full reasoning in [docs/decisions/0006](../decisions/0006-sync-button-owns-libra
   editor. A sync records the two content packages in the PCM as current and
   pinned, so the PCM offers no library update and Update All skips them. The
   plugin cannot update itself, so its own PCM entry is left alone.
+- **The same repository offers a second plugin, Select Similar**, which the
+  user installs only if they want it (decision
+  [0100](../decisions/0100-the-platform-serves-select-similar.md)). The PCM
+  updates it like any plugin. The sync plugin never records or pins it: it
+  writes PCM entries for `type == "library"` packages only.
 - **The synced library files are a WORKING COPY, and a sync overwrites them.**
   The PCM package on disk
   (`~/Documents/KiCad/<ver>/3rdparty/symbols/com_sevensigma_library/7Sigma_Base.kicad_sym`

@@ -79,5 +79,6 @@ include = ["app*", "kiutils*"]
 # images a drawn document carries (services/jlc_invoice_pdf.py), and the MCP
 # server script routers/agent.py serves.
 app = ["seed_skills/*.md", "services/fieldsolver/data/*.json", "services/pcm_plugin/*",
+       "services/select_similar_plugin/*",
        "services/bench_agent/vendor.zip", "services/assets/*.png",
        "services/mcp_server/server.py"]

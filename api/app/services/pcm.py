@@ -4,7 +4,7 @@ Serves the whole 7Sigma library as installable KiCad *content packages*: the
 user adds ONE repository URL in KiCad's Plugin and Content Manager and
 installs the library from inside KiCad — no sync script.
 
-Three packages, each versioned from ITS OWN content (so a symbols change
+Four packages, each versioned from ITS OWN content (so a symbols change
 never re-flags the 1.4 GB models package):
 
   com.sevensigma.library   base symbols + footprints — the ~50 unique
@@ -17,6 +17,11 @@ never re-flags the 1.4 GB models package):
                            library packages and refreshes the installed
                            copies in place (day-to-day updates without
                            opening the PCM dialog; source in pcm_plugin/)
+  com.sevensigma.select-similar
+                           IPC action plugin — Altium's Find Similar Objects
+                           for the PCB editor (decisions 0096, 0100; source
+                           in select_similar_plugin/). Shared by every user:
+                           it carries no token, so nothing personalises it
 
 PCM specifics this module encodes:
   * KiCad auto-registers installed libraries in the GLOBAL tables with a
@@ -64,6 +69,8 @@ PLUGIN_VERSION = "1.5.0"  # bump when the plugin source changes — PCM update d
 # zip with the same version reaches nobody: the content hash changes, the
 # download changes, and every installed copy stays on the old code. Shipping
 # plugin source without bumping this is a silent no-op — it happened twice.
+SIMILAR_ID = "com.sevensigma.select-similar"
+SIMILAR_VERSION = "1.0.0"  # the same manual rule as PLUGIN_VERSION, for Select Similar
 MODELS_INSTALL_DIR = MODELS_ID.replace(".", "_")
 LIB_INSTALL_DIR = LIB_ID.replace(".", "_")
 PCM_FP_PREFIX = "PCM_"  # KiCad's hardcoded auto-registration nickname prefix
@@ -77,7 +84,7 @@ SCHEMA = "https://go.kicad.org/pcm/schemas/v1"
 BUILDER_REV = 13  # bump when the package builder output changes for the same mirror
 # ^ AND whenever anything in THIS FILE changes what a package advertises —
 # PLUGIN_VERSION, a package name/description, a manifest field. `tag` hashes the
-# mirror digest and the plugin FILE contents only, so a pcm.py-only edit leaves
+# mirror digest and the FILE contents of the two plugins only, so a pcm.py-only edit leaves
 # the tag unchanged, `meta-<tag>.json` still exists, and ensure_built returns the
 # cached meta without ever reaching _resolve_package. A PLUGIN_VERSION bump on
 # its own therefore reaches nobody: verified 2026-07-31, the repository kept
@@ -126,6 +133,10 @@ def server_pcm_root() -> Path:
 
 
 _PLUGIN_SRC = Path(__file__).parent / "pcm_plugin"
+_SIMILAR_SRC = Path(__file__).parent / "select_similar_plugin"
+# In the folder for people and agents, not for KiCad. tests/ is a folder and
+# never ships; icon-pcm.png ships as the package icon, not as a plugin file.
+_SIMILAR_NOT_SHIPPED = {"README.md", "CLAUDE.md", "icon-pcm.png"}
 
 _lock = threading.Lock()
 
@@ -274,6 +285,26 @@ def _build_plugin_zip(path: Path) -> int:
     size = 0
     with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as zf:
         for arcname, data in _plugin_files():
+            size += _zip_add(zf, arcname, data)
+    return size
+
+
+def _similar_files() -> list[tuple[str, bytes]]:
+    """Select Similar's zip members: every top-level file of its folder goes to
+    plugins/ verbatim, so a module added there ships without an edit here."""
+    out: list[tuple[str, bytes]] = []
+    for f in sorted(_SIMILAR_SRC.iterdir()):
+        if not f.is_file() or f.name.startswith(".") or f.name in _SIMILAR_NOT_SHIPPED:
+            continue
+        out.append((f"plugins/{f.name}", f.read_bytes()))
+    out.append(("resources/icon.png", (_SIMILAR_SRC / "icon-pcm.png").read_bytes()))
+    return out
+
+
+def _build_similar_zip(path: Path) -> int:
+    size = 0
+    with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as zf:
+        for arcname, data in _similar_files():
             size += _zip_add(zf, arcname, data)
     return size
 
@@ -449,7 +480,7 @@ def _packages_document(packages_meta: dict, token: str = "") -> dict:
     """The `packages.json` body. ONE definition, used by the shared build and
     by every personalised response — the package names, descriptions and types
     must never fork between them."""
-    return {
+    packages = {
         "packages": [
             _package_entry(
                 LIB_ID, "7Sigma Library",
@@ -473,6 +504,20 @@ def _packages_document(packages_meta: dict, token: str = "") -> dict:
             ),
         ]
     }
+    # A build made before Select Similar was served has no entry for it, and
+    # `meta_for_packages_file` still renders those builds for stale clients.
+    if "similar" in packages_meta:
+        packages["packages"].append(_package_entry(
+            SIMILAR_ID, "Select Similar",
+            "Altium's Find Similar Objects for the PCB editor: take the selected "
+            "object as a template, set each attribute to Any, Same or Different, "
+            "and select every match so the Properties panel edits them together.",
+            # runtime "ipc": the PCM then offers to switch the KiCad API on, which
+            # the plugin needs (KiCad 10.0 pcm.cpp, MarkInstalled)
+            "plugin", packages_meta["similar"], kicad_version="10.0", token=token,
+            runtime="ipc",
+        ))
+    return packages
 
 
 def _with_token(url: str, token: str) -> str:
@@ -482,8 +527,9 @@ def _with_token(url: str, token: str) -> str:
 
 
 def _package_entry(identifier: str, name: str, description: str, ptype: str,
-                   pmeta: dict, kicad_version: str = "8.0", token: str = "") -> dict:
-    return {
+                   pmeta: dict, kicad_version: str = "8.0", token: str = "",
+                   runtime: str = "") -> dict:
+    entry = {
         "$schema": f"{SCHEMA}/package",
         "name": name,
         "description": description,
@@ -508,6 +554,9 @@ def _package_entry(identifier: str, name: str, description: str, ptype: str,
             }
         ],
     }
+    if runtime:
+        entry["versions"][0]["runtime"] = runtime
+    return entry
 
 
 def ensure_built() -> dict | None:
@@ -524,7 +573,10 @@ def ensure_built() -> dict | None:
     plugin_hash = hashlib.sha256(
         b"".join(name.encode() + data for name, data in _plugin_files())
     ).hexdigest()
-    tag = f"{hashlib.sha256(f'{digest}:{plugin_hash}'.encode()).hexdigest()[:12]}r{BUILDER_REV}"
+    similar_hash = hashlib.sha256(
+        b"".join(name.encode() + data for name, data in _similar_files())
+    ).hexdigest()
+    tag = f"{hashlib.sha256(f'{digest}:{plugin_hash}:{similar_hash}'.encode()).hexdigest()[:12]}r{BUILDER_REV}"
     meta_path = out / f"meta-{tag}.json"
     with _lock:
         if meta_path.exists():
@@ -547,6 +599,10 @@ def ensure_built() -> dict | None:
             "plugin": _resolve_package(
                 out, prev, "plugin", plugin_hash, PLUGIN_VERSION, "sync", _build_plugin_zip,
                 pinned_version=True,
+            ),
+            "similar": _resolve_package(
+                out, prev, "similar", similar_hash, SIMILAR_VERSION, "similar",
+                _build_similar_zip, pinned_version=True,
             ),
         }
         packages = _packages_document(packages_meta)

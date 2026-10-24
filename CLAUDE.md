@@ -26,11 +26,11 @@ files — write it once and link to it.
 | `api/` | FastAPI backend (DB, importer, generator, agent tools, JLC/LCSC clients) | `api/CLAUDE.md` |
 | `api/app/services/` | Business logic | `api/app/services/CLAUDE.md` — it routes every backend topic to its document |
 | `api/app/routers/` | HTTP endpoints | `api/app/routers/CLAUDE.md` |
-| `api/app/services/fieldsolver\|flasher\|pcm_plugin\|mcp_server/` | Field solver, production programming, the KiCad sync plugin, the stdio MCP server agents install | the `CLAUDE.md` in that directory |
+| `api/app/services/fieldsolver\|flasher\|pcm_plugin\|select_similar_plugin\|mcp_server/` | Field solver, production programming, the KiCad sync plugin, the Select Similar plugin, the stdio MCP server agents install | the `CLAUDE.md` in that directory |
 | `web/` | React + Vite frontend | `web/CLAUDE.md` — the style system and the shared-input rule |
 | `web/src/components\|pages\|sim/` | Shared components, routes, the simulator | the `CLAUDE.md` in that directory |
 | `render/` | kicad-cli render container (previews, project exports) | — |
-| `clients/` | A sample `.kicad_httplib` and unrelated client projects (flasher, invoice import, the Select Similar KiCad plugin). Three clients the platform SERVES are NOT here — the KiCad sync plugin (`api/app/services/pcm_plugin/`, packaged by `pcm.py`), the bench agent (`api/app/services/bench_agent/`, zipped by `routers/flasher.py`) and the MCP server (`api/app/services/mcp_server/`, served by `routers/agent.py`) — because `clients/` is not in the api image | `api/CLAUDE.md` |
+| `clients/` | A sample `.kicad_httplib` and unrelated client projects (flasher, invoice import). Four clients the platform SERVES are NOT here — the KiCad sync plugin (`api/app/services/pcm_plugin/`) and the Select Similar plugin (`api/app/services/select_similar_plugin/`), both packaged by `pcm.py`, the bench agent (`api/app/services/bench_agent/`, zipped by `routers/flasher.py`) and the MCP server (`api/app/services/mcp_server/`, served by `routers/agent.py`) — because `clients/` is not in the api image | `api/CLAUDE.md` |
 | `docs/reference/` | Long-form topic documents the `CLAUDE.md` files link to | [docs/reference/index.md](docs/reference/index.md) |
 | `docs/decisions/` | Architecture decisions, MADR format | [docs/decisions/index.md](docs/decisions/index.md) |
 | `compose.yaml`, `compose.prod.yaml`, `.github/workflows/images.yml` | Dev and server deployment, image builds | [docs/reference/deployment.md](docs/reference/deployment.md) |
@@ -173,7 +173,8 @@ personal API token. Full rules in `api/CLAUDE.md` (backend) and `web/CLAUDE.md`
 - **Each user gets one URL for KiCad**:
   `…/api/kicad/pcm/repository.json?t=<their token>`. Pasting it into the Plugin
   and Content Manager installs the library, the models, and a sync plugin with
-  their token already inside it.
+  their token already inside it. The same repository offers the Select Similar
+  plugin, which carries no token.
 - **`PUBLIC_BASE_URL`, `APP_BASE` and the shared nginx `/lib/` route still move
   together** — the personal URLs are built from `PUBLIC_BASE_URL`, so a mismatch
   hands users a link that resolves nowhere.

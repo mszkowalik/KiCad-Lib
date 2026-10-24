@@ -2,8 +2,9 @@
 
 How the Plugin and Content Manager gets the library, why a superseded artifact
 stays downloadable, and how a user token reaches KiCad. The service is
-`api/app/services/pcm.py`. The plugin source it packages is in
-`api/app/services/pcm_plugin/`, which has its own rules.
+`api/app/services/pcm.py`. It packages two plugins, each with its own rules
+beside its source: the sync plugin in `api/app/services/pcm_plugin/` and
+Select Similar in `api/app/services/select_similar_plugin/`.
 
 ## A superseded PCM artifact stays downloadable (the "hash does not match" trap)
 
@@ -56,13 +57,22 @@ answer — and it means the client is stale, not that the package is broken.
 ## Each PCM package is versioned from ITS OWN content
 
 A package's version string is what PCM compares to decide "update available",
-and the three packages differ in where it comes from: `library` and `models3d`
+and the four packages differ in where it comes from: `library` and `models3d`
 derive it from the mirror manifest's `generated_at`, `sync` carries the manual
-`PLUGIN_VERSION`. **A content package keeps its previous version while its own
-subtree hash is unchanged** — `_resolve_package` reuses the whole cached entry,
-version included. Only the plugin (`pinned_version=True`) takes the passed-in
-version on a cache hit, because that one is authored by hand and a bump with
-untouched sources still has to reach the repository.
+`PLUGIN_VERSION` and `select-similar` the manual `SIMILAR_VERSION`. **A content
+package keeps its previous version while its own subtree hash is unchanged** —
+`_resolve_package` reuses the whole cached entry, version included. Only the
+two plugins (`pinned_version=True`) take the passed-in version on a cache hit,
+because those are authored by hand and a bump with untouched sources still has
+to reach the repository.
+
+**A new package enters the build tag. It does not bump `BUILDER_REV`.**
+`_prev_packages` carries versions forward only from metas of the SAME builder
+revision. A bump therefore re-versions `library` and `models3d` from the
+current mirror timestamp, and PCM offers every user a 260 MB "update" of an
+unchanged tree. Select Similar (2026-10-24) put the hash of its files into the
+tag instead: the tag moves, a new meta is built, and the three old packages
+carry their versions and zips over unchanged.
 
 Getting this wrong is expensive in both directions, and the module has now been
 wrong in both:
