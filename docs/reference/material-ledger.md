@@ -58,10 +58,12 @@ live with their topics: `run_actuals` (the pool), `lots` (the lot ledger),
 
 `cutover.run` runs at startup, once, when `component_consumptions` still
 exists and `material_moves` is empty, in one transaction outside the startup
-block that swallows errors. It keeps every id that does not collide (on the
-production copy of 2026-10-23 only the 32 whole-step cost links got new ids)
-and renames the old tables. A failure stops the start. `GET
-/api/health/schema` reports `ledger.cutover`.
+block that swallows errors. It keeps every id that does not collide (on
+production, 2026-10-24, only the 32 whole-step cost links got new ids) and
+renames the old tables. A failure stops the start. `GET /api/health/schema`
+reports `ledger.cutover` as `ok` on the start that migrates and `skipped` on
+every later start. The counts are in the log line `material ledger: cut-over
+written`: the schema report counts any other status as a failed statement.
 
 ## The proof
 

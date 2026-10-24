@@ -1,6 +1,6 @@
 # Material ledger: one model for stock, work and units
 
-**Status: accepted on 2026-10-23. Phase 1 is deployed (37424e3, 2026-10-23); phases 2, 3 and 5 are one cut-over (decision 0098), built and not deployed.** This
+**Status: accepted on 2026-10-23. Phase 1 is deployed (37424e3, 2026-10-23); phases 2, 3 and 5 are one cut-over (decision 0098), deployed on 2026-10-24 (aa80e2f).** This
 document is the detail behind decision
 [0097](../decisions/0097-keep-stock-work-and-units-in-one-material-ledger.md).
 Phase 1 is described as built in
@@ -378,6 +378,10 @@ Each phase starts only when the user says so.
    The check lists each difference with its rows. A phase ends only
    when someone fixes or explains each difference.
 5. The old model stays the truth. No writer changes.
+
+The first run on production (2026-10-23, after the deploy of 37424e3) found
+no difference: 207 parts in the one pool, 146 in 7Sigma's stock, 105 in
+9Sigma's, 495 lots and 860 units.
 
 ### Phase 2: the ledger takes the writes
 

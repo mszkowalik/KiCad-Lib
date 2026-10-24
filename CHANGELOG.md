@@ -5,8 +5,20 @@
 - **Stock, work and units are stored in the material ledger only** (decision 0098). Draws,
   adjustments, lot bindings, transformations, clicks, twins and the positions linked to clicks
   moved into the ledger's tables once, at startup, with their ids. The old tables are kept read
-  only as `legacy_<name>`. Every screen, bench and figure works as before: 13,777 read answers
-  on a copy of production are the same before and after, apart from the order of same-day lists.
+  only as `legacy_<name>`. Every screen, bench and figure works as before: 13,916 read answers
+  on production are the same before and after, apart from the order of same-day lists and live
+  values that come from outside (JLC warehouse counts, fleet online counts).
+- **CE_Dongle_V2 Batches 1–7 and five prototype runs are rebuilt into twins** (decision 0060),
+  from their records only: 4,527 units. Every batch total and the parts stock stay the same. A
+  device now carries its twin's price instead of its batch's average, so order costs move by
+  cents (order 10: $18,360.44 → $18,357.61). A part drawn for a board that was never programmed
+  stays in its batch's cost, and a part the records show short stays short.
+- **Every draw is bound to its lots** (decision 0073): 475 draws, none uncovered. A batch's parts
+  are now priced at what their lots cost, not at the moving average: +$193.23 over 19 batches,
+  CE_Aqua_V2 Batch 1 +$251.87 the largest. Order margins move by the same amounts. New draws keep
+  the moving average until `lot_pricing` is switched on.
+- `/api/health/schema` reported `ok: false` after the switch although the migration succeeded. It
+  reports `ok` now.
 - **A write made before the switch can no longer be undone** on the Write log, by a request undo
   or by "Undo rebuild". The refusal names decision 0098. On the batch screen, a click made before
   the switch shows no Undo.
