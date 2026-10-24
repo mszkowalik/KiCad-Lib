@@ -1019,13 +1019,15 @@ def _material_ledger_cutover() -> None:
     material ledger, once. Outside the startup block that swallows errors, on
     purpose: a cut-over that fails rolls back whole and STOPS the start, so the
     deploy fails visibly and the previous image runs again on untouched
-    tables. A half-migrated database is the one outcome this must not allow."""
+    tables. A half-migrated database is the one outcome this must not allow.
+    The counts go to the log only: /api/health/schema counts any value other
+    than "ok" or "skipped" as a failed statement."""
     with engine.begin() as conn:
         if not _ledger_cutover.needed(conn):
-            _SCHEMA_RESULTS["ledger.cutover"] = "not needed"
+            _SCHEMA_RESULTS["ledger.cutover"] = "skipped"
             return
-        got = _ledger_cutover.run(conn)
-    _SCHEMA_RESULTS["ledger.cutover"] = f"ok: {got}"
+        _ledger_cutover.run(conn)
+    _SCHEMA_RESULTS["ledger.cutover"] = "ok"
 
 
 @app.on_event("startup")

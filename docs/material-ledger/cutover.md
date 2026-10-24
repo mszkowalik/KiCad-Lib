@@ -1,7 +1,8 @@
 # Material ledger cut-over: the plan
 
-**Status: in progress on branch `material-ledger-cutover`. Not deployed.**
-Decision 0098 (to write) amends item 9 of
+**Status: deployed on 2026-10-24 (aa80e2f), and the rundown is done.** The
+result on production is under "On production" at the end. Decision 0098
+amends item 9 of
 [0097](../decisions/0097-keep-stock-work-and-units-in-one-material-ledger.md):
 one switch instead of phases 2, 3 and 5. User answers, 2026-10-23/24:
 
@@ -123,8 +124,9 @@ spans a write reads as a difference. The user says when.
 4. **Pull and restart the api only** (`pull kicadlib-api`, `up -d
    kicadlib-api`). The web and render images do not change.
 5. **Read the start**: the log line `material ledger: cut-over written {...}`,
-   `GET /api/health/schema` → `ledger.cutover: ok`, `/api/health` 200, the
-   image revision label equal to the pushed commit.
+   `GET /api/health/schema` → `ledger.cutover: ok` (`skipped` on every later
+   start), `/api/health` 200, the image revision label equal to the pushed
+   commit.
 6. **Capture the answers after** the same way, into `/tmp/golden-after`, and
    `compare`. No difference may be `real`.
 7. **The rundown** (rehearsed on the production copy, 2026-10-24):
@@ -142,3 +144,29 @@ spans a write reads as a difference. The user says when.
    **If a real difference shows after a migration that succeeded**: fix
    forward if the cause is clear; otherwise restore the backup and run the
    previous image, which loses what was written since step 2.
+
+## On production (2026-10-24)
+
+1. **Backups**, in `~/kicadlib-backups/` on the server:
+   `full-before-18f9a89-2026-10-24/` (database, file store, data folder,
+   00:12 UTC) and `before-aa80e2f-2026-10-24.dump` (database, 10:41 UTC, just
+   before the switch).
+2. **The migration** wrote 1,222 events, 861 lots, 852 moves, 525 bindings,
+   7,060 event lots, 85 cost aims and 209 items. Only the 32 whole-step cost
+   links got new ids.
+3. **The proof**: 13,916 answers, none `real` apart from live values that
+   come from outside (34 JLC warehouse counts, 10 fleet online/offline
+   counts). The pool figures of the register are equal to the cent.
+4. **The rebuild**: Batches 1–7 of CE_Dongle_V2 (4,464 units, Write-log
+   batches 153–159) and the five prototype runs (63 units, 160–164). No
+   refusal. The register's pool did not move. Order 10's device cost went
+   from $18,360.44 to $18,357.61, as on the copy.
+5. **The lot history** (user's yes, 2026-10-24): 475 draws bound, none
+   uncovered, batch costs +$193.23 in total (Write-log batch 165). A second
+   dry run finds nothing left to bind. Gap 0, the pool balanced.
+6. **A finding**: the first start reported `ok: false` on
+   `/api/health/schema`, because the cut-over wrote its counts as its status.
+   Fixed in 9532ce0.
+7. **The bench was in use** during the rundown (CE_Dongle_V3 Batch 1, runs
+   8984 onwards). Its clicks went into the ledger the same way as before the
+   switch, and the api logged no error.
