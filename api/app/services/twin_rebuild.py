@@ -1500,6 +1500,10 @@ def _undo(db: Session, run: M.ProductionRun, actor: str) -> dict:
                                        "— reopen it first")
                 continue
             items.append((sr.created_at, "bench", sr))
+        elif db.query(M.WriteBatchRow.id).filter(M.WriteBatchRow.table_name == "step_runs",
+                                                 M.WriteBatchRow.row_id == sr.id).first():
+            plan["refused"].append(f"click #{sr.id} ({sr.step_label}, {sr.at}) was written before the switch to "
+                                   "the material ledger (decision 0098) and cannot be taken back")
         else:
             plan["refused"].append(f"click #{sr.id} ({sr.step_label}, {sr.chosen}, {sr.at}) is no bench "
                                    "click and has no live journal batch to reverse — take it back first "

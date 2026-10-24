@@ -538,7 +538,8 @@ quantity, label copies for a bench label).
   takes back. It refuses by name a click with no journal batch that is not a
   bench click, a dependent journal batch that is not a crafting write, and
   the rebuild of a batch built on this batch's boards. A rebuild written
-  before the rebuild was journalled is undone the old way.
+  before the switch to the material ledger (decision 0098) is refused: its
+  rows are in the read-only legacy tables.
 - **The Ledger refuses a `craft.rebuild` batch** and every redo of one: the
   batch's pinned process version is no journalled row. "Undo rebuild" owns
   it, and puts back the version the batch had pinned before the rebuild
