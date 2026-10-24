@@ -1,0 +1,6 @@
+# KiCad builds the plugin's virtual environment from this file. It must exist,
+# or the environment setup aborts and the toolbar button never appears.
+#
+# 0.8.0 is built against KiCad 10.0.6 and runs on 10.0.5 (verified
+# 2026-10-23). It needs pynng, which has wheels for KiCad's bundled Python 3.9.
+kicad-python==0.8.0

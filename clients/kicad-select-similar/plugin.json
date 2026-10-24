@@ -1,0 +1,20 @@
+{
+    "identifier": "com.sevensigma.select-similar",
+    "name": "Select Similar",
+    "description": "Altium's Find Similar Objects for the KiCad PCB editor: take the selected object as a template, set each attribute to Any, Same or Different, and select every matching object so the Properties panel edits them together.",
+    "runtime": {
+        "type": "python"
+    },
+    "actions": [
+        {
+            "identifier": "select-similar",
+            "name": "Select Similar",
+            "description": "Open the Select Similar panel with the selected object as the template",
+            "show-button": true,
+            "scopes": ["pcb"],
+            "entrypoint": "select_similar.py",
+            "icons-light": ["icon-light-24.png", "icon-light-48.png"],
+            "icons-dark": ["icon-dark-24.png", "icon-dark-48.png"]
+        }
+    ]
+}
