@@ -175,12 +175,24 @@ both the missing long antennas and part of the short-antenna placeholder.
 | An invoice for the long antennas? | All 5 are on the platform with their PDFs. The missing one is the short antennas' (above). |
 | Which count is the reference? | The Kraków office's. LIFTECH's counts may be wrong. |
 | The unexplained units? | The office was scanned by MAC (section 4). |
+| The antennas? | Both: LIFTECH fitted some long antennas, and about 1,000 or more short antennas were bought with no invoice (the placeholder of 1,235 stands). |
+| Write the books down to the Kraków count? | Yes, after the user asks LIFTECH. If LIFTECH holds nothing, the parts are gone. |
+| Mark the 22 units alive at customers as delivered? | Yes. Done 2026-10-25 (below). |
+| The 40 suspected Dongle boards? | They stay Aquas until a unit proves otherwise. |
 
-Still open:
+**Done on 2026-10-25.** The 19 units with no batch were linked to their
+batches by their programming date (`POST /runs/{id}/produced`): Batch 1: 9,
+Batch 2: 5, Batch 3: 2 (unit 2514, programmed 2025-03-19 before P30 shipped,
+on a P20 reel), Batch 4: 3. Then the 22 units went on a correction delivery
+of the first Columbus delivery after their programming:
 
-1. Write the books down to the Kraków count on 2026-10-03 (about 190
-   bodies, 165 panels and 360 long antennas against today's books)?
-2. Mark the 22 units alive at customers as delivered, beyond the invoiced
-   quantities?
-3. Leave the 40 suspected Dongle boards as Aquas, or move them when a unit
-   proves it?
+| Shipment | Order | Date | Units | The order now |
+|---|---|---|---|---|
+| 2328 | FV 1/10/2024 | 2024-10-16 | 14 (Batches 1 and 2) | 166 Aquas for 150 ordered |
+| 2329 | ZAL 00001/03/2025 | 2025-04-30 | 8 (Batches 3 and 4, with the 3 "missing" units) | 108 Aquas for 100 ordered |
+
+The register's gap stayed 0.
+
+Still open: the write-down to the Kraków count on 2026-10-03, after the call
+to LIFTECH. Against today's books it is about −187 bodies, −165 panels and
+−362 long antennas.
