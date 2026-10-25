@@ -7,17 +7,17 @@ work to the deliveries?
 
 ## The answer
 
-**Yes for the flow, with four breaks.** Every Columbus order has a JLC order
+**Yes for the flow, with three breaks.** Every Columbus order has a JLC order
 and a LIFTECH campaign behind it, and the dates line up: the order comes in,
 the boards are ordered 4–17 days later, LIFTECH programs them 3–12 weeks
-after the order, and the delivery follows. The board parts, the enclosures
-and the panels close against LIFTECH's count of 2025-06-08. The breaks:
+after the order, and the delivery follows. Every board and every part
+purchase has its document. The breaks:
 
-1. About 40 of the 165 "Aqua" units programmed in Nov–Dec 2024 are Dongle V2
-   boards (section 5).
-2. 453 long antennas are missing by 2025-06-08.
-3. The finished stock on the platform is higher than both counts.
-4. The prototype delivery is dated before its boards existed.
+1. **65 programmed units are on no delivery and not in the office.** About 40
+   of them are probably Dongle V2 boards recorded as Aquas (section 6).
+2. **Against the Kraków count, about 200 enclosure sets and about 390 long
+   antennas are missing** (section 5).
+3. The prototype delivery is dated before its boards existed.
 
 ## 1. The sources
 
@@ -26,11 +26,12 @@ and the panels close against LIFTECH's count of 2025-06-08. The breaks:
 | Columbus orders and sales invoices | 7 sales orders, advance and settlement invoices | quantity, price, order date |
 | Deliveries | shipments and their device events | date, quantity |
 | JLC orders and invoices | `jlc_imports`, supplier documents | boards per design, order date (in the SMT number), ship date (the invoice date), delivery place |
-| Part purchases | supplier documents (Italtronic, TME, Mouser, DigiKey, PUDLO, JLC parts orders) | parts and dates |
+| Part purchases | supplier documents, each with its PDF | parts and dates |
 | Board-part usage | draws per batch | the parts each JLC order took |
 | LIFTECH's work | bench runs (operator Paweł Kajda, stations COM4–COM11), 2 LIFTECH invoices with counts | which board was programmed and tested, when |
 | Fleet | the broker, since 2026-09-18 | which unit is alive at a customer |
-| Counts | LIFTECH's e-mail "Stan magazynowy" of 2025-06-08 (Gmail only); the user's count of 2026-10-02/03 ([stock-count-2026-10.md](stock-count-2026-10.md)) | the shelf on two dates |
+| **The Kraków office, 2026-10-02/03** | the MAC scan in `reports/stock-count-2026-10-02/readouts/`, the parts count in [stock-count-2026-10.md](stock-count-2026-10.md) | **the reference stock** (user, 2026-10-25) |
+| LIFTECH's e-mail "Stan magazynowy", 2025-06-08 | Gmail only | a count the user does not trust (user, 2026-10-25) |
 
 ## 2. The order cycles
 
@@ -48,8 +49,7 @@ and the panels close against LIFTECH's count of 2025-06-08. The breaks:
 Columbus ordered 887 Aquas, the platform shows 908 delivered. The 21 extra
 are order 2 (152 for 150) and order 6 (269 for 250). Every production order
 went to LIFTECH in Olkusz. Cycle 6 delivered 269 units from 185 programmed in
-its campaign, so 84 came from older stock: the same number as the "boards
-with antennas" LIFTECH counted on 2025-06-08.
+its campaign, so 84 came from older stock.
 
 ## 3. The units over time
 
@@ -70,16 +70,29 @@ with antennas" LIFTECH counted on 2025-06-08.
 | 2025-03-19 | 2 more (old boards) | 679 | 519 | 160 |
 | 2025-04-28 | P30 programmed | 804 | 519 | 285 |
 | 2025-04-30 | Order 5 delivered | 804 | 619 | 185 |
-| **2025-06-08** | **LIFTECH's count: 15 packed + 84 boards with antennas** | | | **99 counted** |
 | 2026-01-18 | P30 reorder programmed, order 6 delivered | 989 | 888 | 101 |
-| **2026-10-02** | **The user's count: 29 finished + 6 assembled spares + 2 programmed bare boards** | | | **37 counted** |
+| **2026-10-02** | **The Kraków office, by MAC (section 4)** | | | **36 in the office** |
 
 The boards balance per JLC order. Every board was programmed within weeks of
 its arrival, except 3 of Batch 1 (2 of them programmed on 2025-03-19) and 65
-of the P30 reorder (61 bare boards on the shelf, 2 disposed, 2 not known).
+of the P30 reorder (61 bare boards in the office, 2 disposed, 2 not known).
 P20 is the exception: 165 programmed from 125 boards.
 
-## 4. Component usage
+## 4. The Kraków office on 2026-10-02, by MAC
+
+| In the office | Units | Programmed in | Matched to the platform by |
+|---|---|---|---|
+| Finished Aquas | 29 | Batch 1: 3, Batch 4: 18, Batch 5: 8 | full MAC 12, 6-hex ID 17 |
+| Spares with a record | 8 | 7 programmed (Batches 4 and 5), 1 never flashed | full MAC 6, 6-hex ID 2 |
+| Bare boards | 61 | none: no record at all | their MACs are in Batch 5's ranges (841fe835, 8813bfa9, f024f910) |
+
+So 36 programmed units are in the office, and 953 programmed units left it.
+Columbus invoiced 867 production units, the platform records 888 delivered,
+and **65 programmed units are on no delivery**. 17 of the finished units in
+the office once had a "shipped" event, which the 2026-10-02 correction took
+back.
+
+## 5. Component usage
 
 ### The board parts
 
@@ -92,56 +105,54 @@ P20 is the exception: 165 programmed from 125 boards.
 | 5 | P30 reorder | our stock, consigned | 2025-11-05 | 2025-10-16 |
 
 Each consigned order drew one ESP32-WROOM-32UE-N4 per board, together with
-the Dongle boards of the same order. The module never ran out (JLC parts
-orders 2024-07-24, 10-09, 10-17, 2025-03-19, 09-30). The draws are dated at
-JLC's invoice date, 2–3 weeks after the order: recreatable as they are.
+the Dongle boards of the same order. The module never ran out. The draws are
+dated at JLC's invoice date, 2–3 weeks after the order: recreatable as they
+are.
 
-### The hand parts
+### The hand parts, against the Kraków count
 
-| Part | Bought (dates) | Expected on 2025-06-08 | LIFTECH counted | Expected on 2026-10-03 | The user counted |
+"Expected" is the purchases less one set per Aqua enclosed: the 20
+prototypes (no front panel), the units that left the office, and the 35
+enclosed units in it. The range is with and without the 40 suspected Dongle
+boards.
+
+| Part | Bought | Documents | Expected on 2026-10-03 | Kraków count | Missing |
 |---|---|---|---|---|---|
-| Enclosure body 05.0502530 | 1,402 (2024-02-20 to 09-18) | 748 | 740 "enclosures" | 451 | 200 pairs |
-| Front panel P05050201P.BL | 1,380 (2024-06-21 to 09-18) | 746 | (in the 740) | 451 | (in the 200 pairs) |
-| Long antenna 146153-0150 | 1,425 (2024-02-20 to 10-17) | 687 loose + 84 on boards | 234 loose + 84 on boards | 29 | 48 |
-| Carton 120x100x80 | 2,000 (1,000 of them a placeholder) | 1,361–1,491 | 1,250 | — | not counted |
+| Enclosure body 05.0502530 | 1,402 | TME ×2, Italtronic ×2 (one with 2 orders, 550 + 500) | 394–434 | 200 pairs | 194–234 |
+| Front panel P05050201P.BL | 1,380 | TME, Italtronic ×2 | 392–432 | (in the 200 pairs) | 192–232 |
+| Long antenna 146153-0150 | 1,425 | TME ×3, Mouser, DigiKey 107855766 | 417–457 | 48 | 369–409 |
+| Carton 120x100x80 | 2,000 | PUDLO FA 1483/24, and a placeholder for 1,000 | — | not counted | — |
 
-"Expected" is purchases less one set per unit enclosed by that date. A unit
-is enclosed when it is delivered or packed. The bodies and panels close in
-June 2025. The antennas are 453 short in June 2025, but close afterwards
-(29 expected, 48 counted). The bodies and panels are 251 sets short in
-October 2026.
+Every long antenna has an invoice with its PDF. DigiKey 107855766 really
+holds two lines, 500 short (WM17084) and 500 long (WM17566), in one box. The
+invoice that is missing is for the **short** Dongle antenna 146153-0050:
+PLACEHOLDER-ANT0050-2024 books 1,235 of them, because the Dongle batches used
+4,325 while only 3,195 were invoiced. Probably (not verified) LIFTECH fitted
+long antennas on Dongles when the short ones ran out: that would explain
+both the missing long antennas and part of the short-antenna placeholder.
 
-## 5. The breaks
+## 6. The breaks
 
-1. **About 40 Dongle V2 boards are recorded as Aquas.** JLC order P20 + P21
-   made 125 Aqua and 450 Dongle PCBs, and drew 575 ESP32 modules. The bench
-   programmed 573 units from it: 165 as Aqua, 408 as Dongle. 125 Aqua PCBs
-   cannot give 165 Aquas, so about 40 Dongle boards were programmed with the
-   Aqua firmware in Nov–Dec 2024. One unit of that campaign reports Dongle
-   firmware on the broker. Probably (not verified) they are among the 93
-   units programmed on 2024-11-21 and 11-25 without the Aqua test. The data
-   does not say which ones.
-2. **The finished stock on the platform is too high.** On 2025-06-08 the
-   platform holds 185 units where LIFTECH counted 99. Less the 40 Dongles,
-   46 units are not explained. On 2026-10-02 it is 101 against 37, so 24
-   units are not explained after the 40. Probably these are units scrapped,
-   failed or lost without a record (not verified).
-3. **453 long antennas are missing by 2025-06-08.** After that date the
-   antennas close.
-4. **251 enclosure sets are missing on 2026-10-03.** They close in June 2025.
-   Maybe the user's count covered only the user's shelf, not LIFTECH's.
-5. **The prototype delivery is dated 2024-02-16**, the date of invoice
+1. **About 40 Dongle V2 boards are probably recorded as Aquas** (the user:
+   "it's possible"). JLC order P20 + P21 made 125 Aqua and 450 Dongle PCBs,
+   and drew 575 ESP32 modules. The bench programmed 573 units from it: 165
+   as Aqua, 408 as Dongle. One unit of that campaign reports Dongle firmware
+   on the broker. The data does not say which units they are.
+2. **65 programmed units are on no delivery and not in the office.** Less the
+   40, 25 units are not explained. The broker shows 22 units at customers
+   whose records are not "shipped": the 19 alive of the 76 units taken out of
+   their batches on 2026-09-10, and 3 "missing" units of Batch 4.
+3. **Against the Kraków count, about 200 enclosure sets and about 390 long
+   antennas are missing.** Possible causes: sets fitted to boards that
+   failed, long antennas fitted to Dongles, parts left at LIFTECH.
+4. **The prototype delivery is dated 2024-02-16**, the date of invoice
    FV 01/02/2024. The 22 prototype boards were ordered on 2024-02-19 and
    shipped from JLC on 02-27.
-6. **Which unit went to which order is partly guessed.** 221 delivered
+5. **Which unit went to which order is partly guessed.** 221 delivered
    records have no MAC and never appeared on the broker. The quantities per
    order are right.
-7. **76 units were taken out of their batches on 2026-09-10** for "never
-   passed the function test". 19 of them are alive at customers. By their
-   programming date they belong to Batches 1 (34), 2 (14), 3 (2), 4 (23)
-   and 5 (2).
 
-## 6. Can the platform recreate it?
+## 7. Can the platform recreate it?
 
 | Area | Recreate | Confidence | What is missing |
 |---|---|---|---|
@@ -151,17 +162,25 @@ October 2026.
 | Board orders and their dates | yes | high | the arrival date (the first programming is the proxy) |
 | Board-part usage | yes | high | — |
 | Hand-part purchases | yes | high | one carton invoice is a placeholder |
-| Hand-part usage | yes, one set per enclosed unit | medium | 453 antennas before June 2025; 251 sets in October 2026 |
-| Programming and tests per unit | yes | high | about 40 of the units are Dongle boards |
-| Assembly work at LIFTECH | partly | low | the invoices state counts but not their periods |
-| What happened to every unit | partly | medium | 46 units in June 2025, 24 in October 2026 |
+| Hand-part usage | yes, one set per enclosed unit | medium | about 200 sets and 390 antennas against the Kraków count |
+| Programming and tests per unit | yes | high | about 40 of the units are probably Dongle boards |
+| The stock in the office | yes, by MAC | high | — |
+| What happened to every unit | partly | medium | 25 units after the 40 |
 
-## 7. Questions that close the breaks
+## 8. The user's answers (2026-10-25) and what is still open
 
-1. Did LIFTECH program about 40 Dongle boards with the Aqua firmware in
-   Nov–Dec 2024?
-2. Where did about 450 long antennas go before June 2025? Were some kept in
-   Kraków?
-3. Did your count of 2026-10-03 cover LIFTECH's shelf too?
-4. Were about 46 programmed units scrapped or kept somewhere between the end
-   of 2024 and June 2025?
+| Question | Answer |
+|---|---|
+| About 40 Dongle boards programmed as Aqua in Nov–Dec 2024? | "It's possible." |
+| An invoice for the long antennas? | All 5 are on the platform with their PDFs. The missing one is the short antennas' (above). |
+| Which count is the reference? | The Kraków office's. LIFTECH's counts may be wrong. |
+| The unexplained units? | The office was scanned by MAC (section 4). |
+
+Still open:
+
+1. Write the books down to the Kraków count on 2026-10-03 (about 190
+   bodies, 165 panels and 360 long antennas against today's books)?
+2. Mark the 22 units alive at customers as delivered, beyond the invoiced
+   quantities?
+3. Leave the 40 suspected Dongle boards as Aquas, or move them when a unit
+   proves it?
