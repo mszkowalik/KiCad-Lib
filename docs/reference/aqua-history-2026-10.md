@@ -205,18 +205,19 @@ prototypes' 22 enclosure sets must be drawn first.
 | 2 | Order the PCBAs from JLC, in one order with the Dongle boards; ship to LIFTECH, Olkusz | 7Sigma, JLC | Batch 1 turnkey; later the BOM consigned from our JLC parts stock, one ESP32 per board | JLC orders, draws |
 | 3 | Buy the hand parts, deliver them to LIFTECH | 7Sigma | — | Italtronic, TME, Mouser, DigiKey, PUDLO |
 | 4 | Receive the PCBA | LIFTECH | — | — |
-| 5 | Program (Aqua_V2 config) | LIFTECH, Paweł Kajda, 4–6 stations | — | bench runs |
-| 6 | Function test (Aqua_V2 test), on part of the units | LIFTECH | — | tests in Aug 2024, Oct 2024, Dec 2024, Apr 2025; none on the P30 reorder |
-| 7 | Mount the antenna in the enclosure body (adhesive) | LIFTECH | 146153-0150, 05.0502530 | the user; purchases one per unit |
-| 8 | Put the PCBA in, connect the antenna, fit the front panel | LIFTECH | P05050201P.BL | the user; the prototypes had no panel |
-| 9 | Laser mark, barcode label | LIFTECH, its own labels | — | the user (2026-10-04); no bench record |
-| 10 | Pack into the carton; a leaflet since 2025-04-15 | LIFTECH | KARTON-120x100x80-B | carton purchases; the user |
-| 11 | Deliver to Columbus, bill per unit delivered | LIFTECH | — | section 10 |
-| 12 | Settlement invoice to Columbus | 7Sigma | — | FV invoices |
+| 5 | Add the antenna to the PCBA | LIFTECH | 146153-0150 | the user (2026-10-26); purchases one per unit |
+| 6 | Program (Aqua_V2 config) | LIFTECH, Paweł Kajda, 4–6 stations | — | bench runs |
+| 7 | Function test (Aqua_V2 test), optional | LIFTECH | — | tests in Aug 2024, Oct 2024, Dec 2024, Apr 2025; none on the P30 reorder |
+| 8 | Insert the PCBA into the enclosure, connect the antenna | LIFTECH | 05.0502530 | the user |
+| 9 | Fit the front panel | LIFTECH | P05050201P.BL | the user; the prototypes had no panel |
+| 10 | Laser mark (needs a programmed PCBA with its antenna), barcode label | LIFTECH, its own labels | — | the user; no bench record |
+| 11 | Pack into the carton; a leaflet since 2025-04-15 | LIFTECH | KARTON-120x100x80-B | carton purchases; the user |
+| 12 | Deliver to Columbus, bill per unit delivered | LIFTECH | — | section 10 |
+| 13 | Settlement invoice to Columbus | 7Sigma | — | FV invoices |
 
-Programming comes before enclosing in this reading. LIFTECH's count of
-2025-06-08 lists 84 "Aqua boards with antennas" when every board had been
-programmed, and the Kraków office holds programmed bare boards.
+The user confirmed this order on 2026-10-26: it is the Dongle V2 route with
+the test and the front panel added. It fits LIFTECH's count of 2025-06-08
+(84 "Aqua boards with antennas", programmed but not enclosed).
 
 ## 10. What LIFTECH's invoices cover
 
