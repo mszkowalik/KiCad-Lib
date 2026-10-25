@@ -193,6 +193,89 @@ of the first Columbus delivery after their programming:
 
 The register's gap stayed 0.
 
-Still open: the write-down to the Kraków count on 2026-10-03, after the call
-to LIFTECH. Against today's books it is about −187 bodies, −165 panels and
-−362 long antennas.
+LIFTECH holds no Aqua parts and no Aqua devices (user, 2026-10-25). The
+write-down to the Kraków count goes after the rebuild, because the
+prototypes' 22 enclosure sets must be drawn first.
+
+## 9. The process, as the evidence shows it
+
+| # | Step | Who | Parts per unit | Evidence |
+|---|---|---|---|---|
+| 1 | Columbus orders, 7Sigma invoices an advance | 7Sigma | — | sales orders, ZAL invoices |
+| 2 | Order the PCBAs from JLC, in one order with the Dongle boards; ship to LIFTECH, Olkusz | 7Sigma, JLC | Batch 1 turnkey; later the BOM consigned from our JLC parts stock, one ESP32 per board | JLC orders, draws |
+| 3 | Buy the hand parts, deliver them to LIFTECH | 7Sigma | — | Italtronic, TME, Mouser, DigiKey, PUDLO |
+| 4 | Receive the PCBA | LIFTECH | — | — |
+| 5 | Program (Aqua_V2 config) | LIFTECH, Paweł Kajda, 4–6 stations | — | bench runs |
+| 6 | Function test (Aqua_V2 test), on part of the units | LIFTECH | — | tests in Aug 2024, Oct 2024, Dec 2024, Apr 2025; none on the P30 reorder |
+| 7 | Mount the antenna in the enclosure body (adhesive) | LIFTECH | 146153-0150, 05.0502530 | the user; purchases one per unit |
+| 8 | Put the PCBA in, connect the antenna, fit the front panel | LIFTECH | P05050201P.BL | the user; the prototypes had no panel |
+| 9 | Laser mark, barcode label | LIFTECH, its own labels | — | the user (2026-10-04); no bench record |
+| 10 | Pack into the carton; a leaflet since 2025-04-15 | LIFTECH | KARTON-120x100x80-B | carton purchases; the user |
+| 11 | Deliver to Columbus, bill per unit delivered | LIFTECH | — | section 10 |
+| 12 | Settlement invoice to Columbus | 7Sigma | — | FV invoices |
+
+Programming comes before enclosing in this reading. LIFTECH's count of
+2025-06-08 lists 84 "Aqua boards with antennas" when every board had been
+programmed, and the Kraków office holds programmed bare boards.
+
+## 10. What LIFTECH's invoices cover
+
+LIFTECH bills each unit when it is delivered:
+
+| Invoice | Amount (PLN) | States | Columbus delivery | Per unit (PLN) |
+|---|---|---|---|---|
+| 1/08/24, 2024-08-27 | 5,052 | a lump | 2024-07-21: 500 Dongle; 2024-07-16: 110 Aqua | 7.05 (inferred: 717 units) |
+| 3/04/25, 2025-04-30 | 10,665 | 1,239 Dongle, 400 Aqua | Oct 2024 – Apr 2025: 1,233 Dongle, 507 Aqua | 6.51 |
+| 2/09/25, 2025-09-24 | 3,240 | 455 Dongle | 2025-09-29: 456 Dongle | 7.12 |
+| 1/12/25, 2025-12-29 | 8,765 | 1,000 Dongle, 250 Aqua | 2025-12-30: 1,000 Dongle, 250 Aqua | 7.01 |
+| 1/7/2026, 2026-07-08 | 7,035 | 1,000 Dongle | 2026-07-09: 1,000 Dongle | 7.04 |
+
+1/08/24 states no count. 3/04/25 bills 400 Aquas against 507 delivered in its
+period, so 107 were billed before: on 1/08/24, with the 110 of July. That
+makes 1/08/24 = 500 Dongle + 217 Aqua = 717 units at 7.05 PLN, in line with
+the later rates. Then 3/04/25's 400 Aquas are the period's deliveries less
+those 107: 402 by the delivery records.
+
+"2024-09-30-LIFTECH-assembly" (1,750 PLN, "5 PLN × 350", on Dongle Batch 2)
+has no PDF and no invoice number. It was typed in on 2026-07-27. The 300
+Dongles delivered on 2024-10-16 are already inside 3/04/25's 1,239: this is
+probably a double count.
+
+Proposed LIFTECH cost per Aqua batch (each delivered unit at the rate of the
+invoice that billed it):
+
+| Batch | Today (PLN) | Proposed (PLN) | From |
+|---|---|---|---|
+| 1 (P15 + P16) | 1,071.60 | 1,937 | 1/08/24: 217; 3/04/25: 63 |
+| 2 (P19) | 680.38 | 1,204 | 3/04/25: 185 |
+| 3 (P20) | 425.24 | 1,067 | 3/04/25: 152; 1/12/25: 11 |
+| 4 (P30) | 425.23 | 603 | 1/12/25: 86 |
+| 5 (P30 reorder) | 1,753.00 | 1,073 | 1/12/25: 153 |
+| Aqua total | 4,355.45 | 5,884 | |
+| Dongle Batch 1 | 5,052.00 | 3,523 | 1/08/24: 500 |
+
+## 11. Batches are JLC's PCBA orders
+
+LIFTECH did not keep our batches: it programmed boards as they came. A unit
+belongs to the PCBA order whose boards were at LIFTECH when it was first
+programmed.
+
+| PCBA order | Boards | Units programmed | Delivered | In stock | Missing | No state (never passed the test; 10 of them are in the office) | Balance |
+|---|---|---|---|---|---|---|---|
+| Y29 (prototypes) | 22 | 22 (not on the bench) | 20 | — | 2 | — | exact |
+| P15 (Batch 1) | 125 | 122 | 122 | — | — | — | 3 boards: 2 programmed 2025-03-19, 1 not known |
+| P16 (Batch 1) | 190 | 190 | 163 | 2 | — | 25 | exact |
+| P19 (Batch 2) | 200 | 200 | 191 | — | — | 9 | exact |
+| P20 (Batch 3) | 125 | 165 | 164 | — | — | 1 | 40 units more than boards |
+| P30 (Batch 4) | 125 | 125 | 80 | 17 | 9 | 19 | exact |
+| P30 reorder (Batch 5) | 250 | 185 | 164 | 8 | 11 | 2 | 61 bare boards in the office, 2 disposed, 2 not known |
+
+The accounting rules that close it:
+
+1. **P20's 40 extra units were built on boards of Dongle order P21**, from
+   the same JLC shipment, which has 42 boards with no Dongle unit. They stay
+   Aquas (the user), and their board cost comes from Dongle Batch 3.
+2. **P30 reorder's 61 bare boards are units of Batch 5** that stopped at
+   "received" (a pile).
+3. **The units neither delivered nor in the office are lost**: they stay in
+   their batch's cost as a loss. LIFTECH holds none of them.
