@@ -1,5 +1,20 @@
 # Changelog
 
+## 2026-10-28 (JLC import: the PCB order's board price is no longer booked as stencil)
+
+- **The JLC import books a PCB order's board price on `fab:pcb`.** JLC's `stencilMoney` field
+  on a PCB order holds the board price: its order page labels the same amount "Board"
+  (W2026092300301215, P50: $55.70). The import booked it as "Stencil (ordered with the PCB)" on
+  `pcba:stencil`, so every JLC run showed a stencil far over plan and a board price far under
+  it. The line is now "Board". The fields JLC calls "Surface Finish" and "Film" carry those
+  names instead of "JLC charge 'adornPut'" and "JLC charge 'fill'". When the board price is
+  itemized, the remainder is labelled as the board surcharges it is (ENIG area, production
+  file confirmation).
+- **Booked lines corrected by hand.** Of all JLC documents, three PCB orders carried the
+  wrong line: run 20 (line 1102, $8.90), run 19 (line 1151, $222.10) and run 2164 (line 5062,
+  $55.70). All three now sit on `fab:pcb` as "Board", and the five "adornPut"/"fill" lines of
+  those orders read "Surface finish" and "Film".
+
 ## 2026-10-24 (bench: several stations at once, Abort that stops esptool, sounds, cached firmware)
 
 - **Several stations program at the same time** (decision 0099, work list row 49). The bench

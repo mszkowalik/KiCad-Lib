@@ -392,20 +392,24 @@ JLC_SMT_FEE_STEPS: dict[str, tuple[str, str]] = {
 
 # `orderCountTolls` keys itemized OUT of a PCB order's price. Everything not
 # listed (copper weight, gold thickness, castellated holes, stackup, via
-# covering, ...) is a board-spec surcharge and stays inside the bare-board
-# remainder — it IS the board's price. `adornPutMoney` and `fillMoney` carry
-# JLC's internal names because no public wording for them was found; they go
-# to `fab:other` so the money stays visible rather than guessed at.
+# covering, ...) is a board-spec surcharge and stays inside the remainder.
+# Despite its name, `stencilMoney` on a PCB order IS the board price: JLC's
+# order page labels it "Board" (W2026092300301215, P50: Board $55.70 =
+# stencilMoney 55.70; read 2026-10-28). Booking it as `pcba:stencil` put the
+# board price on the stencil step of every JLC import until then. The same page
+# names `adornPutMoney` "Surface Finish" ($29.50) and `fillMoney` "Film"
+# ($2.70); the remainder held "Confirm Production file" $1.05 + "ENIG Area
+# Surcharge" $1.88. A stencil is its own JLC order, never a PCB-order fee.
 JLC_PCB_FEE_STEPS: dict[str, tuple[str, str]] = {
     "projectMoney":         ("Engineering fee", "fab:setup"),
     "spellMoney":           ("Panelization", "fab:panel"),
-    "stencilMoney":         ("Stencil (ordered with the PCB)", "pcba:stencil"),
+    "stencilMoney":         ("Board", "fab:pcb"),
     "testsMoney":           ("Electrical test", "fab:test"),
     "achieveMoney":         ("Expedited lead time", "fab:other"),
     "multipleAchieveMoney": ("Expedited lead time", "fab:other"),
     "spellAchieveMoney":    ("Expedited lead time (panel)", "fab:other"),
-    "adornPutMoney":        ("JLC charge 'adornPut' (no public wording)", "fab:other"),
-    "fillMoney":            ("JLC charge 'fill' (no public wording)", "fab:other"),
+    "adornPutMoney":        ("Surface finish", "fab:other"),
+    "fillMoney":            ("Film", "fab:other"),
     "specialMoney":         ("Special process", "fab:other"),
     "charFontColor":        ("Silkscreen / character option", "fab:other"),
     "noCodeMoney":          ("Remove order number", "fab:other"),
@@ -443,8 +447,13 @@ def order_fee_components(entry: dict) -> list[dict]:
                 out.append({"slug": key, "label": label, "step": step, "amount": amt})
         base = round(jlc_invoice._f(entry.get("dummy")) - sum(c["amount"] for c in out), 4)
         if abs(base) >= 0.005:
+            # Slug "board" stays: it is the line's external id. With the board
+            # price itemized (`stencilMoney`) the remainder is only the
+            # surcharges JLC lists beside it.
+            itemized = any(c["slug"] == "stencilMoney" for c in out)
             out.insert(0, {"slug": "board", "step": "fab:pcb", "amount": base,
-                           "label": "Bare board price (incl. spec surcharges)"})
+                           "label": ("Board surcharges (ENIG area, production file confirmation, ...)"
+                                     if itemized else "Bare board price (incl. spec surcharges)")})
         extra = round(jlc_invoice._f(entry.get("extra")), 4)
         if abs(extra) >= 0.01:
             out.append({"slug": "unitemized", "step": "fab:other", "amount": extra,
