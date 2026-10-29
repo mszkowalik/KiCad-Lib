@@ -8,6 +8,11 @@
   on the wide roll ("needs 47.5 mm of barcode and this roll prints 28.7 mm across"). Now a
   roll set on the bench is turned only when it is taller than it is wide. The procedure's own
   roll and its setting do not change. Typed labels follow the same rule.
+- **"Change…" lists every roll the printer knows.** The bench page asked the agent for its
+  printers without naming one, and the agent lists rolls only for a named printer. So the
+  list held only the 25 × 54 mm fallback, and the 57 × 32 mm roll could not be picked. The
+  page now asks again for the label printer. The step preview on the Deployments page gets
+  the printer's printable area the same way.
 
 ## 2026-10-29 (JLC import: the duty and tax disbursement fee)
 

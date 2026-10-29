@@ -345,13 +345,21 @@ export interface PrintJob {
 export async function listPrinters(
   forPrinter?: string,
 ): Promise<{ printers: AgentPrinter[]; rolls: AgentRoll[]; defaultRoll: string }> {
+  const agent = new MarkAgent();
   const q = forPrinter ? `?printer=${encodeURIComponent(forPrinter)}` : "";
-  const r = await new MarkAgent().call(`/printers${q}`);
-  return {
-    printers: (r.printers ?? []) as AgentPrinter[],
-    rolls: (r.rolls ?? []) as AgentRoll[],
-    defaultRoll: String(r.default_roll ?? ""),
-  };
+  const r = await agent.call(`/printers${q}`);
+  const printers = (r.printers ?? []) as AgentPrinter[];
+  let rolls = (r.rolls ?? []) as AgentRoll[];
+  // The agent lists rolls only for a NAMED queue. Asked for none, ask again
+  // for the label printer, or the bench's roll picker offers nothing but the
+  // fallback roll (found 2026-10-29, when the 57 x 32 mm roll arrived).
+  const label = printers.find((p) => p.label_printer && p.default)
+    ?? printers.find((p) => p.label_printer);
+  if (!forPrinter && !rolls.length && label) {
+    const again = await agent.call(`/printers?printer=${encodeURIComponent(label.queue)}`);
+    rolls = (again.rolls ?? []) as AgentRoll[];
+  }
+  return { printers, rolls, defaultRoll: String(r.default_roll ?? "") };
 }
 
 /** Print one label. The ONE implementation, for the same reason `runMarkJob`
