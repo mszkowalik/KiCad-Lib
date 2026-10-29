@@ -95,11 +95,10 @@ only repeats the PPD's default. The RFID reading stays between the printer and
 DYMO Connect. So the roll is a **station setting** the operator states once, and
 a wrong statement costs a label rather than raising an error.
 
-The dropdown on the marking bench lists the rolls the bench stocks, in
-`ROLLS` in `web/src/components/flasher/BenchStation.tsx`. Add a row there when a
-roll is bought. The agent can list all 61 the PPD knows (`GET /printers?printer=…`),
-which is how you find the `size` name — it is the PPD's own page-size key and
-what `lp -o PageSize=` takes.
+The procedure's `print_label` step names the roll. "Change…" on the marking
+station overrides it for that bench, from the rolls the agent reads out of the
+PPD (`GET /printers?printer=…`, all 61 of them). The `size` there is the PPD's
+own page-size key and what `lp -o PageSize=` takes.
 
 | PPD size | Roll | Label | Printable | At 300 dpi |
 |---|---|---|---|---|
@@ -111,6 +110,15 @@ what `lp -o PageSize=` takes.
 A 12-character serial needs **47.5 mm** of barcode at the standard module, so a
 narrow roll has to be turned a quarter turn. `rotate` on the step does that, and
 it is on by default.
+
+**On an overridden roll the bench chooses the turn, not the step.** The step's
+`rotate` was chosen for the step's own roll, and no one value serves two rolls:
+a 12-character serial prints on `w72h154` only turned (22.9 mm across flat) and
+on `w162h90` only flat (28.7 mm across turned). So when the bench prints on a
+roll other than the step's, the label is turned exactly when that roll is taller
+than it is wide (`rotateFor` in `web/src/flasher/label.ts`). Checked on
+2026-10-29 against the bench's PPD: both rolls rendered through
+`cgpdftoraster` and decoded back to `88F1555A5EE0`.
 
 ## The four measurements that make a label scannable
 

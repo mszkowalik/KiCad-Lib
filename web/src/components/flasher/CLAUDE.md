@@ -314,7 +314,10 @@ text applied to another.
   step's `roll`. The station shows it in one line with "Change…", which sets a
   bench override (`mark.roll.override`, empty = the procedure's) and a printer
   when there is more than one. The roll list in the override comes from the
-  agent's PPD report.
+  agent's PPD report. **An overridden roll also overrides the step's
+  `rotate`** (`rotateFor`), in the run's relay AND the typed label, or the
+  57 × 32 mm roll refuses every serial — why, in
+  [label-printing.md](../../../../docs/reference/label-printing.md#which-roll-and-why-the-bench-has-to-be-told).
 - **The agent's two hops are reported SEPARATELY** (the page's `AgentStrip`
   and the station's machine pills).
   "Agent down" is fixed on the bench machine and "LightBurn is not answering" is

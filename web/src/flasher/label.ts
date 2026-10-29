@@ -74,6 +74,19 @@ export function rollFromName(size: string): RollGeometry | null {
   };
 }
 
+/** Whether the label is turned on the roll the bench actually prints on.
+ *
+ *  The step's `rotate` was chosen for the step's OWN roll. A bench that loads
+ *  another roll turns the label so the barcode runs along that roll's long
+ *  side — the procedure's 25 × 54 mm roll prints a 12-character serial only
+ *  turned, and the 57 × 32 mm roll only flat, so one flag cannot serve both.
+ *  A roll whose name says no size keeps the step's choice. */
+export function rotateFor(roll: string, stepRoll: string, stepRotate: boolean): boolean {
+  if (!roll || roll === stepRoll) return stepRotate;
+  const r = rollFromName(roll);
+  return r ? r.label[1] > r.label[0] : stepRotate;
+}
+
 export interface LabelLayout {
   /** the roll drawn, and whether its printable area was known */
   roll: RollGeometry;

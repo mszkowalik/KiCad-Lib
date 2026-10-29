@@ -8,6 +8,7 @@
  */
 import { apiBaseUrl, flasherWsUrl, sameOriginBase } from "../api";
 import { runMarkJob, runPrintJob } from "./benchAgent";
+import { rotateFor } from "./label";
 import { Station, type FlashImage, type LogDir, type TransportProfile } from "./station";
 
 export interface RunSpec {
@@ -318,7 +319,7 @@ export class RunClient {
         printer: this.bench.printer,
         roll,
         dots: Number(args.dots ?? 3),
-        rotate: args.rotate !== false,
+        rotate: rotateFor(roll, String(args.size ?? ""), args.rotate !== false),
         copies: Number(args.copies ?? 1),
         jobTimeoutS: Number(args.job_timeout ?? 120),
       },

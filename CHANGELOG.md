@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-10-29 (bench: the 57 × 32 mm label roll prints)
+
+- **The marking bench prints on a 57 × 32 mm roll (DYMO 11354) as well as the 25 × 54 mm
+  one.** Pick the roll with "Change…" on the marking station. Before, the bench kept the
+  procedure's "turned" setting for any roll, so the agent refused every 12-character serial
+  on the wide roll ("needs 47.5 mm of barcode and this roll prints 28.7 mm across"). Now a
+  roll set on the bench is turned only when it is taller than it is wide. The procedure's own
+  roll and its setting do not change. Typed labels follow the same rule.
+
 ## 2026-10-29 (JLC import: the duty and tax disbursement fee)
 
 - **The JLC import knows JLC's "Duty & Tax Disbursement Fee".** Invoice

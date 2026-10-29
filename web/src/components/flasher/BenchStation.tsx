@@ -19,6 +19,7 @@ import {
   type AgentPrinter,
   type AgentRoll,
 } from "../../flasher/benchAgent";
+import { rotateFor } from "../../flasher/label";
 import { RunClient, type BenchNotice, type RunSpec } from "../../flasher/runClient";
 import { playVerdict } from "../../flasher/sound";
 import {
@@ -755,7 +756,7 @@ export default function BenchStation(props: StationSlotProps) {
     ) as { dots?: number; rotate?: boolean; copies?: number; job_timeout?: number } | undefined;
     return {
       dots: Number(step?.dots ?? 3),
-      rotate: step?.rotate !== false,
+      rotate: rotateFor(rollUsed, String(labelStep?.roll ?? ""), step?.rotate !== false),
       copies: Number(step?.copies ?? 1),
       jobTimeoutS: Number(step?.job_timeout ?? 120),
     };
