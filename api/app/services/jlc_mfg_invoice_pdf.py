@@ -112,6 +112,9 @@ def totals(data: dict) -> list[tuple[str, object]]:
         out.append((f"Import Taxes({rate:g}%):" if rate else "Import Taxes:", data["tariffChargesMoney"]))
     if data.get("serviceCharges"):
         out.append(("Service Charge:", data["serviceCharges"]))
+    if data.get("taxAdvanceFee"):
+        # The order page's words. Where JLCPCB's own PDF prints it is not verified.
+        out.append(("Duty & Tax Disbursement Fee:", data["taxAdvanceFee"]))
     out.append(("Grand Total:", data.get("totalMoney")))
     return out
 

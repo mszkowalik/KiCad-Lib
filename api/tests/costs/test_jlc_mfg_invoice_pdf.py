@@ -80,6 +80,12 @@ def test_a_discount_and_a_service_charge_are_printed_when_there():
     assert "Import Taxes" not in text
 
 
+def test_the_duty_and_tax_disbursement_fee_is_printed_when_there():
+    assert "Duty & Tax Disbursement Fee:" not in _text(P.render(_invoice()))
+    text = _text(P.render(_invoice(rows=1, taxAdvanceFee=48.48)))
+    assert "Duty & Tax Disbursement Fee:" in text and "USD $48.48" in text
+
+
 def test_a_long_order_continues_on_a_second_page():
     pdf = P.render(_invoice(rows=40))
     assert fitz.open(stream=pdf).page_count >= 2

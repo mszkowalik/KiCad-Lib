@@ -1818,13 +1818,16 @@ the payloads instead:
 
 ```
 totalMoney = productMoney + carriageMoney + tariffChargesMoney
-             + serviceCharges - discount
+             + serviceCharges + taxAdvanceFee - discount
 
 productMoney == sum(invoiceListResponseList[].totalMoney)
 subTotalMoney = productMoney + carriageMoney - discount
 ```
 
-Verified on all 35: **residual $0.00 on every one.**
+Verified on all 35: **residual $0.00 on every one.** `taxAdvanceFee` is zero or
+absent on those 35. It is first non-zero on W2026102820395051: JLC's "Duty & Tax
+Disbursement Fee", $48.48 for advancing $2424.25 of import tax. It is a fee, not
+reclaimable tax, so it is booked on `other:payment_fee` (user decision 2026-10-29).
 
 Three facts that mattered, each of which was costing money in the first attempt:
 

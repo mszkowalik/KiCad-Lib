@@ -200,6 +200,11 @@ def parse(raw: dict) -> dict:
             # ONLY term that explained the last two invoices whose totals did not
             # otherwise close (deltas of exactly 1.00 and 6.49).
             "service_charge": _f(raw.get("serviceCharges")),
+            # JLC's "Duty & Tax Disbursement Fee" (its order page's words): the
+            # fee for advancing the import tax under DDP. First non-zero on
+            # W2026102820395051 ($48.48 on $2424.25 of tax), which does not
+            # close without it.
+            "tax_advance_fee": _f(raw.get("taxAdvanceFee")),
             "discount": _f(raw.get("discount")),
             "presale": presale_money,
             "sub_total": _f(raw.get("subTotalMoney")),

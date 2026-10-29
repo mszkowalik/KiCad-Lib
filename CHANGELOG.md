@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-10-29 (JLC import: the duty and tax disbursement fee)
+
+- **The JLC import knows JLC's "Duty & Tax Disbursement Fee".** Invoice
+  2014632A2026102820395051 (batch W2026102820395051) carries a new header field,
+  `taxAdvanceFee` ($48.48). JLC charges it for advancing the import tax under DDP. The
+  import refused the document because $48.48 of $13033.01 was unexplained. The fee is now
+  a header line "Duty & tax disbursement fee" on `other:payment_fee`. It is not reclaimable,
+  so it is not on `logistics:duty` (user decision). The drawn invoice PDF prints the fee
+  when it is there.
+
 ## 2026-10-28 (JLC import: the PCB order's board price is no longer booked as stencil)
 
 - **The JLC import books a PCB order's board price on `fab:pcb`.** JLC's `stencilMoney` field

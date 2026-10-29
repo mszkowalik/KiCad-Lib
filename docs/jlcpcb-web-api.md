@@ -155,8 +155,8 @@ POST /overseas-core-platform/orderCenter/invoiceOrder
 
 Header fields: `invoiceNo`, `invoiceDate` (**DD/MM/YYYY**), `batchNum`,
 `productMoney`, `carriageMoney`, `tariffChargesMoney`, `tariffServiceMoney`,
-`serviceCharges`, `discount`, `presaleMoney`, `subTotalMoney`, `totalMoney`,
-`settleCurrencyInfoVO{settleCurrency, settleExchangeRate}`, `expressNo`,
+`serviceCharges`, `taxAdvanceFee`, `discount`, `presaleMoney`, `subTotalMoney`,
+`totalMoney`, `settleCurrencyInfoVO{settleCurrency, settleExchangeRate}`, `expressNo`,
 billing/shipping addresses.
 
 `invoiceListResponseList[]` — one row per ordered item:
@@ -386,7 +386,7 @@ was not understood and must not be booked.
 
 ```
 totalMoney = productMoney + carriageMoney + tariffChargesMoney
-             + serviceCharges - discount
+             + serviceCharges + taxAdvanceFee - discount
 subTotalMoney = productMoney + carriageMoney - discount
 productMoney  = Σ invoiceListResponseList[].totalMoney
 
@@ -396,6 +396,12 @@ productMoney  = Σ invoiceListResponseList[].totalMoney
 totalMoney - presaleMoney = the batch's CHARGED total
                             (= payUnionSecondVO.totalFee from §3.1, exactly)
 ```
+
+`taxAdvanceFee` is the fee JLC charges for advancing the import tax under DDP. Its
+order page calls it "Duty & Tax Disbursement Fee". It is first non-zero on
+W2026102820395051 ($48.48 on $2424.25 of tax), and that invoice closes only with
+it. The import books it on `other:payment_fee`, not on `logistics:duty`, because it
+is not reclaimable.
 
 The last identity is the prepaid-components rule: the invoice **includes** them,
 the batch charge **excludes** them because they were already paid on the POB

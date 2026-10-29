@@ -584,10 +584,11 @@ def plan_manufacturing_document(inv: dict, decisions: dict[str, dict] | None = N
     """One W batch -> one cost document.
 
     The invoice arithmetic, DERIVED from the real payloads rather than assumed
-    (verified on all 35 invoices in the account):
+    (verified on all 35 invoices in the account; `taxAdvanceFee` joined it on
+    W2026102820395051):
 
         totalMoney = productMoney + carriageMoney + tariffChargesMoney
-                     + serviceCharges - discount
+                     + serviceCharges + taxAdvanceFee - discount
 
     and `productMoney == sum(invoiceListResponseList[].totalMoney)`. Two
     consequences shape the mapping:
@@ -692,6 +693,10 @@ def plan_manufacturing_document(inv: dict, decisions: dict[str, dict] | None = N
         (t["freight"], "freight", "logistics:inbound", "Freight (whole batch)"),
         (t["tariff"], "tax", "logistics:duty", "Import tax / customs (whole batch)"),
         (t.get("service_charge", 0.0), "other", "", "Payment service charge"),
+        # A fee, not tax: it is not reclaimable, so not `logistics:duty` (user
+        # decision 2026-10-29).
+        (t.get("tax_advance_fee", 0.0), "service", "other:payment_fee",
+         "Duty & tax disbursement fee (whole batch)"),
         (-t["discount"], "other", "other:discount", "Supplier discount"),
     ):
         if amount:
@@ -714,7 +719,8 @@ def plan_manufacturing_document(inv: dict, decisions: dict[str, dict] | None = N
             "qty": 1, "unit_price": residual,
             "external_line_id": "header:residual",
             "notes": (f"printed total ${total} minus ${explained} explained by "
-                      "product lines + freight + tariff + service charge - discount"),
+                      "product lines + freight + tariff + service charge + disbursement fee "
+                      "- discount"),
             "children": [],
         })
 
