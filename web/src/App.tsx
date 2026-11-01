@@ -182,7 +182,7 @@ function Shell() {
       <div className="app">
         <header className="topbar">
           <Link to="/" className="brand">
-            Project Management Platform
+            Henry
           </Link>
           <nav className="topbar-nav">
             <NavLink to="/library" className={navClass}>

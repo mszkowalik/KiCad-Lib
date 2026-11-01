@@ -39,10 +39,33 @@ is very slow under emulation.
   `cache-to` line in `images.yml` or a `cache_from` list silently brings the
   ~10-minute cold rebuild back.
 
-- **A 502 on `/lib/` after a deploy means the shared nginx, not the platform.**
-  The front container `webserver` serves `/lib/` for every stack on that host
-  and resolves `kicadlib-web` ONCE, when its configuration loads. Recreating
-  `kicadlib-web` can give it a new address on the shared network, and nginx
+- **The platform has its own hostname, `henry.disfunction.cc`, and sits at its
+  root** (decision
+  [0101](../decisions/0101-the-platform-is-henry-on-its-own-hostname.md)).
+  `PUBLIC_BASE_URL=https://henry.disfunction.cc`,
+  `DEVICE_BASE_URL=http://henry.disfunction.cc` and `APP_BASE=""`. Four pieces
+  carry the name, and all four live on the server, not in this repo: a
+  Cloudflare DNS CNAME to the `HomeNAS` tunnel, a tunnel ingress rule to
+  `http://webserver:80`, a `server_name henry.disfunction.cc` block in the
+  shared `nginx.conf`, and `henry.env`. The wildcard certificate and the
+  dnsmasq `address=/disfunction.cc/` line already cover every subdomain.
+  The server's own `HOMELAB.md` §3 lists them.
+- **`https://disfunction.cc/lib/…` is a 307 to the same path on henry, and it
+  stays.** Every datasheet link in a schematic made before 2026-11-01, every
+  KiCad PCM repository URL pasted before then, and every installed sync plugin
+  below 1.5.1 still use it. **Keep it a 307, never a 301 or a 308.** The sync
+  plugin runs on KiCad's bundled Python, 3.9.13 in KiCad 10.0.5 on macOS, and
+  its `urllib` has no 308 handler: a 308 fails every GET. A 301 turns a POST
+  into a GET with no body, in silence. A 307 is followed on GET and refused
+  with an error on POST, so an old push plugin fails loudly until it updates.
+  Two clients do NOT follow it: the MCP server (`httpx` follows no redirect
+  by default) and a bench launcher downloaded before the move, whose
+  `--origin` is the old one. Both need a fresh setup from the new address,
+  not a server fix.
+- **A 502 on henry after a deploy means the shared nginx, not the platform.**
+  The front container `webserver` serves every stack on that host and
+  resolves `henry-web` ONCE, when its configuration loads. Recreating
+  `henry-web` can give it a new address on the shared network, and nginx
   keeps proxying to the old one. The api is healthy and the page is a 502.
   The fix is one command and it touches no other stack:
 
@@ -51,8 +74,13 @@ is very slow under emulation.
   ```
 
   Check the api first, so the reload is a diagnosis rather than a reflex:
-  `docker logs --tail 20 kicadlib-api` says `Application startup complete`
-  when the platform itself is fine. (Seen 2026-09-17.)
+  `docker logs --tail 20 henry-api` says `Application startup complete`
+  when the platform itself is fine. (Seen 2026-09-17, as `kicadlib-web`.)
+- **The server stack is `henry`**: `~/aws-deployment/docker-compose.henry.yml`,
+  `henry.env`, data under `./henry/`, containers `henry-db`, `henry-minio`,
+  `henry-api`, `henry-render`, `henry-web`. Always pass `-p henry`. The
+  Postgres role and database and the MinIO bucket are still named `kicadlib`
+  on purpose: no user sees them, and renaming them is a data migration.
 
 - **The server is a Proxmox guest, and the field solver feels its size.** The
   server runs as VM 104 (`ubuntu`) on the Proxmox node `pve`
@@ -90,7 +118,7 @@ Four facts it encodes, each of which cost a failed run to learn:
 - **`pg_restore --jobs` refuses a dump on standard input.** The dump is copied
   into the db container first, then restored from a file.
 - **The MinIO image ships no `tar`.** It does not need one: MinIO's data on the
-  server is a host BIND mount (`docker inspect kicadlib-minio` says where), so
+  server is a host BIND mount (`docker inspect henry-minio` says where), so
   the files are ordinary files and `tar` runs on the server itself. Locally it
   is a named volume, written through a throwaway container while the service is
   stopped.

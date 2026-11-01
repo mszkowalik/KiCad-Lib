@@ -263,7 +263,7 @@ def build(inv) -> bytes:
     _sub(n, "KodFormularza", "FA", kodSystemowy="FA (3)", wersjaSchemy="1-0E")
     _sub(n, "WariantFormularza", 3)
     _sub(n, "DataWytworzeniaFa", datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"))
-    _sub(n, "SystemInfo", "Project Management Platform")
+    _sub(n, "SystemInfo", "Henry")
     _party(root, "Podmiot1", body.get("seller") or {})
     _party(root, "Podmiot2", body.get("buyer") or {})
     fa = _sub(root, "Fa")

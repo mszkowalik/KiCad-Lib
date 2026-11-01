@@ -27,7 +27,7 @@ A surface of revolution is the one case that misleads in the other direction.
 Its points lie in a single half-plane, so a radial axis reads as the RADIUS, not
 the diameter. Double it before comparing with a datasheet.
 
-    export KICAD_API_URL=https://disfunction.cc/lib
+    export KICAD_API_URL=https://henry.disfunction.cc
     export KICAD_MCP_TOKEN=<your personal token>
     python3 scripts/model-bbox.py Diode_SMD.3dshapes/D_SMA.step
 
@@ -89,7 +89,7 @@ def main(argv: list[str]) -> int:
     if len(argv) != 2:
         print(__doc__)
         return 2
-    base = os.environ.get("KICAD_API_URL", "https://disfunction.cc/lib")
+    base = os.environ.get("KICAD_API_URL", "https://henry.disfunction.cc")
     token = os.environ.get("KICAD_MCP_TOKEN")
     if not token:
         print("set KICAD_MCP_TOKEN to your personal API token", file=sys.stderr)

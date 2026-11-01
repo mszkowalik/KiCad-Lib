@@ -7,7 +7,7 @@
     "source": {
         "type": "REST_API",
         "api_version": "v1",
-        "root_url": "http://192.168.200.28/lib/kicad/",
+        "root_url": "https://henry.disfunction.cc/kicad/",
         "token": "dev-token"
     }
 }

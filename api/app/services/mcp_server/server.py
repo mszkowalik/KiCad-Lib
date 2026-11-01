@@ -2,7 +2,7 @@
 # requires-python = ">=3.11"
 # dependencies = ["mcp>=1.2,<2", "httpx>=0.27", "anyio>=4"]
 # ///
-"""KiCad library MCP server.
+"""Henry MCP server — the agent tools of the Henry platform.
 
 A thin, stateless client over the platform's ``/api/agent`` surface. It does NOT
 touch the database or import any app code — it only speaks HTTP to the running
@@ -37,10 +37,13 @@ together with a port to the 2.x API.
 
 **The token is read from a FILE when the environment does not carry one.**
 The setup prompt on the Account page registers this server with no secret in
-the agent's config: the user saves the token in ``~/.config/kicad-library/token``
+the agent's config: the user saves the token in ``~/.config/henry/token``
 (mode 600) from their own terminal, so it never passes through the agent's chat
 or a config file the agent prints. ``KICAD_MCP_TOKEN`` still wins when set,
 which keeps the repo's ``.mcp.json`` + ``settings.local.json`` wiring working.
+An install from before the platform was named Henry (2026-11-01, decision 0101)
+keeps its token in ``~/.config/kicad-library/token``, and that file is read when
+the new one does not exist.
 
 The platform serves this file at ``GET /api/agent/mcp-server`` — that is why it
 lives under ``api/app`` and not in a top-level ``mcp/`` directory, which is
@@ -49,7 +52,8 @@ not in the api image.
 Environment:
   KICAD_API_URL         base URL of the platform API  (default: http://localhost:8020)
   KICAD_MCP_TOKEN       bearer token                  (default: read from the token file)
-  KICAD_MCP_TOKEN_FILE  where the token file is       (default: ~/.config/kicad-library/token)
+  KICAD_MCP_TOKEN_FILE  where the token file is       (default: ~/.config/henry/token,
+                                                      else ~/.config/kicad-library/token)
 
 Run standalone:  uv run --script api/app/services/mcp_server/server.py
 """
@@ -68,8 +72,14 @@ from mcp.server.models import InitializationOptions
 from mcp.server.stdio import stdio_server
 
 API_URL = os.environ.get("KICAD_API_URL", "http://localhost:8020").rstrip("/")
-TOKEN_FILE = Path(os.environ.get("KICAD_MCP_TOKEN_FILE")
-                  or "~/.config/kicad-library/token").expanduser()
+# The file from before the rename to Henry (decision 0101). Read only when the
+# new one is missing, so an existing install keeps working with no step.
+_OLD_TOKEN_FILE = Path("~/.config/kicad-library/token").expanduser()
+_NEW_TOKEN_FILE = Path("~/.config/henry/token").expanduser()
+TOKEN_FILE = (Path(os.environ["KICAD_MCP_TOKEN_FILE"]).expanduser()
+              if os.environ.get("KICAD_MCP_TOKEN_FILE")
+              else _OLD_TOKEN_FILE if _OLD_TOKEN_FILE.exists() and not _NEW_TOKEN_FILE.exists()
+              else _NEW_TOKEN_FILE)
 
 
 def _read_token() -> tuple[str, str]:
@@ -85,12 +95,12 @@ def _read_token() -> tuple[str, str]:
 
 TOKEN, TOKEN_SOURCE = _read_token()
 
-server = Server("kicad-library")
+server = Server("henry")
 
 
 def _log(msg: str) -> None:
     # stdout is the MCP protocol channel — diagnostics MUST go to stderr.
-    print(f"[kicad-mcp] {msg}", file=sys.stderr, flush=True)
+    print(f"[henry-mcp] {msg}", file=sys.stderr, flush=True)
 
 
 _TOKEN_HELP = (f"save a live token from the platform's Account page in {TOKEN_FILE} "
@@ -503,7 +513,7 @@ async def _main() -> None:
             read,
             write,
             InitializationOptions(
-                server_name="kicad-library",
+                server_name="henry",
                 server_version="0.1.0",
                 capabilities=server.get_capabilities(
                     notification_options=NotificationOptions(),

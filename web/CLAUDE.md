@@ -1,6 +1,6 @@
 # Platform Web (`web`)
 
-React + TypeScript + Vite frontend for the Project Management Platform. Talks to the
+React + TypeScript + Vite frontend for Henry, the platform. Talks to the
 API at `api`. Routing is in `src/App.tsx`; pages live in `src/pages/`,
 shared pieces in `src/components/`, and the typed API client is `src/api.ts`.
 

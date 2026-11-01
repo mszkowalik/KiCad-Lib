@@ -26,10 +26,10 @@ REPO=$(cd "$(dirname "$0")/.." && pwd)
 cd "$REPO"
 
 SSH_HOST=${SSH_HOST:-ubuntu}
-PROD_COMPOSE=${PROD_COMPOSE:-~/aws-deployment/docker-compose.kicadlib.yml}
-# -p kicadlib is NOT optional: that directory holds several unrelated stacks and
+PROD_COMPOSE=${PROD_COMPOSE:-~/aws-deployment/docker-compose.henry.yml}
+# -p henry is NOT optional: that directory holds several unrelated stacks and
 # the project name is the only thing keeping them apart.
-PROD="docker compose -p kicadlib -f $PROD_COMPOSE"
+PROD="docker compose -p henry -f $PROD_COMPOSE"
 DB_USER=kicadlib
 DB_NAME=kicadlib
 
@@ -49,7 +49,7 @@ for arg in "$@"; do
 done
 
 say() { printf '\n== %s\n' "$*"; }
-prod_psql() { $PROD exec -T kicadlib-db psql -U "$DB_USER" -d "$DB_NAME" "$@"; }
+prod_psql() { $PROD exec -T henry-db psql -U "$DB_USER" -d "$DB_NAME" "$@"; }
 
 # ---------------------------------------------------------------- row counts
 
@@ -73,8 +73,8 @@ counts_local() {
   docker compose exec -T db psql -U "$DB_USER" -d "$DB_NAME" -At -F'|' -c "$q"
 }
 counts_prod() {
-  q=$(ssh "$SSH_HOST" "$PROD exec -T kicadlib-db psql -U $DB_USER -d $DB_NAME -At -c \"$COUNT_SQL\"")
-  ssh "$SSH_HOST" "$PROD exec -T kicadlib-db psql -U $DB_USER -d $DB_NAME -At -F'|' -c \"$q\""
+  q=$(ssh "$SSH_HOST" "$PROD exec -T henry-db psql -U $DB_USER -d $DB_NAME -At -c \"$COUNT_SQL\"")
+  ssh "$SSH_HOST" "$PROD exec -T henry-db psql -U $DB_USER -d $DB_NAME -At -F'|' -c \"$q\""
 }
 
 compare_counts() {
@@ -159,7 +159,7 @@ else
   say "dumping production (full, ~1.4 GB)"
 fi
 
-ssh "$SSH_HOST" "$PROD exec -T kicadlib-db pg_dump -U $DB_USER -d $DB_NAME \
+ssh "$SSH_HOST" "$PROD exec -T henry-db pg_dump -U $DB_USER -d $DB_NAME \
   -Fc --no-owner --no-acl $EXCLUDE" > "$DUMP"
 printf '   %s\n' "$(du -h "$DUMP" | cut -f1) written"
 
@@ -192,11 +192,11 @@ docker compose exec -T db rm -f /tmp/prod.dump
 
 if [ "$WITH_FILES" = 1 ]; then
   say "copying MinIO objects (~570 MB)"
-  # Tar runs on the SERVER, not in `kicadlib-minio` — that image ships no tar.
+  # Tar runs on the SERVER, not in `henry-minio` — that image ships no tar.
   # It does not need to: MinIO's data on the server is a host BIND mount, so
   # the files are ordinary files. Ask docker where, rather than hard-coding a
   # path that moves the next time the stack is rearranged.
-  SRC=$(ssh "$SSH_HOST" "docker inspect kicadlib-minio \
+  SRC=$(ssh "$SSH_HOST" "docker inspect henry-minio \
         --format '{{range .Mounts}}{{if eq .Destination \"/data\"}}{{.Source}}{{end}}{{end}}'")
   [ -n "$SRC" ] || { echo "cannot find the prod MinIO data directory" >&2; exit 1; }
   # Locally it is a named volume, reached through a throwaway container so

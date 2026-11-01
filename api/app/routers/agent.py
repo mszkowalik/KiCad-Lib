@@ -65,7 +65,7 @@ def mcp_server_script(request: Request, authorization: str | None = Header(defau
     return Response(
         content=_MCP_SERVER.read_text(encoding="utf-8"),
         media_type="text/x-python",
-        headers={"Content-Disposition": content_disposition("attachment", "kicad_library_mcp.py")},
+        headers={"Content-Disposition": content_disposition("attachment", "henry_mcp.py")},
     )
 
 

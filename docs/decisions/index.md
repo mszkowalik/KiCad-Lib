@@ -1,7 +1,7 @@
 # Decision records
 
-This folder holds architecture and process decisions about the **7Sigma KiCad
-Library Platform** itself — deployment, backend/frontend architecture, access
+This folder holds architecture and process decisions about **Henry**, the
+platform itself — deployment, backend/frontend architecture, access
 control, the agent workflow. It does not hold component or library
 conventions: those live in the platform's **skill documents**, versioned in
 Postgres and mirrored to `.claude/skills/` (see the root
@@ -131,6 +131,7 @@ is `NNNN-title-with-dashes.md`, four digits, no gaps skipped on purpose.
 | [0098](0098-switch-to-the-material-ledger-in-one-cut-over.md) | Switch to the material ledger in one cut-over: every reader and writer rewritten in the ledger's terms, one migration at startup in one transaction that keeps the ids and renames the old tables `legacy_<name>` (read only, no undo of earlier writes), the API's field names kept, and the proof is 13,777 read answers equal before and after (amends item 9 of [0097](0097-keep-stock-work-and-units-in-one-material-ledger.md)) | Backend, stock, production, economics, audit |
 | [0099](0099-the-agent-serves-each-port-on-its-own.md) | Serve each port on its own: the bench agent keeps a console and an esptool job per port, runs each esptool call as its own process so `POST /esp/cancel` can stop it, and keeps flash images by SHA-256 on the bench machine (the page sends the bytes only when the agent names them `missing`); `/hello` reports `per_port`, `esp_cancel` and `image_cache`, and with an older agent the page runs one station at a time | Bench agent, flasher, frontend |
 | [0100](0100-the-platform-serves-select-similar.md) | Serve Select Similar as a fourth package of the personal PCM repository: the source moves into the api image (`services/select_similar_plugin/`), `pcm.py` zips every top-level file there, the package declares `runtime: ipc` and KiCad 10.0, its version is the manual `SIMILAR_VERSION`, it carries no token, and its files enter the build tag without a `BUILDER_REV` bump (amends the code location in [0096](0096-select-similar-is-an-ipc-plugin-with-a-floating-panel.md)) | KiCad client, PCM, deployment |
+| [0101](0101-the-platform-is-henry-on-its-own-hostname.md) | Name the platform Henry and serve it at the root of `henry.disfunction.cc`: `disfunction.cc/lib/<path>` answers a 307 (never a 301 or 308 — KiCad's Python 3.9 `urllib` has no 308 handler) to the same path on henry; the server stack, the containers and the MCP server are `henry`; the Postgres role, database and MinIO bucket, the env var names, the KiCad library nicknames, the PCM identifiers and the GitHub repo keep their old names | Deployment, access, MCP, KiCad client |
 
 ## Proposed
 

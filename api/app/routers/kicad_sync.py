@@ -186,7 +186,7 @@ def pcm_artifact(filename: str, request: Request, db: Session = Depends(get_db))
 def httplib_file(request: Request, db: Session = Depends(get_db)):
     """The ready-to-use KiCad HTTP library config. Add it in KiCad under
     Preferences > Manage Symbol Libraries. root_url follows PUBLIC_BASE_URL
-    (localhost now, e.g. https://disfunction.cc/lib later).
+    (localhost in dev, https://henry.disfunction.cc in production).
 
     The `token` field is the CALLER'S OWN — the signed-in user's when a browser
     downloads it, the supplied one when the link carries `?t=`. It falls back
@@ -200,7 +200,7 @@ def httplib_file(request: Request, db: Session = Depends(get_db)):
     payload = {
         "meta": {"version": 1.0},
         "name": "7Sigma Library (platform)",
-        "description": "Live part catalog from the Project Management Platform. "
+        "description": "Live part catalog from Henry, the 7Sigma platform. "
                        "Symbols/footprints must be synced locally (kicadlib sync).",
         "source": {
             "type": "REST_API",

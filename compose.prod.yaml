@@ -9,7 +9,13 @@
 # and /files to the api container, so the browser, KiCad and the MCP server all
 # use the same address. Pin a build with IMAGE_TAG=sha-abc1234 (every push
 # produces that tag) instead of riding `latest`.
-name: kicadlib
+#
+# The project was `kicadlib` until 2026-11-01 (decision 0101). The named
+# volumes below take the project name as a prefix, so a deployment that
+# started under the old name must copy `kicadlib_*` into `henry_*` first,
+# or it starts on empty volumes. The 7Sigma server uses bind mounts and
+# its own compose file, so this applies only to other deployments.
+name: henry
 
 services:
   db:

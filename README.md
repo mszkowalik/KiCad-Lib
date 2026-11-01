@@ -1,9 +1,11 @@
-# Project Management Platform
+# Henry
 
-Postgres-backed web platform for the 7Sigma KiCad component library: browse and
-edit components with full version history, live part catalog inside KiCad via
-an HTTP library, SVG previews rendered by `kicad-cli`, and (coming phases) an
-approval-gated agent — **Jaravis** — for adding and fixing components.
+Henry is the 7Sigma platform: the KiCad component library with full version
+history and a live part catalog inside KiCad, projects and BOMs, production
+runs and their costs, invoices, stock, device programming and the fleet watch.
+Production runs at `https://henry.disfunction.cc` (decision
+[0101](docs/decisions/0101-the-platform-is-henry-on-its-own-hostname.md)).
+Agents reach it over MCP, through the server named `henry`.
 
 **The platform is the library now.** Postgres is the source of truth; the
 original YAML pipeline (`Sources/*.yaml`, `kicad_lib/`, `main.py`) that seeded

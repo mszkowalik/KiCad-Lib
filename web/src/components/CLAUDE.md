@@ -637,7 +637,7 @@ stopped embedding its datasheet on 2026-09-14 and links to it instead. Never
 "simplify" the remaining one back to a plain `src`, and use `PdfFrame` for any
 new preview: a plain `<a target="_blank">` is fine, because DENY forbids
 FRAMING, not navigation. The alternative fix — scoping the
-header to SAMEORIGIN for `/lib/` — means editing an nginx config shared with
+header to SAMEORIGIN for the `henry.disfunction.cc` server block — means editing an nginx config shared with
 unrelated services, and nginx's `add_header` in a nested block replaces every
 inherited one, so it would silently drop the other two security headers.
 

@@ -42,7 +42,7 @@ export default function Login({ signIn, onSignedIn }: Props) {
   return (
     <div className="login-page">
       <form className="card login-card" onSubmit={submit}>
-        <h1 className="login-brand">Project Management Platform</h1>
+        <h1 className="login-brand">Henry</h1>
         <p className="login-sub muted">7Sigma component library</p>
 
         <ErrorBanner message={error} />

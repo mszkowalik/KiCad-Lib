@@ -19,10 +19,20 @@ reaches an agent only after the prompt downloads it again.
 
 - **The token never enters the prompt or the agent's config.** A prompt is
   pasted into a chat, which the agent's vendor stores. The agent asks the user
-  to save the token in `~/.config/kicad-library/token` (mode 600) from their
+  to save the token in `~/.config/henry/token` (mode 600) from their
   own terminal, and `server.py` reads it there when `KICAD_MCP_TOKEN` is unset.
   The path is written in three places — `TOKEN_FILE` here, the card's prompt,
-  and every user's disk — so moving it breaks existing installs.
+  and every user's disk — so moving it breaks existing installs. It moved once,
+  from `~/.config/kicad-library/token`, when the platform became Henry
+  (2026-11-01, decision
+  [0101](../../../../docs/decisions/0101-the-platform-is-henry-on-its-own-hostname.md)).
+  `server.py` still reads the old file when the new one is missing. Keep that
+  fallback: a copy installed before the move has only the old file.
+- **The server is named `henry`, so its tools are `mcp__henry__*`.** It was
+  `kicad-library` before 2026-11-01. A copy registered under the old name keeps
+  working only while its `KICAD_API_URL` answers without a redirect, and the
+  old address now answers a 308 that `httpx` does not follow. Such an install
+  is fixed by running the Account page prompt again, not on the server.
 - **Every command in the prompt was run end to end before it shipped** (macOS,
   zsh and bash, a scratch `HOME`, `claude mcp list` → Connected). Change one
   and run it again. Two traps it avoids: the token prompt is wrapped in
@@ -132,13 +142,15 @@ token in `.mcp.json` or in `.claude/settings.json`; both are tracked.
   `_LEGACY_SCOPES` no longer honours on production — one stored in
   `settings.local.json` 401s on every agent call and reads as a dead MCP server
   rather than an expired credential. Check the prefix first.
-- **Prefer the public `KICAD_API_URL`.** The LAN address (`http://192.168.200.28
-  /lib`) reaches the SAME deployment, so it is not wrong, only fragile — it
-  fails silently away from the LAN.
+- **Use `KICAD_API_URL=https://henry.disfunction.cc`.** At home it resolves to
+  the server on the LAN (split DNS), and away from home it goes through the
+  Cloudflare tunnel, so one value works in both places. Never use
+  `https://disfunction.cc/lib`: it answers a redirect, and the server does not
+  follow one.
 MCP config is OS-user-scoped, **not** tied to a Claude account, so it works
 across both logins and survives account switches. (The pre-existing `kicad`
 entry is a separate Node KiCad-IPC server — leave it.)
 
 **Run it:** `docker compose up -d db` + the platform API (dev:
 `uvicorn app.main:app` from `api`, or `docker compose up -d`), then open
-the repo in Claude Code — the `kicad-library` server connects to the running API.
+the repo in Claude Code — the `henry` server connects to the running API.

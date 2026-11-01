@@ -75,7 +75,7 @@ _row_changes.install_tagging()
 # of no company that record belongs to. One dependency on every route, so a new
 # route cannot forget it; `tests/auth/test_company_access.py` keeps every path
 # parameter classified.
-app = FastAPI(title="Project Management Platform", version="0.1.0",
+app = FastAPI(title="Henry", version="0.1.0",
               dependencies=[Depends(access.require_company_access)])
 
 

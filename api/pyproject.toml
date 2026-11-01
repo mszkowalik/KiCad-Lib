@@ -1,7 +1,7 @@
 [project]
 name = "kicadlib-platform-api"
 version = "0.1.0"
-description = "Project Management Platform backend — Postgres-backed component library with versioning, approval gates, and KiCad HTTP-library endpoints"
+description = "Henry backend — Postgres-backed component library with versioning, approval gates, and KiCad HTTP-library endpoints"
 requires-python = ">=3.11"
 dependencies = [
     "fastapi>=0.115",

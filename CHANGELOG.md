@@ -1,5 +1,22 @@
 # Changelog
 
+## 2026-11-01 (the platform is Henry, at henry.disfunction.cc)
+
+- **The platform is named Henry and moved to `https://henry.disfunction.cc`.** The old
+  address `https://disfunction.cc/lib/…` redirects (307) to the same path on the new one,
+  so datasheet links in existing schematics still open. Decision 0101.
+- **Sign in again.** The session belongs to the old address.
+- **KiCad:** the PCM offers the sync plugin 1.5.1, which talks to the new address. Install
+  the update. Until then, Sync still works through the redirect, but Push fails with
+  HTTP 307. You can also replace the repository URL in the Plugin and Content Manager with
+  the new one from the Account page.
+- **Agents (MCP):** the MCP server is now named `henry`, and its tools are `mcp__henry__*`.
+  A server set up before the move stops working, because it does not follow the redirect.
+  Run the prompt on the Account page again, and remove the old `kicad-library` entry.
+- **Bench:** each bench computer must download the bench agent again from the new address
+  and install the new macOS profile. An agent downloaded before the move refuses the new
+  address.
+
 ## 2026-10-29 (bench: the 57 × 32 mm label roll prints)
 
 - **The marking bench prints on a 57 × 32 mm roll (DYMO 11354) as well as the 25 × 54 mm

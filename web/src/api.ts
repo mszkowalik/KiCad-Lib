@@ -1,4 +1,4 @@
-/** Typed client for the Project Management Platform API.
+/** Typed client for the Henry platform API.
  *
  * Shapes mirror the FastAPI routers in platform/api/app/routers/
  * (categories.py, components.py, import_station.py).

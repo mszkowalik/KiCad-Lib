@@ -1,6 +1,6 @@
 # Platform API (`api`)
 
-FastAPI backend for the Project Management Platform. Postgres is the **source of
+FastAPI backend for Henry, the platform. Postgres is the **source of
 truth**; the file mirror under `DATA_DIR/mirror` (served at `/files`) is a
 disposable projection. This codebase originally copied logic from the YAML
 pipeline's `kicad_lib/` (now retired to the `archive/yaml-library` branch)

@@ -1185,7 +1185,7 @@ deployment's `bench` channel; `production` waits for a real unit.
 ### The two nginx hops both proxy the run WebSocket
 
 The engine runs over `/api/flasher/ws/<run>`. The web image's
-`nginx-api-proxy.inc` and the server's outer `nginx.conf` (`location /lib/`)
+`nginx-api-proxy.inc` and the server's outer `nginx.conf` (the `henry.disfunction.cc` server block)
 both pass `Upgrade`/`Connection` via a `map $http_upgrade $connection_upgrade`
 — conditional, so ordinary keep-alive requests are untouched. Without both,
 the bench gets a 404 on the upgrade and no run can start.

@@ -4,7 +4,7 @@
  *  chat, and a chat is stored by the agent's vendor and in a transcript on
  *  disk — a token in it would be a credential in two places nobody manages.
  *  So the prompt makes the agent ask the user to save the token in
- *  `~/.config/kicad-library/token` from their OWN terminal, with input hidden,
+ *  `~/.config/henry/token` from their OWN terminal, with input hidden,
  *  and the MCP server reads it from there
  *  (`api/app/services/mcp_server/server.py`). The token is shown BESIDE the
  *  prompt, masked, with its own Copy button: that is what the user pastes
@@ -31,19 +31,19 @@ import Field from "./Field";
 import { CopyButton, ErrorBanner, Spinner } from "./Ui";
 
 /** Where the setup puts things. The MCP server's own defaults must match. */
-const TOKEN_FILE = "~/.config/kicad-library/token";
-const SCRIPT_FILE = "~/.local/share/kicad-library/kicad_library_mcp.py";
+const TOKEN_FILE = "~/.config/henry/token";
+const SCRIPT_FILE = "~/.local/share/henry/henry_mcp.py";
 
 /** The text the user gives to the agent. Written FOR the agent: steps it can
  *  run, and the rules it must keep about the token. `String.raw` keeps the
  *  shell's `\n` as typed; `~~~` fences because a raw template cannot hold a
  *  backtick. */
 export function mcpSetupPrompt(base: string, accountUrl: string): string {
-  return String.raw`Set up the 7Sigma KiCad library platform as an MCP server on this computer. Do the steps in order.
+  return String.raw`Set up the Henry platform as an MCP server on this computer. Do the steps in order.
 
 Facts:
 - Platform API: ${base}
-- MCP server name: kicad-library
+- MCP server name: henry
 - Token file: ${TOKEN_FILE}
 - Server script: ${SCRIPT_FILE}
 - The commands are for macOS and Linux. On Windows, write PowerShell commands that do the same work, and obey the same token rules.
@@ -58,15 +58,15 @@ Token rules:
 2. Tell me to save my token. I copy it from the Account page (${accountUrl}, card "Agents (MCP)", button "Copy token"). Then I run this command in my own terminal, not through you. It does not show the token on the screen:
 
 ~~~
-bash -c 'mkdir -p ~/.config/kicad-library && chmod 700 ~/.config/kicad-library && printf "Paste the token, then press Enter: " && read -rs t && (umask 077 && printf "%s\n" "$t" > ~/.config/kicad-library/token) && chmod 600 ~/.config/kicad-library/token && echo && echo "Token saved."'
+bash -c 'mkdir -p ~/.config/henry && chmod 700 ~/.config/henry && printf "Paste the token, then press Enter: " && read -rs t && (umask 077 && printf "%s\n" "$t" > ~/.config/henry/token) && chmod 600 ~/.config/henry/token && echo && echo "Token saved."'
 ~~~
 
-On Windows, give me a PowerShell command that reads the token with Read-Host -AsSecureString and writes it to $HOME\.config\kicad-library\token. Wait until I tell you that the token is saved.
+On Windows, give me a PowerShell command that reads the token with Read-Host -AsSecureString and writes it to $HOME\.config\henry\token. Wait until I tell you that the token is saved.
 
 3. Download the server script. This also tests the token:
 
 ~~~
-mkdir -p ~/.local/share/kicad-library && curl -fsS -w '%{http_code}\n' -H "Authorization: Bearer $(cat ~/.config/kicad-library/token)" -o ~/.local/share/kicad-library/kicad_library_mcp.py ${base}/api/agent/mcp-server
+mkdir -p ~/.local/share/henry && curl -fsS -w '%{http_code}\n' -H "Authorization: Bearer $(cat ~/.config/henry/token)" -o ~/.local/share/henry/henry_mcp.py ${base}/api/agent/mcp-server
 ~~~
 
 200 means that the token is good. 401 means that the token is wrong or revoked: go back to step 2.
@@ -76,26 +76,26 @@ mkdir -p ~/.local/share/kicad-library && curl -fsS -w '%{http_code}\n' -H "Autho
 Claude Code, for all my projects:
 
 ~~~
-claude mcp add kicad-library --scope user -e KICAD_API_URL=${base} -- "$(command -v uv)" run --quiet --script "$HOME/.local/share/kicad-library/kicad_library_mcp.py"
+claude mcp add henry --scope user -e KICAD_API_URL=${base} -- "$(command -v uv)" run --quiet --script "$HOME/.local/share/henry/henry_mcp.py"
 ~~~
 
-If kicad-library is already registered, remove it first with "claude mcp remove kicad-library --scope user".
+If henry is already registered, remove it first with "claude mcp remove henry --scope user". If the older server "kicad-library" is registered, remove it as well with "claude mcp remove kicad-library --scope user". It is the same platform under its old name.
 
 Another MCP client: add this stdio server to its config. Replace the two paths with absolute paths. Do not add the token, because the server reads the token file.
 
 ~~~json
 {
   "mcpServers": {
-    "kicad-library": {
+    "henry": {
       "command": "/absolute/path/to/uv",
-      "args": ["run", "--quiet", "--script", "/absolute/path/to/kicad_library_mcp.py"],
+      "args": ["run", "--quiet", "--script", "/absolute/path/to/henry_mcp.py"],
       "env": { "KICAD_API_URL": "${base}" }
     }
   }
 }
 ~~~
 
-5. Check the connection. In Claude Code, run "claude mcp list". The kicad-library line must show "Connected". Then tell me to start a new session, because an agent loads its MCP tools when a session starts.
+5. Check the connection. In Claude Code, run "claude mcp list". The henry line must show "Connected". Then tell me to start a new session, because an agent loads its MCP tools when a session starts.
 
 After the setup:
 - The tools read and write the live platform as my user. Every write publishes immediately.
@@ -218,15 +218,12 @@ export default function McpSetupCard({ me }: { me: PlatformUser | null }) {
       <details>
         <summary className="muted">Working inside the KiCad-Lib repository</summary>
         <p className="muted">
-          The repository's <span className="mono">.mcp.json</span> already registers{" "}
-          <span className="mono">kicad-library</span> from its own copy of the server, so you do
-          not need the prompt there. Save the token in{" "}
-          <span className="mono">{TOKEN_FILE}</span> as above, or set{" "}
-          <span className="mono">KICAD_MCP_TOKEN</span> in the <span className="mono">env</span>{" "}
-          block of <span className="mono">.claude/settings.local.json</span>, which git ignores.
-          If you also ran the prompt on that computer, <span className="mono">claude mcp list</span>{" "}
-          inside the repository warns that <span className="mono">kicad-library</span> is defined
-          in two scopes. Both entries reach the same platform with the same token. The skill documents are copied to <span className="mono">.claude/skills/</span>, and
+          The repository registers no MCP server of its own: run the prompt above on that
+          computer too. Save the token in <span className="mono">{TOKEN_FILE}</span> as above, or
+          set <span className="mono">KICAD_MCP_TOKEN</span> in the{" "}
+          <span className="mono">env</span> block of{" "}
+          <span className="mono">.claude/settings.local.json</span>, which git ignores. The skill
+          documents are copied to <span className="mono">.claude/skills/</span>, and
           the repository's <span className="mono">CLAUDE.md</span> tells the agent how to keep
           the copies current.
         </p>

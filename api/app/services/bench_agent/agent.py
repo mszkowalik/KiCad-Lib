@@ -953,7 +953,7 @@ def list_printers() -> list:
 
 # The deployed bench. Dev origins are added with --origin, never assumed: an
 # allow-list that quietly includes localhost is an allow-list with a hole in it.
-DEFAULT_ORIGINS = ("https://disfunction.cc",)
+DEFAULT_ORIGINS = ("https://henry.disfunction.cc",)
 # 4 = this agent programs devices (decision 0023: POST /esp, /monitor/*, the
 # vendored esptool). It stayed at 3 through that whole change, so an agent from
 # before it reported the same number as one that could program — and the bench

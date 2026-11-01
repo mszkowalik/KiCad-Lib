@@ -110,7 +110,7 @@ export default function KicadClientCards() {
             add the URL above
           </li>
           <li>
-            Select the <b>7Sigma Library Platform</b> repository, install{" "}
+            Select the <b>Henry (7Sigma library)</b> repository, install{" "}
             <b>7Sigma Library</b>, <b>7Sigma 3D Models</b> and <b>7Sigma Library Sync</b>
           </li>
           <li>

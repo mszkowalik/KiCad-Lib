@@ -64,7 +64,7 @@ SOURCE_NICKNAME = "7Sigma"  # the nickname used inside mirror files (repo conven
 LIB_ID = "com.sevensigma.library"
 MODELS_ID = "com.sevensigma.models3d"
 PLUGIN_ID = "com.sevensigma.sync"
-PLUGIN_VERSION = "1.5.0"  # bump when the plugin source changes — PCM update detection
+PLUGIN_VERSION = "1.5.1"  # bump when the plugin source changes — PCM update detection
 # ^ MANUAL, and PCM decides "update available" purely from this string. A new
 # zip with the same version reaches nobody: the content hash changes, the
 # download changes, and every installed copy stays on the old code. Shipping
@@ -533,7 +533,7 @@ def _package_entry(identifier: str, name: str, description: str, ptype: str,
         "$schema": f"{SCHEMA}/package",
         "name": name,
         "description": description,
-        "description_full": f"{description} Served by the 7Sigma Project Management Platform.",
+        "description_full": f"{description} Served by Henry, the 7Sigma platform.",
         "identifier": identifier,
         "type": ptype,
         "author": {"name": "7Sigma", "contact": {"web": settings.public_base_url}},
@@ -611,7 +611,7 @@ def ensure_built() -> dict | None:
         packages_file.write_bytes(packages_bytes)
         repository = {
             "$schema": f"{SCHEMA}/repository",
-            "name": "7Sigma Library Platform",
+            "name": "Henry (7Sigma library)",
             "maintainer": {"name": "7Sigma", "contact": {"web": settings.public_base_url}},
             "packages": {
                 "url": f"{settings.public_base_url}/api/kicad/pcm/{packages_file.name}",

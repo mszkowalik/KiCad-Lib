@@ -1,5 +1,7 @@
-# 7Sigma KiCad Library Platform
+# Henry — the 7Sigma platform
 
+Henry was "the KiCad library platform" until 2026-11-01 (decision
+[0101](docs/decisions/0101-the-platform-is-henry-on-its-own-hostname.md)).
 Web-hosted component library for KiCad: Postgres-backed catalog with versioned
 components/symbols/footprints, publish-then-review workflow, KiCad HTTP library +
 PCM packages, project BOMs and production-run economics, and the agent tools
@@ -57,7 +59,7 @@ There is **no sync script and no hook** — an earlier version mirrored the
 database into these files on every prompt. Keeping them current is now the
 agent's job, and it costs one tool call:
 
-1. **Before library work, call `list_skills`** (MCP: `kicad-library`). It
+1. **Before library work, call `list_skills`** (MCP: `henry`). It
    returns every skill with its `version_no` and no bodies.
 2. **If a local stamp is behind, refresh that file**: `get_skill(name)` and
    rewrite `SKILL.md` — keep the frontmatter, update the stamp to the new
@@ -137,7 +139,7 @@ The credential is admin-only and encrypted — never an env var, never a Setup k
 
 ## Access control
 
-The platform is on the internet at `https://disfunction.cc/lib` and the API is
+The platform is on the internet at `https://henry.disfunction.cc` and the API is
 **default-deny**: a browser needs a session, every machine client needs a
 personal API token. Full rules in `api/CLAUDE.md` (backend) and `web/CLAUDE.md`
 (the sign-in gate). Three facts that belong at this level:
@@ -175,9 +177,13 @@ personal API token. Full rules in `api/CLAUDE.md` (backend) and `web/CLAUDE.md`
   and Content Manager installs the library, the models, and a sync plugin with
   their token already inside it. The same repository offers the Select Similar
   plugin, which carries no token.
-- **`PUBLIC_BASE_URL`, `APP_BASE` and the shared nginx `/lib/` route still move
-  together** — the personal URLs are built from `PUBLIC_BASE_URL`, so a mismatch
-  hands users a link that resolves nowhere.
+- **`PUBLIC_BASE_URL`, `APP_BASE` and the shared nginx server block for
+  `henry.disfunction.cc` move together** — the personal URLs are built from
+  `PUBLIC_BASE_URL`, so a mismatch hands users a link that resolves nowhere.
+  The old address `https://disfunction.cc/lib/…` only answers a 307 redirect
+  to the same path on henry, and must keep doing so: datasheet links in every
+  schematic made before 2026-11-01 point there (decision
+  [0101](docs/decisions/0101-the-platform-is-henry-on-its-own-hostname.md)).
 - **A PROGRAMMED DEVICE uses `DEVICE_BASE_URL`, not `PUBLIC_BASE_URL`.** On this
   deployment it is the `http://` twin of the public name, because Tasmota
   completes no TLS against the Cloudflare edge and validates no certificate

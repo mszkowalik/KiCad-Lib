@@ -7,7 +7,7 @@ money, and saves each answer as JSON. Run it before the switch and after it,
 then compare. It only READS: every call is a GET.
 
     scripts/ledger-golden.py capture --base http://127.0.0.1:8031 --out /tmp/golden-before
-    scripts/ledger-golden.py capture --base https://disfunction.cc/lib --token "$TOKEN" --out ...
+    scripts/ledger-golden.py capture --base https://henry.disfunction.cc --token "$TOKEN" --out ...
     scripts/ledger-golden.py compare /tmp/golden-before /tmp/golden-after
 
 `compare` lists each route whose answer differs, with the first paths that

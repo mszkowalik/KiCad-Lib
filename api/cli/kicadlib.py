@@ -5,7 +5,7 @@ Stdlib only; works with any Python 3.9+.
 
 Usage:
     python3 kicadlib.py sync --url http://localhost:8020 --dest ~/7SigmaLib
-    python3 kicadlib.py sync --url https://disfunction.cc/lib --dest ~/7SigmaLib --prune
+    python3 kicadlib.py sync --url https://henry.disfunction.cc --dest ~/7SigmaLib --prune
 
 What it does:
   * downloads the platform's published file mirror (Symbols/*.kicad_sym,
