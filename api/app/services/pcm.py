@@ -137,6 +137,10 @@ _SIMILAR_SRC = Path(__file__).parent / "select_similar_plugin"
 # In the folder for people and agents, not for KiCad. tests/ is a folder and
 # never ships; icon-pcm.png ships as the package icon, not as a plugin file.
 _SIMILAR_NOT_SHIPPED = {"README.md", "CLAUDE.md", "icon-pcm.png"}
+# The same for the sync plugin. Until 2026-11-01 its CLAUDE.md went into every
+# user's KiCad plugins folder, and each edit of that document rebuilt the
+# repository under an unchanged plugin version.
+_PLUGIN_NOT_SHIPPED = {"README.md", "CLAUDE.md"}
 
 _lock = threading.Lock()
 
@@ -265,6 +269,8 @@ def _plugin_files(token: str = "") -> list[tuple[str, bytes]]:
     for f in sorted(_PLUGIN_SRC.iterdir()):
         if not f.is_file():
             continue  # a __pycache__ left by running a plugin from the source tree
+        if f.name.startswith(".") or f.name in _PLUGIN_NOT_SHIPPED:
+            continue
         if f.suffix == ".tmpl":
             body = (f.read_text(encoding="utf-8")
                     .replace("__BASE_URL__", settings.public_base_url)

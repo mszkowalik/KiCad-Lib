@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session, selectinload
 
 from .. import models as M
 from ..db import get_db
-from ..services.publish import publish_skill_version
+from ..services.publish import check_skill_body, publish_skill_version
 from .util import actor_of, audit
 
 router = APIRouter(prefix="/api/skills", tags=["skills"])
@@ -158,6 +158,10 @@ def create_skill(body: SkillCreate, db: Session = Depends(get_db)):
         raise HTTPException(409, f"skill {name!r} already exists")
     if not body.content.strip():
         raise HTTPException(422, "skill content must not be empty")
+    try:
+        check_skill_body(body.content)
+    except ValueError as e:
+        raise HTTPException(422, str(e)) from e
     s = M.Skill(name=name, description=body.description.strip()[:500])
     db.add(s)
     db.flush()

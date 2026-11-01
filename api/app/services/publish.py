@@ -60,6 +60,37 @@ def check_comment(comment: str | None) -> None:
             f"behind it belong in the reply, not in the version history.")
 
 
+_SKILL_STAMP = "<!-- platform-skill:"
+
+
+def check_skill_body(content: str) -> None:
+    """Refuse a skill body that carries the LOCAL copy's header. Raises ValueError.
+
+    `.claude/skills/<name>/SKILL.md` is the body plus two things the platform
+    adds: YAML frontmatter (`name`, `description` — the description lives on
+    `Skill`) and a `<!-- platform-skill: … vN -->` stamp. An agent that publishes
+    the whole file stores both inside the body, and the next refresh writes the
+    header twice and a stamp that names a version that is no longer current.
+    Five of eight skills carried it on 2026-11-01. Both doors (the editor and
+    the agent tool) and the create route call this.
+    """
+    text = content.lstrip()
+    if text.startswith("---"):
+        lines = text.splitlines()
+        for line in lines[1:40]:
+            if line.strip() == "---":
+                break
+            if line.startswith(("name:", "description:")):
+                raise ValueError(
+                    "the content starts with frontmatter (name/description). Send only the "
+                    "document body, starting at its title: the description belongs to the "
+                    "skill itself, and the local SKILL.md adds the frontmatter.")
+    if _SKILL_STAMP in content:
+        raise ValueError(
+            "the content holds a '<!-- platform-skill: … -->' stamp. Send only the document "
+            "body: the stamp belongs to the local .claude/skills copy, and a refresh writes it.")
+
+
 def publish_component_version(db: Session, comp: M.Component, cv: M.ComponentVersion,
                               actor: str, approved_by: str | None = None,
                               rename: tuple[str, str, str] | None = None) -> dict:
@@ -135,6 +166,7 @@ def publish_skill_version(db: Session, skill: M.Skill, content: str, actor: str,
     """
     if not content.strip():
         raise ValueError("skill content must not be empty")
+    check_skill_body(content)
     check_comment(comment)
     numbers = [n for (n,) in db.query(M.SkillVersion.version_no).filter_by(skill_id=skill.id)]
     sv = M.SkillVersion(skill_id=skill.id, version_no=max(numbers, default=0) + 1,

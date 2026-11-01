@@ -170,6 +170,12 @@ why the Sync button owns library updates, not the Plugin and Content Manager.
   whose `choose from list` cannot be scrolled sensibly. Notifications that list
   names go through `_names()`, which caps at 8 plus a count — a macOS
   notification truncates anyway.
+- **Every top-level file in this folder ships in the plugin zip, except the
+  ones in `pcm._PLUGIN_NOT_SHIPPED`** (this `CLAUDE.md`, a `README.md`). Until
+  2026-11-01 nothing was excluded: this document reached every user's KiCad
+  plugins folder, and each edit of it rebuilt the repository. A new file
+  written for people goes on that list; `tests/pcm/test_sync_plugin_package.py`
+  fails when a document ships.
 - **Two constants gate whether a plugin change reaches anyone, and both are
   manual.** `PLUGIN_VERSION` is what PCM compares to decide "update
   available", so shipping plugin source without bumping it is a silent no-op.

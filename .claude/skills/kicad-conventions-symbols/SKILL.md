@@ -2,7 +2,7 @@
 name: kicad-conventions-symbols
 description: "Choosing AND authoring base symbols: how to publish one, and the index of every symbol rule with the check that now holds it. The rules themselves live in the symbol checklist — read them with get_review_checklist('symbol'). Use when picking a base symbol or writing a propose_symbol_edit."
 ---
-<!-- platform-skill: conventions-symbols v25 — source of truth is the platform; check with list_skills, refresh with get_skill -->
+<!-- platform-skill: conventions-symbols v26 — source of truth is the platform; check with list_skills, refresh with get_skill -->
 # Symbol conventions
 
 **The rules are checks now, not prose.** Every convention this document used to

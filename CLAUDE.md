@@ -70,7 +70,9 @@ agent's job, and it costs one tool call:
 
 To *change* a convention, write it: `propose_skill_update(skill_name, content,
 comment)` — the first argument is `skill_name`, not `name`; `name` is rejected
-with `bad arguments for 'propose_skill_update'` — and it **publishes a new
+with `bad arguments for 'propose_skill_update'`; `content` is the body only, as
+`get_skill` returns it, and a body with the local file's frontmatter or stamp is
+refused — and it **publishes a new
 version immediately** (2026-08-24 — skills were the last thing behind the
 draft gate, and it is gone, along with the Proposals view). The version it
 writes is what `list_skills` reports and what every later agent run reads, so

@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-11-01 (the sync plugin ships no internal notes, and a skill body is checked)
+
+- **The sync plugin zip no longer carries the folder's `CLAUDE.md`.** It reached every user's
+  KiCad plugins folder before. The plugin code did not change, so the version stays 1.5.1. A
+  copy installed before keeps the extra file, and it does no harm.
+- **A skill publish refuses a body that starts with the local file's frontmatter or holds a
+  `<!-- platform-skill: … -->` stamp.** An agent had published the whole `SKILL.md` into five of
+  the eight skills. Send the body only, as `get_skill` returns it. The four skills that still
+  carried the header were published again without it, with no rule changed.
+
 ## 2026-11-01 (the platform is Henry, at henry.disfunction.cc)
 
 - **The platform is named Henry and moved to `https://henry.disfunction.cc`.** The old
