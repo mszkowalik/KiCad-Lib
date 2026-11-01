@@ -2,7 +2,7 @@
 name: kicad-platform-workflow
 description: "How changes become library: every write publishes immediately (no draft gate, no Proposals view), a publish regenerates the KiCad libraries and file mirror with no manual build, geometry publishes repoint the components on them, which changes carry a verification across a new version and which strip it, what mirror warnings mean, where the retired YAML pipeline went, and who handles platform setup. Use when asked how to publish, rebuild or regenerate."
 ---
-<!-- platform-skill: platform-workflow v11 — source of truth is the platform; check with list_skills, refresh with get_skill -->
+<!-- platform-skill: platform-workflow v12 — source of truth is the platform; check with list_skills, refresh with get_skill -->
 # Platform workflow — how changes become library
 
 Postgres is the source of truth. Every symbol, footprint, component and skill is
@@ -248,20 +248,19 @@ There are two places it runs, and they are not interchangeable:
 
 | | Address | What it is |
 |---|---|---|
-| **Deployed** | `https://disfunction.cc/lib` | The instance to use. Always on, **on the public internet**, served under the `/lib` path prefix by a shared nginx. |
-| ↳ same box, LAN route | `http://192.168.200.28/lib` | The SAME deployment reached over the local network. Not a second instance. |
+| **Deployed** | `https://henry.disfunction.cc` | The instance to use. Always on, **on the public internet**, at the root of its own hostname. At home, split DNS sends the same name straight to the server on the LAN. |
+| ↳ old address | `https://disfunction.cc/lib` | The address until 2026-11-01. Every path answers a 307 to the same path on henry. Datasheet links in older schematics still use it. |
 | Dev | `http://localhost:5173` (API on `:8020`) | A working copy on a developer's machine, sources live-mounted so edits hot-reload. |
 
-**The two deployed addresses are one server, and only the first one counts.**
-Verified 2026-08-27: both answer, both return the same seven skills at the same
-versions and the same component rows. But `PUBLIC_BASE_URL` is
-`https://disfunction.cc/lib`, and every URL the platform *generates* is built
-from it no matter which route you arrived by — fetching
-`/api/kicad/pcm/repository.json` over `192.168.200.28` still hands back a
-packages URL on `disfunction.cc`. So a personal KiCad URL, a PCM link or a
-datasheet link is always the internet one. Quote `https://disfunction.cc/lib`
-to users; treat the LAN address as a convenience for browsing from that network,
-never as the address to hand out.
+**There is one deployed address: `https://henry.disfunction.cc`.** The platform
+was renamed Henry and moved there on 2026-11-01 (decision 0101).
+`PUBLIC_BASE_URL` is that address, and every URL the platform *generates* is
+built from it — a personal KiCad URL, a PCM link, a datasheet link. Quote it to
+users. Never hand out the old `/lib` address, and never point an MCP server or
+a script at it: the MCP server uses `httpx`, which does not follow the
+redirect, so every call fails. The LAN IP `192.168.200.28` no longer serves the
+platform either: it only answers the old `/lib` redirect. The MCP server is now
+named `henry`, so its tools are `mcp__henry__*`.
 
 **It is on the internet, so the access rules are not optional.** This document
 said "reachable from the local network only" until 2026-08-27, which was wrong

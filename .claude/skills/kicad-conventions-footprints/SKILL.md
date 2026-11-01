@@ -2,7 +2,7 @@
 name: kicad-conventions-footprints
 description: "Choosing AND authoring footprints: where to get the copper, how to publish it, and the index of every footprint rule with the check that now holds it. The rules themselves live in the footprint checklist — read them with get_review_checklist('footprint'). Use when naming, picking or authoring any footprint."
 ---
-<!-- platform-skill: conventions-footprints v56 — source of truth is the platform; check with list_skills, refresh with get_skill -->
+<!-- platform-skill: conventions-footprints v58 — source of truth is the platform; check with list_skills, refresh with get_skill -->
 # Footprint conventions
 
 **The rules are checks now, not prose.** Every convention this document used to
@@ -98,7 +98,7 @@ see. Do not reintroduce it — **`fp.shared_land_record`**.
 Two useful scripts:
 
 ```
-export KICAD_API_URL=https://disfunction.cc/lib KICAD_MCP_TOKEN=<your personal token>
+export KICAD_API_URL=https://henry.disfunction.cc KICAD_MCP_TOKEN=<your personal token>
 python3 scripts/model-bbox.py <folder>/<NAME>.step      # measure a 3D model
 python3 scripts/footprint-render.py <footprint name>    # front, right, isometric
 python3 scripts/footprint-render.py <file.kicad_mod>    # the same, BEFORE you publish
