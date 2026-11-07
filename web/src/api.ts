@@ -9382,7 +9382,7 @@ export interface BoardStep {
   waiting: number;
   waiting_named: number;
   waiting_unnamed: number;
-  /** active units that lack the step, plus the boards not received yet */
+  /** active units that lack the step and can still take it, plus the boards not received yet */
   still_to_do: number;
   /** `waiting`, limited by the stock of the step's parts */
   can_go: number;

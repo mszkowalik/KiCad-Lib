@@ -698,6 +698,11 @@ def board(db: Session, run: M.ProductionRun, *, pool: dict | None = None) -> lis
     lack it plus the boards not received yet, and `can_go` is `waiting` limited
     by the stock of its parts.
 
+    A unit that can never take the step is not still to do: it did another
+    option of the step's choice, or a step that this step must come before
+    (`needs_not`). Batch 2164's optional UV print read "still to do 60" while
+    51 of its 60 units had their lightpipes, which a UV print must precede.
+
     A reopen lets a unit take a step again; it undoes no work. So `done` reads
     the whole history, and only `waiting` and `still_to_do` read what the unit
     did since its latest reopen. Finish is the exception: it is a state, and a
@@ -737,7 +742,10 @@ def board(db: Session, run: M.ProductionRun, *, pool: dict | None = None) -> lis
     out = []
     for step in ordered:
         key, kind = step["key"], step.get("kind") or "step"
-        siblings = set(groups.get(step.get("group") or "", []))
+        # A unit that did one of these can never take the step: the step
+        # itself, another option of its choice, or a step it must come before.
+        closed = (set(groups.get(step.get("group") or "", [])) | {key}
+                  | {m for ref in step.get("needs_not") or [] for m in groups.get(ref, [ref])})
         n_done = waiting_named = waiting_unnamed = to_do = 0
         for (done, since, is_named, status), n in kinds.items():
             fresh = done if since is None else since
@@ -747,7 +755,7 @@ def board(db: Session, run: M.ProductionRun, *, pool: dict | None = None) -> lis
                 n_done += n
             if status != "active":
                 continue
-            if key not in fresh and not (siblings & fresh):
+            if not (closed & fresh):
                 to_do += n
             if not needs_met(graph, step, set(done), None if since is None else set(since)):
                 if is_named:

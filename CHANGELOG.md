@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-11-07 (figures on the production screens)
+
+- **A step that a unit can never take is not "still to do" on the batch board.** That is a unit that
+  did another option of the step's choice, or a step that this step must come before. Batch 2164 read
+  "still to do 60" for the optional UV print. 51 of its 60 units have lightpipes, and a UV print must
+  come before the lightpipes, so it now reads 9.
+
 ## 2026-11-07 (the review and library figures match their lists)
 
 - **Project → Review counts a partly checked part as not verified.** "Not verified" counted the

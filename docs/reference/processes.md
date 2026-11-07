@@ -584,6 +584,10 @@ one the click is judged by. A list reuses one stock replay per company.
   A reopen lets a unit take a step again. It undoes no work. When `done` also read from the reopen
   on, Batch 8 showed 624 of 799 programmed, with all 799 programmed. Finish is the exception: a
   reopened unit is not finished, so Finish's `done` reads from the reopen on.
+- **A unit that can never take a step is not still to do, and it does not wait.** That is a unit
+  that did another option of the step's choice, or a step that the step must come before
+  (`needs_not`). Before this, Batch 2164's optional UV print read "still to do 60". 51 of its 60
+  units had their lightpipes, and a UV print must come before the lightpipes.
 - **The board says how many, and the scan group says which.** Before programming
   a unit has no name, so a field takes N from a stack. After programming a field
   points at the scan group.

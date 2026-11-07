@@ -2417,6 +2417,20 @@ def test_a_choice_needs_only_one_of_its_options_on_the_board(db, world):
     assert (uv["waiting"], uv["still_to_do"]) == (0, 9)
 
 
+def test_a_step_that_must_come_before_one_already_done_is_not_still_to_do(db, world):
+    """Batch 2164, 2026-11-07: UV print read "still to do 60" while 51 units had
+    their lightpipes, and a UV print must come before the lightpipes."""
+    v = world["v"]
+    v.graph = {**v.graph, "steps": [{**s, "needs_not": ["carton"]} if s["key"] == "leaflet" else s
+                                    for s in v.graph["steps"]]}
+    db.flush()
+    d1, _d2, _d3 = _crafted_devices(db, world, 131, 3)
+    T.apply_step(db, world["b1"], step_key="carton", device_ids=[d1.id], chosen="scanned", dry_run=False)
+    leaflet = _field(T.board(db, world["b1"]), "leaflet")
+    # d1 can never take the leaflet now: 2 devices and the 7 boards not received.
+    assert (leaflet["done"], leaflet["waiting"], leaflet["still_to_do"]) == (0, 2, 2 + 7)
+
+
 def test_a_reopen_takes_no_step_off_the_board(db, world):
     """Batch 8, 2026-11-07: 175 devices reopened to record a leaflet and
     finished again dropped out of every earlier step's `done` (624 of 799)."""
