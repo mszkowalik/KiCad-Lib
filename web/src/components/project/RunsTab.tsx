@@ -61,7 +61,7 @@ export default function RunsTab({ project, snapshots, snapshot, board, variant }
       navigate(`/production/batches/${r.id}`);
     } catch (err) {
       setCreating(false);
-      // The design-review gate: a 409 naming what is unsigned / unreviewed /
+      // The design-review gate: a 409 naming what is unsigned / not verified /
       // deprecated (or a review never completed). Warn loudly, then let the
       // user proceed on an explicit confirmation — the ack is audited.
       const warning = reviewWarningOf(err);
@@ -71,7 +71,8 @@ export default function RunsTab({ project, snapshots, snapshot, board, variant }
         if (warning.changed_since_review.length)
           parts.push(`changed since the review: ${warning.changed_since_review.join(", ")}`);
         if (warning.unsigned.length) parts.push(`not signed off: ${warning.unsigned.join(", ")}`);
-        if (warning.unreviewed.length) parts.push(`not verified: ${warning.unreviewed.join(", ")}`);
+        // Every state except checked: a partial part is not verified either.
+        if (warning.not_verified.length) parts.push(`not verified: ${warning.not_verified.join(", ")}`);
         if (warning.deprecated.length) parts.push(`deprecated parts: ${warning.deprecated.join(", ")}`);
         // Three-way, because "go fix it" is the answer this dialog exists
         // for: the review queue scoped to THIS snapshot's BOM is one click,

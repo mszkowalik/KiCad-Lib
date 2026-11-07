@@ -1719,11 +1719,18 @@ def snapshot_review_issues(db: Session, snap: M.ProjectSnapshot) -> dict:
 
     Used by the run-creation warning gate AND the project review view, so the
     two can never disagree about what is wrong.
+
+    **`not_verified` is every state except `checked`.** It used to name only
+    `unreviewed` and `failed`, so a `partial` part (items still open) read as
+    verified here while the Reviews queue counted it as open work. On
+    2026-11-07 EVSE_20_CTRL showed "41 not verified" while 57 of its parts
+    were not checked, 16 of them `partial`. `partial` is also its own list,
+    so the screen can say which part of the work is "started, not finished".
     """
     rows = snapshot_review_rows(db, snap)
     unsigned = [r for r in rows if r["matched"] and r["signoff_state"] != "signed"]
-    unreviewed = [r for r in rows if r["matched"] and r["review_state"] in
-                  ("unreviewed", "failed")]
+    not_verified = [r for r in rows if r["matched"] and r["review_state"] != "checked"]
+    partial = [r for r in not_verified if r["review_state"] == "partial"]
     deprecated = [r for r in rows if r["matched"] and r["lifecycle"] in HIDDEN_LIFECYCLE]
     unmatched = [r for r in rows if not r["matched"]]
 
@@ -1743,7 +1750,8 @@ def snapshot_review_issues(db: Session, snap: M.ProjectSnapshot) -> dict:
     return {
         "rows": rows,
         "unsigned": sorted({r["component_name"] for r in unsigned}),
-        "unreviewed": sorted({r["component_name"] for r in unreviewed}),
+        "not_verified": sorted({r["component_name"] for r in not_verified}),
+        "partial": sorted({r["component_name"] for r in partial}),
         "deprecated": sorted({r["component_name"] for r in deprecated}),
         "unmatched_lines": len(unmatched),
         "reviewed": last is not None,
@@ -1753,7 +1761,7 @@ def snapshot_review_issues(db: Session, snap: M.ProjectSnapshot) -> dict:
             "sha": last.sha,
         } if last else None,
         "changed_since_review": sorted(set(changed_since)),
-        "clean": not unsigned and not unreviewed and not deprecated,
+        "clean": not unsigned and not not_verified and not deprecated,
     }
 
 
@@ -1805,7 +1813,10 @@ def complete_review(project_id: int, body: CompleteReviewIn, request: Request,
     counts = {
         "components": sum(1 for r in issues["rows"] if r["matched"]),
         "unsigned": len(issues["unsigned"]),
-        "unreviewed": len(issues["unreviewed"]),
+        # Rows written before 2026-11-07 carry `unreviewed` instead, which
+        # counted `unreviewed` and `failed` only. Never rename it back: the
+        # two keys are two different counts.
+        "not_verified": len(issues["not_verified"]),
         "deprecated": len(issues["deprecated"]),
     }
     row = M.SnapshotReview(

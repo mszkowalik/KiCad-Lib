@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-11-07 (the review and library figures match their lists)
+
+- **Project → Review counts a partly checked part as not verified.** "Not verified" counted the
+  unreviewed and failed parts only. EVSE_20_CTRL showed 41 while 57 of its parts were not checked, 16
+  of them partly checked. Now the banner, the chip and the batch warning count every state except
+  checked, and the banner says how many of them are partly checked. A past review record keeps its old
+  count, under the word "unreviewed or failed".
+
 ## 2026-11-07 (a reopened device keeps its steps on the batch board)
 
 - **The batch board counts every step a device ever did.** A device that was reopened and finished

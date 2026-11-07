@@ -541,8 +541,15 @@ review axis records who verified each version against its documentation.
   review". `routers/reviews.py::snapshot_review_issues` is the ONE
   implementation both the project Review tab and the run-creation gate use.
 - **The run-creation gate WARNS, it never blocks**: `create_run` answers 409
-  `{review_warning: true, …}` for a snapshot with unsigned/unreviewed/
+  `{review_warning: true, …}` for a snapshot with unsigned, not verified or
   deprecated parts, changes since the last review, or no completed review;
   re-posting with `ack_review=true` proceeds and audits
   `production.review_ack`. Everything else stays reporting-only.
+- **"Not verified" is every review state except `checked`** (2026-11-07). The
+  gate and the project Review tab named only `unreviewed` and `failed`, so a
+  `partial` part read as verified there while the Reviews queue counted it as
+  open work: EVSE_20_CTRL showed 41 where 57 parts were not checked.
+  `snapshot_review_issues` returns `not_verified` and, as a subset, `partial`.
+  A past `SnapshotReview.summary` keeps its `unreviewed` count, which is the
+  old, narrower figure, and the tab prints it under that word.
 

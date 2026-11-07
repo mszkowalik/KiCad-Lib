@@ -2691,7 +2691,7 @@ export interface RunCreate {
   run_date?: string;
   notes?: string;
   /** Explicit confirmation of the design-review warning. Without it a
-   *  snapshot with unsigned/unreviewed/deprecated components (or one whose
+   *  snapshot with unsigned/not verified/deprecated components (or one whose
    *  review was never completed) answers 409 with a ReviewWarningDetail. */
   ack_review?: boolean;
 }
@@ -2700,7 +2700,10 @@ export interface RunCreate {
 export interface ReviewWarningDetail {
   review_warning: true;
   unsigned: string[];
-  unreviewed: string[];
+  /** Every review state except `checked`, `partial` included. */
+  not_verified: string[];
+  /** The `partial` part of `not_verified`: started, items still open. */
+  partial: string[];
   deprecated: string[];
   changed_since_review: string[];
   review_completed: boolean;
@@ -7072,7 +7075,10 @@ export interface ProjectReview {
   snapshot_id: number;
   rows: ProjectReviewRow[];
   unsigned: string[];
-  unreviewed: string[];
+  /** Every review state except `checked`, `partial` included. */
+  not_verified: string[];
+  /** The `partial` part of `not_verified`: started, items still open. */
+  partial: string[];
   deprecated: string[];
   unmatched_lines: number;
   reviewed: boolean;

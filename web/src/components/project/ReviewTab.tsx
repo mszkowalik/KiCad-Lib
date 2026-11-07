@@ -16,6 +16,17 @@ import { ErrorBanner, LifecyclePill, ReviewPill, SignoffPill, Spinner } from "..
 import { localDate, localWhen } from "../../format";
 import { useLoad } from "../useLoad";
 
+/** What a past review record counted. A record written before 2026-11-07 has
+ *  `unreviewed`, which counted the unreviewed and failed parts only, and it is
+ *  printed under that word. A newer one has `not_verified`: every state except
+ *  checked. */
+function pastCounts(c: Record<string, number>): string {
+  const open = c.not_verified !== undefined
+    ? `${c.not_verified} not verified`
+    : `${c.unreviewed ?? 0} unreviewed or failed`;
+  return `${c.unsigned ?? 0} unsigned, ${open}`;
+}
+
 /** The end-of-design review: every BOM-matched component of the snapshot with
  * its verification, sign-off and lifecycle state, per-selection bulk sign-off,
  * and the "review complete" record a production run warns against. */
@@ -142,7 +153,10 @@ export default function ReviewTab({
         </div>
       ) : (
         <div className="banner-warn">
-          {data.unsigned.length} not signed off · {data.unreviewed.length} not verified ·{" "}
+          {/* "Not verified" is every state except checked: a partial part is open
+              work, as the Reviews queue counts it. */}
+          {data.unsigned.length} not signed off · {data.not_verified.length} not verified
+          {data.partial.length ? ` (${data.partial.length} partly checked)` : ""} ·{" "}
           {data.deprecated.length} deprecated
           {data.unmatched_lines ? ` · ${data.unmatched_lines} BOM line(s) match no library part` : ""}
           {data.changed_since_review.length
@@ -185,7 +199,8 @@ export default function ReviewTab({
           <>
             {data.unmatched_lines ? <StatChip n={data.unmatched_lines} tone="err">no library match</StatChip> : null}
             {data.unsigned.length ? <StatChip n={data.unsigned.length} tone="warn">not signed</StatChip> : null}
-            {data.unreviewed.length ? <StatChip n={data.unreviewed.length} tone="warn">not verified</StatChip> : null}
+            {data.not_verified.length ? <StatChip n={data.not_verified.length} tone="warn">not verified</StatChip> : null}
+            {data.partial.length ? <StatChip n={data.partial.length}>of them partly checked</StatChip> : null}
             {data.deprecated.length ? <StatChip n={data.deprecated.length} tone="warn">deprecated</StatChip> : null}
           </>
         }
@@ -216,11 +231,7 @@ export default function ReviewTab({
                   <span className="mono">{r.sha.slice(0, 8)}</span>
                 </div>
                 <p className="muted">
-                  {r.summary_counts
-                    ? `${r.summary_counts.components ?? "?"} components — ${r.summary_counts.unsigned ?? 0} unsigned, ${
-                        r.summary_counts.unreviewed ?? 0
-                      } unreviewed`
-                    : ""}
+                  {r.summary_counts ? `${r.summary_counts.components ?? "?"} components — ${pastCounts(r.summary_counts)}` : ""}
                   {r.note ? ` — ${r.note}` : ""}
                 </p>
               </li>

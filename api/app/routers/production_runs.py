@@ -278,8 +278,10 @@ def create_run(project_id: int, body: RunIn, db: Session = Depends(get_db)):
         if body.board and body.board not in [b["name"] for b in snap.boards or []]:
             raise HTTPException(404, "board not in snapshot")
         # The design-review warning gate (user decision 2026-08-23): a run from
-        # a snapshot with unsigned / unreviewed / deprecated components, or one
+        # a snapshot with unsigned / not verified / deprecated components, or one
         # whose review was never completed, needs an EXPLICIT confirmation.
+        # "Not verified" is every review state except `checked`, `partial`
+        # included (`snapshot_review_issues`).
         # 409 + the issue list; the client re-posts with ack_review=true and
         # the acknowledgement is audited. Warning only — never a hard block.
         from .reviews import snapshot_review_issues
@@ -287,12 +289,13 @@ def create_run(project_id: int, body: RunIn, db: Session = Depends(get_db)):
         issues = snapshot_review_issues(db, snap)
         problems = {
             "unsigned": issues["unsigned"],
-            "unreviewed": issues["unreviewed"],
+            "not_verified": issues["not_verified"],
+            "partial": issues["partial"],
             "deprecated": issues["deprecated"],
             "changed_since_review": issues["changed_since_review"],
             "review_completed": issues["reviewed"],
         }
-        needs_ack = (issues["unsigned"] or issues["unreviewed"] or issues["deprecated"]
+        needs_ack = (issues["unsigned"] or issues["not_verified"] or issues["deprecated"]
                      or issues["changed_since_review"] or not issues["reviewed"])
         if needs_ack and not body.ack_review:
             raise HTTPException(409, {"review_warning": True, **problems})
