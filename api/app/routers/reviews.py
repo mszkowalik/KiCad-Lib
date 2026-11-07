@@ -1397,6 +1397,21 @@ def _template_states(db: Session, kind: str, parents: list) -> dict[int, dict]:
     return out
 
 
+def _published_components(db: Session) -> tuple[list, dict]:
+    """The components that have a published version, and that version.
+
+    A component with no current version is not in the library — a
+    draft-era row nobody approved (78L12, CJ79L12: one rejected v1 each) or
+    a part that exists only on the platform (`SIM6-12-3W cut`) — and has
+    nothing to review. The queue and the health panel counted them as
+    `unreviewed` / `unsigned` work while the Library list
+    (`components.list_components`) skipped them: 508 against 503 on
+    2026-11-07. Nothing is deleted; they are only not counted here.
+    """
+    comps, live = components_with_current(db)
+    return [c for c in comps if c.id in live], live
+
+
 @router.get("/reviews/queue")
 def review_queue(snapshot_id: int | None = None, db: Session = Depends(get_db)):
     """The review worklist.
@@ -1408,7 +1423,7 @@ def review_queue(snapshot_id: int | None = None, db: Session = Depends(get_db)):
     """
     # Live versions only. Loading every component's whole history here cost as
     # much as it did on the browse list — see `components_with_current`.
-    comps, live = components_with_current(db)
+    comps, live = _published_components(db)
 
     scope_note = None
     if snapshot_id is not None:
@@ -1512,7 +1527,7 @@ def review_queue(snapshot_id: int | None = None, db: Session = Depends(get_db)):
 @router.get("/reviews/health")
 def review_health(db: Session = Depends(get_db)):
     """The library-health numbers: state counts, chronic skips, risky usage."""
-    comps, live = components_with_current(db)
+    comps, live = _published_components(db)
     review_states = review_svc.states_for_components(db, comps, cvs=live)
     signoff_states = signoff.states_for(db, comps, detail=False)
     used = used_in_projects(db)

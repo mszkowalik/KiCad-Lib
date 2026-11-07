@@ -19,6 +19,7 @@ back, so nothing reaches the dev data.
 Run from `api/`, with the dev database up:
     python -m pytest tests/reviews -q
 """
+import json
 import pathlib
 import sys
 import uuid
@@ -32,20 +33,34 @@ from sqlalchemy.orm import Session
 from app import models as M
 from app.db import engine
 from app.routers import reviews
+from app.services import agent_tools
 
 
 @pytest.fixture
-def db():
-    """One transaction, never committed: the dev database is left untouched."""
+def factory(monkeypatch):
+    """Sessions on one transaction that is rolled back at the end. A commit is
+    a savepoint, so an agent tool's own session sees what the test wrote."""
     conn = engine.connect()
     trans = conn.begin()
-    s = Session(bind=conn, join_transaction_mode="create_savepoint", expire_on_commit=False)
+
+    def make():
+        return Session(bind=conn, join_transaction_mode="create_savepoint", expire_on_commit=False)
+
+    monkeypatch.setattr(agent_tools, "SessionLocal", make)
+    try:
+        yield make
+    finally:
+        trans.rollback()
+        conn.close()
+
+
+@pytest.fixture
+def db(factory):
+    s = factory()
     try:
         yield s
     finally:
         s.close()
-        trans.rollback()
-        conn.close()
 
 
 def _row(name, review, signoff="signed", lifecycle="released"):
@@ -77,3 +92,40 @@ def test_only_partial_parts_still_make_the_snapshot_unclean(db, monkeypatch):
     out = reviews.snapshot_review_issues(db, SimpleNamespace(id=-1))
 
     assert out["clean"] is False, "a part with open items read as verified"
+
+
+# ------------------------------------------------------------ finding 4
+@pytest.fixture
+def versionless(db):
+    """A component with no published version, like 78L12 on production."""
+    comp = M.Component(name=f"TEST-NOVERSION-{uuid.uuid4().hex[:8]}")
+    db.add(comp)
+    db.commit()
+    return comp
+
+
+def test_the_queue_leaves_out_a_component_with_no_version(db, versionless):
+    names = {r["name"] for r in reviews.review_queue(snapshot_id=None, db=db)["components"]}
+
+    assert versionless.name not in names
+
+
+def test_health_counts_the_published_library(db, versionless):
+    published = db.query(M.Component).filter(M.Component.current_version_id.isnot(None)).count()
+
+    out = reviews.review_health(db=db)["components"]
+
+    assert out["total"] == published
+    assert sum(out["review"].values()) == published
+    assert sum(out["signoff"].values()) == published
+
+
+def test_the_agent_lists_leave_out_a_component_with_no_version(db, versionless):
+    published = db.query(M.Component).filter(M.Component.current_version_id.isnot(None)).count()
+    reviews_out = json.loads(agent_tools.list_reviews.func(state=""))
+    # The sign-off list is capped, so its COUNTS are what proves the point.
+    signoffs_out = json.loads(agent_tools.list_signoffs.func(state=""))
+
+    assert versionless.name not in {i["component"] for i in reviews_out["items"]}
+    assert sum(reviews_out["counts"].values()) == published
+    assert sum(signoffs_out["counts"].values()) == published

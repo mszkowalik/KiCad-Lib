@@ -207,7 +207,9 @@ def list_signoffs(state: str = "") -> str:
 
     db = SessionLocal()
     try:
-        comps = db.query(M.Component).all()
+        # Published components only, as the library list and the review queue
+        # count them: one with no version has nothing to sign.
+        comps = db.query(M.Component).filter(M.Component.current_version_id.isnot(None)).all()
         states = states_for(db, comps)
         counts: dict[str, int] = {}
         for s in states.values():
@@ -1913,9 +1915,11 @@ def list_reviews(state: str = "") -> str:
     try:
         from sqlalchemy.orm import selectinload
 
+        # Published components only, as the library list and the review queue
+        # count them: one with no version has nothing to review.
         comps = db.query(M.Component).options(
             selectinload(M.Component.versions).selectinload(M.ComponentVersion.properties)
-        ).all()
+        ).filter(M.Component.current_version_id.isnot(None)).all()
         states = review_svc.states_for_components(db, comps)
         items = [
             {"component": c.name, "state": states[c.id]["state"],

@@ -11,6 +11,12 @@
   list.** With `?state=` or `?condition=` they counted the whole project. CE_Aqua_V2 on the shelf listed
   27 devices under "1,015 device(s)", and "online 377" opened 0 rows. Now the shelf view reads 27, split
   3 offline and 24 never seen.
+- **Reviews and Home count the published library only.** Five components have no published version
+  (78L12 and CJ79L12, with one rejected v1 each, and `SIM6-12-3W cut`, `BW2.4JWX195-13KJ marked WiFi`
+  and `BW4GJWX195-13KJ marked LTE`). The review queue, the health panel and Home counted them as
+  unreviewed and unsigned work: "Review states (508 components)" against 503 on the Library page. Now
+  both read 503. The agent tools `list_reviews` and `list_signoffs` leave them out too. Nothing was
+  deleted.
 
 ## 2026-11-07 (a reopened device keeps its steps on the batch board)
 
