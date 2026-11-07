@@ -57,20 +57,32 @@ def _supplier_links(db, component_id: int) -> list:
     ]
 
 
+SEARCH_CAP = 50
+
+
 @beta_tool
 def search_components(query: str = "", category: str = "") -> str:
     """Search the component library. Returns a compact JSON list of matching
     components (max 50) with name, description, value, footprint and category.
+    `count` is every component that matches; when it is above 50 the list
+    ends with a `_truncated` entry that says how many are not shown.
 
     Args:
         query: Case-insensitive text matched against names and property values. Empty = all.
         category: Optional category name filter (e.g. "Resistor", "Diodes").
     """
+    from ..routers.util import components_with_current
+
     db = SessionLocal()
     try:
+        # The list loader, not `current_version(comp)` per row: that lazy-loads
+        # every component's whole history, and the search now always reads the
+        # whole library to count it.
+        comps, live = components_with_current(db)
+        needle = query.lower()
         out = []
-        for comp in db.query(M.Component).order_by(M.Component.name):
-            cv = current_version(comp)
+        for comp in comps:
+            cv = live.get(comp.id)
             if cv is None:
                 continue
             path = category_path(cv.category)
@@ -78,7 +90,7 @@ def search_components(query: str = "", category: str = "") -> str:
                 continue
             props = props_dict(cv)
             hay = comp.name.lower() + " " + " ".join((v or "").lower() for v in props.values())
-            if query and query.lower() not in hay:
+            if needle and needle not in hay:
                 continue
             out.append({
                 "name": comp.name,
@@ -87,9 +99,15 @@ def search_components(query: str = "", category: str = "") -> str:
                 "footprint": props.get("Footprint") or "",
                 "category": path,
             })
-            if len(out) >= 50:
-                break
-        return json.dumps({"count": len(out), "components": out})
+        # Never silently (`_capped`): it stopped at 50 and answered
+        # `count: 50` for an empty query that matched 503, so an agent could
+        # not tell a short library from a cut list.
+        shown = out[:SEARCH_CAP]
+        if len(out) > SEARCH_CAP:
+            shown.append({"_truncated": True, "shown": SEARCH_CAP, "total": len(out),
+                          "note": f"{len(out) - SEARCH_CAP} more components not shown - "
+                                  "narrow with `query` or `category`"})
+        return json.dumps({"count": len(out), "components": shown})
     finally:
         db.close()
 

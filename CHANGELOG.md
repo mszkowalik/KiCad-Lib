@@ -40,6 +40,9 @@
   asked for, so any common word read "50 page(s)". Now it reads, for example, "best 50 of 1,234
   page(s)". The agent tool `search_datasheets` also returns `total`, and a `note` when it shows only
   the best pages.
+- **The agent tool `search_components` counts every match.** An empty query answered `count: 50` while
+  503 components matched, and nothing said that the list was cut. Now `count` is every match, and a
+  list cut at 50 ends with a `_truncated` entry.
 
 ## 2026-11-07 (a reopened device keeps its steps on the batch board)
 
