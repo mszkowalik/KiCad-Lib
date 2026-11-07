@@ -56,6 +56,9 @@ the same purchase would enter stock twice.
 - **The "Used for R&D" list reads `basis="research"` only.** A use for an untracked
   project is in the part's ledger on Stock → Parts. A loss is under Stock adjustments on
   the same page.
+- **The R&D figure is `total`, never a sum of `rows`.** `GET /api/organizers/research`
+  returns the newest rows up to `limit` (500 by default), and `total` counts and sums
+  every row (`research_total`). `truncated` says the list is not all of them.
 
 ## Loading a list
 

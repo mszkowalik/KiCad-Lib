@@ -10784,7 +10784,12 @@ export interface OrganizerResearchRow {
 }
 
 export function getOrganizerResearch(signal?: AbortSignal): Promise<{
+  /** the newest rows, up to the route's limit */
   rows: OrganizerResearchRow[];
+  /** over EVERY row, not only those in `rows` */
+  total: { count: number; qty: number; value_usd: number };
+  /** `rows` is not all of them */
+  truncated: boolean;
   /** null when no PLN rate is stored: the screen then prints USD */
   pln_per_usd: number | null;
 }> {

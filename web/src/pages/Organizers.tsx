@@ -100,6 +100,9 @@ export default function Organizers() {
   const [showEmpty, setShowEmpty] = useState(false);
   const [dlg, setDlg] = useState<Dlg | null>(null);
   const [research, setResearch] = useState<OrganizerResearchRow[]>([]);
+  // The figure over EVERY R&D row: the list stops at the route's limit, and a sum
+  // of the rows it holds would cut the figure without saying so.
+  const [researchTotal, setResearchTotal] = useState<{ count: number; value_usd: number } | null>(null);
   // A box and R&D belong to no batch, so their money reads at today's rate (decision 0103).
   const rate = useTodayRate();
   // An open row reads its own history, so it must hear that a write happened.
@@ -112,7 +115,7 @@ export default function Organizers() {
       .then((d) => { setData(d); setError(null); })
       .catch((err) => { if (!isAbortError(err)) setError(errorMessage(err)); });
     getOrganizerResearch(signal)
-      .then((r) => setResearch(r.rows))
+      .then((r) => { setResearch(r.rows); setResearchTotal(r.total); })
       .catch((err) => { if (!isAbortError(err)) setError(errorMessage(err)); });
     setRevision((n) => n + 1);
   }, []);
@@ -153,7 +156,8 @@ export default function Organizers() {
     });
   }, [allRows, organizer, showEmpty, search]);
 
-  const researchUsd = useMemo(() => research.reduce((n, m) => n + m.value_usd, 0), [research]);
+  const researchUsd = researchTotal?.value_usd ?? 0;
+  const researchCount = researchTotal?.count ?? research.length;
 
   /** The boxes a click on this organizer's chip shows, so a chip at 0 has nothing
    *  to show. A new organizer holds nothing and appears beside "empty boxes". */
@@ -344,9 +348,9 @@ export default function Organizers() {
 
       <FoldSection
         title="Used for R&D"
-        count={research.length}
+        count={researchCount}
         foldKey="organizers:research"
-        chips={research.length ? <StatChip n={pln(researchUsd, rate)}>at cost</StatChip> : undefined}
+        chips={researchCount ? <StatChip n={pln(researchUsd, rate)}>at cost</StatChip> : undefined}
         actions={(
           <button type="button" className="btn btn-sm" onClick={() => setDlg({ kind: "use" })}>
             Pieces in no box…
@@ -358,6 +362,9 @@ export default function Organizers() {
           before its invoice reached the stock records.
           The company&apos;s books counted stock as a cost when it was bought, so these figures add nothing
           there.
+          {researchCount > research.length
+            ? ` The list shows the newest ${research.length.toLocaleString()} of ${researchCount.toLocaleString()} rows. The figure above counts them all.`
+            : null}
         </p>
         <DataTable columns={researchCols} rows={research} rowKey={(m) => m.id} persistKey="organizers:research"
           empty="Nothing has been taken for R&D." />

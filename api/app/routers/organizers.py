@@ -126,8 +126,12 @@ def moves(box_id: int | None = None, item_id: int | None = None, purpose: str = 
 def research(limit: int = 500, request: Request = None, db: Session = Depends(get_db)):
     """What R&D has used, and what it cost: 0 for a piece no purchase covers.
     Stored in USD. It belongs to no batch, so a screen shows it in PLN at today's
-    rate (decision 0103)."""
-    return {"rows": svc.research_list(db, _scope(db, request), min(max(limit, 1), 2000)),
+    rate (decision 0103). `rows` stops at `limit`, newest first; `total` counts
+    and sums every row, and `truncated` says that `rows` is not all of them."""
+    scope = _scope(db, request)
+    rows = svc.research_list(db, scope, min(max(limit, 1), 2000))
+    total = svc.research_total(db, scope)
+    return {"rows": rows, "total": total, "truncated": total["count"] > len(rows),
             "pln_per_usd": fx.pln_per_usd(db)}
 
 

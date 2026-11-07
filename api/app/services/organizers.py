@@ -331,12 +331,32 @@ def write_off(db: Session, it: M.MaterialItem, qty: float, company_id: int, *, a
     return {"adjustment_id": row.id, "qty": qty, "unit_cost_usd": unit, "value_usd": round(qty * unit, 4)}
 
 
-def research_list(db: Session, company_ids: list[int] | None = None, limit: int = 500) -> list[dict]:
-    """Everything used for R&D, newest first. It reads the draws, because a piece
-    can go to R&D with no box behind it."""
+def _research_draws(db: Session, company_ids: list[int] | None):
     q = run_actuals.live_consumption(db).filter(M.Draw.basis == "research")
     if company_ids is not None:
         q = q.filter(M.Draw.company_id.in_(company_ids))
+    return q
+
+
+def research_total(db: Session, company_ids: list[int] | None = None) -> dict:
+    """What R&D has used in all: the count of draws, the pieces and the value in
+    USD, over EVERY row. `research_list` stops at its limit, so a page that
+    summed the rows it got would cut the figure without saying so."""
+    from sqlalchemy import func
+
+    n, qty, usd = (_research_draws(db, company_ids)
+                   .with_entities(func.count(M.Draw.id), func.coalesce(func.sum(-M.Draw.qty), 0.0),
+                                  func.coalesce(func.sum(-M.Draw.qty * func.coalesce(M.Draw.unit_cost_usd, 0.0)),
+                                                0.0))
+                   .one())
+    return {"count": int(n or 0), "qty": round(float(qty or 0.0), 4), "value_usd": round(float(usd or 0.0), 4)}
+
+
+def research_list(db: Session, company_ids: list[int] | None = None, limit: int = 500) -> list[dict]:
+    """Everything used for R&D, newest first, up to `limit` rows; `research_total`
+    is the figure over all of them. It reads the draws, because a piece can go to
+    R&D with no box behind it."""
+    q = _research_draws(db, company_ids)
     rows = q.order_by(M.Draw.at.desc(), M.Draw.id.desc()).limit(limit).all()
     boxes = {m.material_move_id: m.box_id for m in db.query(M.OrganizerMove).filter(
         M.OrganizerMove.material_move_id.in_([c.id for c in rows] or [0])).all()}

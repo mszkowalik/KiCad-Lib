@@ -295,6 +295,23 @@ def test_pieces_used_for_research_with_no_box(db, world):
         O.research_use(db, world["it"], 1, world["seven"].id, note=" ")
 
 
+def test_the_research_total_counts_every_row_past_the_limit(db, world):
+    """The page summed the rows it got, and the route stops at 500 of them, so
+    the figure would cut itself short with nothing on screen to say so."""
+    from app.routers import organizers as orouter
+
+    before = O.research_total(db)
+    for i in range(3):
+        O.research_use(db, world["it"], 10, world["seven"].id, note=f"bench {i}", at="2026-03-01")
+    after = O.research_total(db)
+    assert after["count"] == before["count"] + 3
+    assert after["qty"] == pytest.approx(before["qty"] + 30)
+    assert after["value_usd"] == pytest.approx(before["value_usd"] + 3.0)
+    out = orouter.research(limit=1, db=db)
+    assert len(out["rows"]) == 1
+    assert out["total"] == after and out["truncated"] is True
+
+
 def test_a_project_outside_the_platform_reads_as_uncharged_not_as_research(db, world):
     before = ra.invoice_register(db)["pool"]
     res = O.research_use(db, world["it"], 10, world["seven"].id, note="Vumo order", at="2026-03-01", purpose="external")
