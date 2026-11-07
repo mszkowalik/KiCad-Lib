@@ -189,7 +189,7 @@ function PartFigures({ row }: { row: PartsStockRow }) {
   const consigned = row.state !== "pool_only";
   const stale = Math.round(row.remaining_qty) !== Math.round(row.remaining_at_sync_qty);
   // bought + added + made ± corrected − drawn − written off − other projects = ours now.
-  // A figure that is 0 on this part is left out, except the four every part has.
+  // A figure that is 0 on this part is left out, except bought, drawn and written off.
   const signed = (n: number) => (n > 0 ? `+${qty(n)}` : qty(n));
   const items: Array<{ label: string; value: string; className?: string; title?: string }> = [
     { label: "bought", value: qty(row.bought) },
