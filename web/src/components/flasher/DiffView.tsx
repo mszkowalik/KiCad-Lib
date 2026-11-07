@@ -1,17 +1,15 @@
 /** Side-by-side diff between two deployment versions. This is what you
  *  approve at publish time — a diff, never a form. */
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import {
-  errorMessage,
   getDeploymentDiff,
-  isAbortError,
-  type DeploymentDiff,
   type DeploymentVersionRow,
 } from "../../api";
 import { ErrorBanner, Spinner } from "../Ui";
 import { fmtBytes, shortSha } from "./common";
 import { useModal } from "../modal";
 import DataTable from "../DataTable";
+import { useLoad } from "../useLoad";
 
 function stateClass(state: string): string {
   return state === "unchanged" ? "neutral" : state === "removed" ? "err" : state === "added" ? "ok" : "warn";
@@ -29,19 +27,10 @@ export default function DiffView({
   const modal = useModal(() => onClose());
   const earlier = versions.filter((v) => v.id !== versionId);
   const [against, setAgainst] = useState<number | "">("");
-  const [diff, setDiff] = useState<DeploymentDiff | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    const ac = new AbortController();
-    setDiff(null);
-    getDeploymentDiff(versionId, against === "" ? undefined : Number(against), ac.signal)
-      .then(setDiff)
-      .catch((err) => {
-        if (!isAbortError(err)) setError(errorMessage(err));
-      });
-    return () => ac.abort();
-  }, [versionId, against]);
+  const { data: diff, error } = useLoad(
+    (signal) => getDeploymentDiff(versionId, against === "" ? undefined : Number(against), signal),
+    [versionId, against],
+  );
 
   const changedOnly = (rows: { state: string }[]) => rows.filter((r) => r.state !== "unchanged");
 

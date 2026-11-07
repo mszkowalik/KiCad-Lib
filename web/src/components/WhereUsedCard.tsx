@@ -2,24 +2,18 @@
  *  places it, with boards, refs and quantities. The endpoint existed with no
  *  caller anywhere; a part's blast radius was invisible while editing it.
  *  Also the jump-off to the part's stock ledger on Stock → Parts. */
-import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { getWhereUsed, isAbortError, type WhereUsedRow } from "../api";
+import { getWhereUsed, type WhereUsedRow } from "../api";
 import DataTable, { type Column } from "./DataTable";
 import FoldSection, { StatChip } from "./FoldSection";
+import { useLoad } from "./useLoad";
 
 export default function WhereUsedCard({ compId, name }: { compId: number; name: string }) {
-  const [rows, setRows] = useState<WhereUsedRow[] | null>(null);
-
-  useEffect(() => {
-    const ac = new AbortController();
-    getWhereUsed(compId, ac.signal)
-      .then(setRows)
-      .catch((err) => {
-        if (!isAbortError(err)) setRows([]);
-      });
-    return () => ac.abort();
-  }, [compId]);
+  const { data: rows } = useLoad<WhereUsedRow[]>(
+    (signal) => getWhereUsed(compId, signal).catch(() => []),
+    [compId],
+    { keep: true },
+  );
 
   // One row per (project, usage): the nested shape reads well but cannot be
   // sorted or filtered, and this is a list like any other.

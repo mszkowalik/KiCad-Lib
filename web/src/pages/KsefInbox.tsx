@@ -7,14 +7,13 @@
  *  reason. A supplier document typed by hand that may be the same invoice
  *  stops the import: the person links the purchase to it or imports it anyway.
  */
-import { useCallback, useEffect, useState } from "react";
+import { useState } from "react";
 import { Link } from "react-router-dom";
 import {
   ApiError,
   errorMessage,
   getKsefInbox,
   importKsefPurchase,
-  isAbortError,
   ksefXmlPath,
   skipKsefInvoice,
   type KsefDuplicateCandidate,
@@ -27,6 +26,8 @@ import { NarrowChip } from "../components/FoldSection";
 import { ErrorBanner, Spinner, StatusPill } from "../components/Ui";
 import { pl } from "../format";
 import { absoluteFileUrl } from "../viewkind";
+import { useLoad } from "../components/useLoad";
+import PageShell from "../components/PageShell";
 
 /** The one word a chip narrows on. */
 function narrowOf(r: KsefInboxRow): "import" | "unlinked" | "done" | "skipped" {
@@ -38,20 +39,9 @@ function narrowOf(r: KsefInboxRow): "import" | "unlinked" | "done" | "skipped" {
 export default function KsefInbox() {
   const dialog = useDialog();
   const { companyName } = useAuth();
-  const [rows, setRows] = useState<KsefInboxRow[] | null>(null);
-  const [error, setError] = useState("");
+  const { data: rows, setData: setRows, error, setError, reload: load } = useLoad(getKsefInbox, []);
   const [busy, setBusy] = useState<number | null>(null);
   const [narrow, setNarrow] = useState<"" | "import" | "unlinked" | "done" | "skipped">("");
-
-  const load = useCallback((signal?: AbortSignal) => {
-    getKsefInbox(signal).then((r) => { setRows(r); setError(""); })
-      .catch((e) => { if (!isAbortError(e)) setError(errorMessage(e)); });
-  }, []);
-  useEffect(() => {
-    const ac = new AbortController();
-    load(ac.signal);
-    return () => ac.abort();
-  }, [load]);
 
   const act = async (id: number, fn: () => Promise<unknown>) => {
     setBusy(id);
@@ -143,39 +133,37 @@ export default function KsefInbox() {
   ];
 
   return (
-    <div className="main-solo">
-      <div className="page">
-        <div className="toolbar">
-          <h1>KSeF</h1>
-          {rows ? (
-            <span className="toolbar-total">
-              {rows.filter((r) => r.side === "purchase" && r.status === "new").length} purchase(s) to import
-            </span>
-          ) : null}
-        </div>
-        <p className="muted dim">
-          What KSeF holds for our companies. An admin reads it in with "Sync" on Admin → Companies. Sales invoices
-          link to their record by themselves; a purchase becomes a supplier document when you import it.
-        </p>
-        <ErrorBanner message={error} />
-        <div className="card pad">
-          {rows === null ? (
-            <Spinner label="Loading the inbox…" />
-          ) : (
-            <>
-              <div className="stat-row">
-                <NarrowChip n={rows.filter((r) => narrowOf(r) === "import").length} tone="warn" value="import" current={narrow} onNarrow={setNarrow}>purchases to import</NarrowChip>
-                <NarrowChip n={rows.filter((r) => narrowOf(r) === "unlinked").length} tone="warn" value="unlinked" current={narrow} onNarrow={setNarrow}>sales not linked</NarrowChip>
-                <NarrowChip n={rows.filter((r) => narrowOf(r) === "done").length} tone="ok" value="done" current={narrow} onNarrow={setNarrow}>linked or imported</NarrowChip>
-                <NarrowChip n={rows.filter((r) => narrowOf(r) === "skipped").length} value="skipped" current={narrow} onNarrow={setNarrow}>skipped</NarrowChip>
-              </div>
-              <DataTable rows={narrow ? rows.filter((r) => narrowOf(r) === narrow) : rows} rowKey={(r) => r.id} columns={cols}
-                         empty={narrow ? "No row in this state." : "Nothing read from KSeF yet."}
-                         defaultSort={{ key: "date", dir: "desc" }} />
-            </>
-          )}
-        </div>
+    <PageShell>
+      <div className="toolbar">
+        <h1>KSeF</h1>
+        {rows ? (
+          <span className="toolbar-total">
+            {rows.filter((r) => r.side === "purchase" && r.status === "new").length} purchase(s) to import
+          </span>
+        ) : null}
       </div>
-    </div>
+      <p className="muted dim">
+        What KSeF holds for our companies. An admin reads it in with "Sync" on Admin → Companies. Sales invoices
+        link to their record by themselves; a purchase becomes a supplier document when you import it.
+      </p>
+      <ErrorBanner message={error} />
+      <div className="card pad">
+        {rows === null ? (
+          <Spinner label="Loading the inbox…" />
+        ) : (
+          <>
+            <div className="stat-row">
+              <NarrowChip n={rows.filter((r) => narrowOf(r) === "import").length} tone="warn" value="import" current={narrow} onNarrow={setNarrow}>purchases to import</NarrowChip>
+              <NarrowChip n={rows.filter((r) => narrowOf(r) === "unlinked").length} tone="warn" value="unlinked" current={narrow} onNarrow={setNarrow}>sales not linked</NarrowChip>
+              <NarrowChip n={rows.filter((r) => narrowOf(r) === "done").length} tone="ok" value="done" current={narrow} onNarrow={setNarrow}>linked or imported</NarrowChip>
+              <NarrowChip n={rows.filter((r) => narrowOf(r) === "skipped").length} value="skipped" current={narrow} onNarrow={setNarrow}>skipped</NarrowChip>
+            </div>
+            <DataTable rows={narrow ? rows.filter((r) => narrowOf(r) === narrow) : rows} rowKey={(r) => r.id} columns={cols}
+                       empty={narrow ? "No row in this state." : "Nothing read from KSeF yet."}
+                       defaultSort={{ key: "date", dir: "desc" }} />
+          </>
+        )}
+      </div>
+    </PageShell>
   );
 }

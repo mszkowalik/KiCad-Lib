@@ -6,14 +6,13 @@
  *  answer per document. A dead session stops the run and `detail.results` holds what
  *  was done before it, so the dialog prints both.
  */
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import {
   ApiError,
   attachmentPath,
   drawJlcInvoicePdfs,
   errorMessage,
   getInvoiceRegister,
-  isAbortError,
   type JlcInvoicePdfResult,
   type RunCostDocumentRow,
 } from "../../api";
@@ -24,6 +23,7 @@ import { useDialog } from "../Dialog";
 import { CheckField } from "../Field";
 import { useModal } from "../modal";
 import { ErrorBanner, Spinner, StatusPill } from "../Ui";
+import { useLoad } from "../useLoad";
 
 /** The route's own cap on one request. */
 const MAX_DOCUMENTS = 200;
@@ -36,8 +36,6 @@ function isJlcInvoice(d: RunCostDocumentRow): boolean {
 
 export default function JlcInvoicePdfDialog({ onClose }: { onClose: () => void }) {
   const dialog = useDialog();
-  const [docs, setDocs] = useState<RunCostDocumentRow[] | null>(null);
-  const [error, setError] = useState("");
   const [showFiled, setShowFiled] = useState(false);
   const [force, setForce] = useState(false);
   const [ticked, setTicked] = useState<Set<number>>(new Set());
@@ -46,18 +44,10 @@ export default function JlcInvoicePdfDialog({ onClose }: { onClose: () => void }
   const [results, setResults] = useState<JlcInvoicePdfResult[] | null>(null);
   const modal = useModal(onClose);
 
-  const load = (signal?: AbortSignal) =>
-    getInvoiceRegister(signal)
-      .then((r) => setDocs(r.documents.filter(isJlcInvoice)))
-      .catch((err) => {
-        if (!isAbortError(err)) setError(errorMessage(err));
-      });
-
-  useEffect(() => {
-    const ac = new AbortController();
-    void load(ac.signal);
-    return () => ac.abort();
-  }, []);
+  const { data: docs, error, setError, reload: load } = useLoad(
+    (signal) => getInvoiceRegister(signal).then((r) => r.documents.filter(isJlcInvoice)),
+    [],
+  );
 
   const rows = useMemo(
     () => (docs ?? []).filter((d) => showFiled || !(d.attachment_count ?? 0)),

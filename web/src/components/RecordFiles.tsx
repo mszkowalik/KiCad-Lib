@@ -8,11 +8,12 @@
  *  component serves every owner. It renders inline pieces (a fragment): the
  *  caller's row decides the layout.
  */
-import { useCallback, useEffect, useState } from "react";
-import { errorMessage, isAbortError } from "../api";
+import { useState } from "react";
+import { errorMessage } from "../api";
 import { fileHref } from "../viewkind";
 import { useDialog } from "./Dialog";
 import FilePick from "./FilePick";
+import { useLoad } from "./useLoad";
 
 /** What a file row needs here; every owner's list answers at least this. */
 export interface FileItem { id: number; filename: string; size_bytes: number; uploaded_by?: string }
@@ -25,20 +26,12 @@ export default function RecordFiles({ list, upload, pathOf, label = "Files", onC
   onChange?: () => void;
 }) {
   const dialog = useDialog();
-  const [files, setFiles] = useState<FileItem[] | null>(null);
+  const { data: files, reload: load } = useLoad<FileItem[]>(
+    (signal) => list(signal).catch(() => []),
+    [list],
+    { keep: true },
+  );
   const [busy, setBusy] = useState(false);
-
-  const load = useCallback((signal?: AbortSignal) => {
-    list(signal).then(setFiles).catch((err) => {
-      if (!isAbortError(err)) setFiles([]);
-    });
-  }, [list]);
-
-  useEffect(() => {
-    const ac = new AbortController();
-    load(ac.signal);
-    return () => ac.abort();
-  }, [load]);
 
   const pick = async (file: File) => {
     setBusy(true);

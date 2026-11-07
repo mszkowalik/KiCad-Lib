@@ -9,35 +9,25 @@
  *    image      → <img>; pdf → <PdfFrame> (a blob-framed iframe — see there)
  *    anything else → download card
  */
-import { lazy, Suspense, useEffect, useState } from "react";
+import { lazy, Suspense } from "react";
 import { useSearchParams } from "react-router-dom";
 import {
   dwgToDxfUrl,
-  errorMessage,
   getViewerCapabilities,
-  isAbortError,
 } from "../api";
 import { Spinner } from "../components/Ui";
 import { absoluteFileUrl, viewKindOf } from "../viewkind";
 import PdfFrame from "../components/PdfFrame";
+import { useLoad } from "../components/useLoad";
+import PageShell from "../components/PageShell";
 
 const MeshView = lazy(() => import("../components/MeshView"));
 const DxfView = lazy(() => import("../components/DxfView"));
 const ModelViewer = lazy(() => import("../components/ModelViewer"));
 
 function DwgPane({ srcPath }: { srcPath: string }) {
-  const [canConvert, setCanConvert] = useState<boolean | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    const ctrl = new AbortController();
-    getViewerCapabilities(ctrl.signal)
-      .then((caps) => setCanConvert(caps.dwg_convert))
-      .catch((err) => {
-        if (!isAbortError(err)) setError(errorMessage(err));
-      });
-    return () => ctrl.abort();
-  }, []);
+  const { data: caps, error } = useLoad(getViewerCapabilities, []);
+  const canConvert = caps?.dwg_convert ?? null;
 
   if (error !== null) return <div className="viewer-note err-text">{error}</div>;
   if (canConvert === null) return <Spinner label="Checking DWG support" />;
@@ -98,30 +88,28 @@ export default function FileViewer() {
   }
 
   return (
-    <div className="main-solo">
-      <div className="page viewer-page">
-        <div className="viewer-head">
-          <h1 className="mono" title={name}>
-            {name}
-          </h1>
-          {src ? (
-            <a className="btn btn-sm" href={fullUrl} download={name}>
-              Download
-            </a>
-          ) : null}
-        </div>
-        <div className="card viewer-body">
-          <Suspense
-            fallback={
-              <div className="viewer-note">
-                <Spinner label="Loading viewer…" />
-              </div>
-            }
-          >
-            {body}
-          </Suspense>
-        </div>
+    <PageShell className="viewer-page">
+      <div className="viewer-head">
+        <h1 className="mono" title={name}>
+          {name}
+        </h1>
+        {src ? (
+          <a className="btn btn-sm" href={fullUrl} download={name}>
+            Download
+          </a>
+        ) : null}
       </div>
-    </div>
+      <div className="card viewer-body">
+        <Suspense
+          fallback={
+            <div className="viewer-note">
+              <Spinner label="Loading viewer…" />
+            </div>
+          }
+        >
+          {body}
+        </Suspense>
+      </div>
+    </PageShell>
   );
 }

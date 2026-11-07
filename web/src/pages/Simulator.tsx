@@ -33,7 +33,6 @@ import {
   type SimGeometry,
   type SimNet,
   type SimProject,
-  type SimScenarios,
   type SimSheet,
   type SimSourceRef,
 } from "../api";
@@ -51,8 +50,8 @@ import RunBar from "../sim/RunBar";
 import Verdicts from "../sim/Verdicts";
 import Disclosure from "../sim/Disclosure";
 import { readVerdicts } from "../sim/scenario";
-import { FALLBACK_THEME, type LibSymbol, type SchTheme } from "../sim/draw/types";
-import { emptyDoc, type PaletteEntry, type SchDoc } from "../sim/edit/doc";
+import { FALLBACK_THEME, type SchTheme } from "../sim/draw/types";
+import { emptyDoc, type SchDoc } from "../sim/edit/doc";
 import { LiveSession, liveControls, type LiveControl, type LiveState } from "../sim/live";
 import FilePick from "../components/FilePick";
 import SiInput from "../components/SiInput";
@@ -71,6 +70,7 @@ import {
 } from "../sim/payload";
 import { plural } from "../format";
 import Field from "../components/Field";
+import { useLoad } from "../components/useLoad";
 
 /** How long one replay of a whole run takes, in seconds of wall clock. */
 const REPLAY_SECONDS = 5;
@@ -152,7 +152,6 @@ export default function Simulator() {
   const [control, setControl] = useState("");
   /** The analysis directive to force. Empty leaves the sheet's alone. */
   const [analysis, setAnalysis] = useState("");
-  const [scenarios, setScenarios] = useState<SimScenarios | null>(null);
   /** What is on the scope. A pane is one pair of axes; every pane shares the
    *  X axis, and traces move between them (`sim/plots.ts`). */
   // Sticky: the traces on the scope and the picked net survive a refresh —
@@ -206,11 +205,6 @@ export default function Simulator() {
   const [sketch, setSketch] = useState<{ past: SchDoc[]; now: SchDoc; future: SchDoc[] } | null>(null);
   const sketchRef = useRef<{ past: SchDoc[]; now: SchDoc; future: SchDoc[] } | null>(null);
   sketchRef.current = sketch;
-  const [palette, setPalette] = useState<{
-    parts: PaletteEntry[];
-    libs: Record<string, LibSymbol>;
-    switch: { open: string; closed: string; open_r: string; closed_r: string };
-  } | null>(null);
   const [editable, setEditable] = useState(false);
 
   useEffect(() => {
@@ -219,25 +213,14 @@ export default function Simulator() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const [theme, setTheme] = useState<SchTheme>(FALLBACK_THEME);
-  useEffect(() => {
-    const ctrl = new AbortController();
-    getSimTheme(ctrl.signal)
-      .then((r) => setTheme({ ...FALLBACK_THEME, ...r.schematic }))
-      .catch(() => undefined);
-    return () => ctrl.abort();
-  }, []);
+  const theme = useLoad(
+    (signal): Promise<SchTheme> => getSimTheme(signal).then((r) => ({ ...FALLBACK_THEME, ...r.schematic })),
+    [],
+  ).data ?? FALLBACK_THEME;
 
   // The palette is the parts an empty sheet starts with. Fetched once, and
   // only when the editor is actually wanted.
-  useEffect(() => {
-    if (!(editing || live) || palette) return;
-    const ctrl = new AbortController();
-    getSimPalette(ctrl.signal).then(setPalette).catch((e) => {
-      if (!isAbortError(e)) setError(errorMessage(e));
-    });
-    return () => ctrl.abort();
-  }, [editing, live, palette]);
+  const { data: palette, error: paletteError } = useLoad(getSimPalette, [], { enabled: editing || live, once: true });
 
   // A source this editor drew can be reopened in it. One that came from KiCad
   // cannot: that file carries tokens the editor does not model, and writing it
@@ -548,12 +531,11 @@ export default function Simulator() {
 
   // The harness is text ON the sheet, so an edit changes what there is to run.
   // Re-read it with the geometry, not once per source.
-  useEffect(() => {
-    if (!source) return;
-    const ctrl = new AbortController();
-    getSimScenarios(source, ctrl.signal).then(setScenarios).catch(() => undefined);
-    return () => ctrl.abort();
-  }, [source, revision]);
+  const { data: scenarios } = useLoad(
+    (signal) => getSimScenarios(source as SimSourceRef, signal),
+    [source, revision],
+    { enabled: !!source, keep: true },
+  );
 
   const geometryKey = `${JSON.stringify(source)}|${sheetPath}`;
   const lastGeometryKey = useRef("");
@@ -1278,7 +1260,7 @@ export default function Simulator() {
             </FilePick>
           </div>
           {busy ? <Spinner label="Uploading" /> : null}
-          {error ? <ErrorBanner message={error} /> : null}
+          <ErrorBanner message={error || paletteError} />
           <p className="muted">
             A board already on the platform opens from its project — the schematic tab has
             a Simulate button.

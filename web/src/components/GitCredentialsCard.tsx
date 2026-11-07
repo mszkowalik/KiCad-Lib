@@ -13,7 +13,7 @@
  *    the same `git ls-remote` a fetch uses, per project, and the verdict is
  *    shown with the date it was taken.
  */
-import { useCallback, useEffect, useState } from "react";
+import { useState } from "react";
 import { Link } from "react-router-dom";
 
 import {
@@ -22,7 +22,6 @@ import {
   deleteGitCredential,
   errorMessage,
   getGitCredentials,
-  isAbortError,
   updateGitCredential,
   type GitCredential,
   type GitCredentialCheck,
@@ -31,6 +30,7 @@ import Field from "./Field";
 import DataTable, { type Column } from "./DataTable";
 import { useDialog } from "./Dialog";
 import { ErrorBanner, Spinner } from "./Ui";
+import { useLoad } from "./useLoad";
 
 function CredentialDetail({
   cred,
@@ -201,27 +201,10 @@ function CredentialDetail({
 }
 
 export default function GitCredentialsCard() {
-  const [rows, setRows] = useState<GitCredential[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const { data: rows, error, setError, reload: load } = useLoad(getGitCredentials, []);
   const [openId, setOpenId] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
   const [form, setForm] = useState({ name: "", host: "", username: "", token: "" });
-
-  const load = useCallback(
-    (signal?: AbortSignal) =>
-      getGitCredentials(signal)
-        .then(setRows)
-        .catch((err) => {
-          if (!isAbortError(err)) setError(errorMessage(err));
-        }),
-    [],
-  );
-
-  useEffect(() => {
-    const ctrl = new AbortController();
-    void load(ctrl.signal);
-    return () => ctrl.abort();
-  }, [load]);
 
   const add = async () => {
     setBusy(true);

@@ -1,17 +1,15 @@
 /** Shared building blocks for the component edit / create forms:
  *  base-symbol + category selects, properties editor table, datasheets editor. */
-import { useEffect, useState } from "react";
 import {
-  errorMessage,
   getCategories,
   getFootprints,
   getSymbols,
-  isAbortError,
   type CategoryNode,
   type FootprintListItem,
   type PropertyIn,
   type SymbolListItem,
 } from "../api";
+import { useLoad } from "./useLoad";
 
 // ------------------------------------------------------------------- state
 
@@ -96,22 +94,14 @@ export function flattenCats(nodes: CategoryNode[], depth = 0): { id: number; lab
 
 /** Loads symbol/footprint/category pickers once, when `enabled` first becomes true. */
 export function usePickers(enabled: boolean): { pickers: Pickers | null; pickerError: string | null } {
-  const [pickers, setPickers] = useState<Pickers | null>(null);
-  const [pickerError, setPickerError] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!enabled || pickers !== null) return;
-    const ctrl = new AbortController();
-    setPickerError(null);
-    Promise.all([getSymbols(ctrl.signal), getFootprints(ctrl.signal), getCategories(ctrl.signal)])
-      .then(([symbols, footprints, cats]) =>
-        setPickers({ symbols, footprints, cats: flattenCats(cats) }),
-      )
-      .catch((err) => {
-        if (!isAbortError(err)) setPickerError(errorMessage(err));
-      });
-    return () => ctrl.abort();
-  }, [enabled, pickers]);
+  const { data: pickers, error: pickerError } = useLoad(
+    (signal) =>
+      Promise.all([getSymbols(signal), getFootprints(signal), getCategories(signal)]).then(
+        ([symbols, footprints, cats]): Pickers => ({ symbols, footprints, cats: flattenCats(cats) }),
+      ),
+    [],
+    { enabled, once: true },
+  );
 
   return { pickers, pickerError };
 }

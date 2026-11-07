@@ -4,21 +4,17 @@
  *  naming who billed it. Below it: the documents charged to this run, their
  *  lines, and the planned cost items with their final-price overrides.
  */
-import { useCallback, useEffect, useState } from "react";
+import { useState } from "react";
 import {
   addDocumentLine,
   createDocument,
   deleteDocument,
-  errorMessage,
   getRunActuals,
   getRunDocuments,
-  isAbortError,
   voidCostLine,
-  type RunActuals,
-  type RunCostDocumentRow,
   type RunEffective,
 } from "../../api";
-import { getCostSteps, type CostStepCatalog } from "../../api";
+import { getCostSteps } from "../../api";
 import DataTable from "../DataTable";
 import { useDialog } from "../Dialog";
 import Field, { CheckField } from "../Field";
@@ -28,6 +24,7 @@ import { StepSelect } from "../costs";
 import { PART_STEPS } from "../invoices/InvoiceLinesTable";
 import { amount as money, pln } from "../../format";
 import { runAct } from "./runAct";
+import { useLoad } from "../useLoad";
 
 type Props = {
   projectId: number;
@@ -48,9 +45,13 @@ export default function RunCosts({
   quiet, projectId, runId, qty, runDate, effective, overrides, onOverride, onChanged,
 }: Props) {
   const dialog = useDialog();
-  const [docs, setDocs] = useState<RunCostDocumentRow[] | null>(null);
-  const [actuals, setActuals] = useState<RunActuals | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const { data, error, setError, reload } = useLoad(
+    (signal) => Promise.all([getRunDocuments(runId, signal), getRunActuals(runId, signal)]),
+    [runId],
+    { keep: true },
+  );
+  const docs = data?.[0] ?? null;
+  const actuals = data?.[1] ?? null;
   const [busy, setBusy] = useState(false);
   const [showDoc, setShowDoc] = useState(false);
   const [openDoc, setOpenDoc] = useState<number | null>(null);
@@ -69,36 +70,13 @@ export default function RunCosts({
   // `kind` select: the step is the finer answer and the coarse bucket is derived
   // from it on the server, so asking for both invited them to disagree.
   const [lineStep, setLineStep] = useState("pcba:general");
-  const [stepCatalog, setStepCatalog] = useState<CostStepCatalog | null>(null);
-  useEffect(() => {
-    const ac = new AbortController();
-    getCostSteps(ac.signal).then(setStepCatalog).catch(() => setStepCatalog(null));
-    return () => ac.abort();
-  }, []);
+  const { data: stepCatalog } = useLoad(getCostSteps, []);
   const isStockStep = PART_STEPS.has(lineStep);
   const [lineLabel, setLineLabel] = useState("");
   const [lineMpn, setLineMpn] = useState("");
   const [lineQty, setLineQty] = useState("1");
   const [linePrice, setLinePrice] = useState("");
   const [linePerDevice, setLinePerDevice] = useState(false);
-
-  const reload = useCallback((signal?: AbortSignal) => {
-    Promise.all([getRunDocuments(runId, signal), getRunActuals(runId, signal)])
-      .then(([d, a]) => {
-        setDocs(d);
-        setActuals(a);
-        setError(null);
-      })
-      .catch((err) => {
-        if (!isAbortError(err)) setError(errorMessage(err));
-      });
-  }, [runId]);
-
-  useEffect(() => {
-    const ac = new AbortController();
-    reload(ac.signal);
-    return () => ac.abort();
-  }, [reload]);
 
   const act = runAct(setBusy, setError, () => { reload(); onChanged(); });
 

@@ -12,21 +12,19 @@
  *  live on the ORDER — a device carries its batch's unit cost there, and that
  *  is the whole link between the two (decision 0043).
  */
-import { useEffect, useMemo, useState } from "react";
+import { useMemo } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import {
-  errorMessage,
   getInvoiceRegister,
   getPartsStock,
-  isAbortError,
-  type InvoiceRegister,
-  type PartsStock,
 } from "../api";
-import { ErrorBanner, Spinner } from "../components/Ui";
+import { ErrorBanner } from "../components/Ui";
 import { plain, pln, plnAmount, plnNumber } from "../format";
 import { useTodayRate } from "../useTodayRate";
 import DataTable, { type Column } from "../components/DataTable";
 import CountTile from "../components/CountTile";
+import { useLoad } from "../components/useLoad";
+import PageShell, { PageLoading } from "../components/PageShell";
 
 interface Issue {
   text: string;
@@ -36,25 +34,8 @@ interface Issue {
 export default function ProductionOverview() {
   const rate = useTodayRate();
   const navigate = useNavigate();
-  const [reg, setReg] = useState<InvoiceRegister | null>(null);
-  const [stock, setStock] = useState<PartsStock | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    const ac = new AbortController();
-    getInvoiceRegister(ac.signal)
-      .then((r) => {
-        setReg(r);
-        setError(null);
-      })
-      .catch((err) => {
-        if (!isAbortError(err)) setError(errorMessage(err));
-      });
-    getPartsStock(ac.signal)
-      .then(setStock)
-      .catch(() => setStock(null));
-    return () => ac.abort();
-  }, []);
+  const { data: reg, error } = useLoad(getInvoiceRegister, []);
+  const { data: stock } = useLoad(getPartsStock, []);
 
   const rows = useMemo(() => {
     if (!reg) return [];
@@ -200,192 +181,173 @@ export default function ProductionOverview() {
 ];
 
 
-  if (error && !reg) {
-    return (
-      <div className="main-solo">
-        <div className="page">
-          <ErrorBanner message={error} />
-        </div>
-      </div>
-    );
-  }
-  if (!reg) {
-    return (
-      <div className="main-solo">
-        <div className="page">
-          <Spinner label="Loading the cost overview" />
-        </div>
-      </div>
-    );
-  }
+  if (!reg) return <PageLoading error={error} label="Loading the cost overview" />;
 
   const s = reg.summary;
 
   return (
-    <div className="main-solo">
-      <div className="page">
-        <div className="toolbar">
-          <h1>Cost overview</h1>
-          <span className="toolbar-total">
-            costs from settled invoices and pool draws · revenue lives on the orders
-          </span>
-        </div>
-        {error ? <ErrorBanner message={error} /> : null}
+    <PageShell>
+      <div className="toolbar">
+        <h1>Cost overview</h1>
+        <span className="toolbar-total">
+          costs from settled invoices and pool draws · revenue lives on the orders
+        </span>
+      </div>
+      {error ? <ErrorBanner message={error} /> : null}
 
-        <div className="card pad">
-          <div className="dash-tiles">
-            {/* COSTS ONLY. A batch earns nothing — revenue and margin live on
-                the ORDER, and a device carries its batch's unit cost there
-                (decision 0043). */}
-            <CountTile value={plnAmount(totals.cost, 0)} label="production cost" />
-            <CountTile value={totals.devices.toLocaleString()} label="boards ordered" />
-            <CountTile value={totals.produced.toLocaleString()} label="devices produced" />
-            <CountTile value={totals.produced ? plnAmount(totals.cost / totals.produced) : "—"} label="avg cost / device produced" />
-          </div>
-
-          {issues.length ? (
-            <div className="dash-missing">
-              <h3 className="card-subtitle">Before these numbers are final</h3>
-              <ul>
-                {issues.map((m, i) => (
-                  <li key={i}>
-                    {m.text} <Link to={m.to}>fix →</Link>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          ) : (
-            <div className="banner-ok">
-              Nothing known to be missing — every document reconciles, every batch is fully
-              costed, and the stock agrees with JLCPCB.
-            </div>
-          )}
+      <div className="card pad">
+        <div className="dash-tiles">
+          {/* COSTS ONLY. A batch earns nothing — revenue and margin live on
+              the ORDER, and a device carries its batch's unit cost there
+              (decision 0043). */}
+          <CountTile value={plnAmount(totals.cost, 0)} label="production cost" />
+          <CountTile value={totals.devices.toLocaleString()} label="boards ordered" />
+          <CountTile value={totals.produced.toLocaleString()} label="devices produced" />
+          <CountTile value={totals.produced ? plnAmount(totals.cost / totals.produced) : "—"} label="avg cost / device produced" />
         </div>
 
-        <div className="card pad">
-          <h2 className="card-title">What each batch cost</h2>
-          <p className="card-subtitle">Newest batch first</p>
-          <p className="muted dim">
-            Cost is direct invoice positions plus what the run drew from the component pool
-            (materials, boards, assembly, labour, freight — not firmware, warranty or your
-            time). Cost/dev divides by the devices recorded as PRODUCED, which is what a
-            shipped unit carries onto its order; a batch with no device records yet shows no
-            figure rather than an estimate. Revenue and margin are on the orders. Every
-            batch links to its own page — click anywhere on its row.
-          </p>
-          <div className="table-wrap">
-            <DataTable
-              columns={runCols}
-              rows={rows}
-              rowKey={(r) => r.rid}
-              defaultSort={{ key: "date", dir: "desc" }}
-              persistKey="production-runs"
-              rowClass={() => "ledger-row"}
-              onRowClick={(r) => navigate(`/production/batches/${r.rid}`)}
-              empty="No batch has been charged yet."
-            />
+        {issues.length ? (
+          <div className="dash-missing">
+            <h3 className="card-subtitle">Before these numbers are final</h3>
+            <ul>
+              {issues.map((m, i) => (
+                <li key={i}>
+                  {m.text} <Link to={m.to}>fix →</Link>
+                </li>
+              ))}
+            </ul>
           </div>
-        </div>
+        ) : (
+          <div className="banner-ok">
+            Nothing known to be missing — every document reconciles, every batch is fully
+            costed, and the stock agrees with JLCPCB.
+          </div>
+        )}
+      </div>
 
-        <div className="card pad">
-          <h2 className="card-title">Where the money went{rate ? ", in PLN at today's rate" : ", in USD"}</h2>
-          <p className="muted dim">
-            Every document&apos;s total lands in exactly one bucket — the conservation check.
-            Assign and split positions on <Link to="/finance/invoices">Purchase invoices</Link>; the
-            pool reconciles part by part on <Link to="/stock">Stock</Link>.
-          </p>
-          <div className="table-wrap">
-            <table className="data data-fixed invoice-sum-table">
-              <thead>
-                <tr>
-                  <th className="num">Invoiced</th>
-                  <th className="num">To runs</th>
-                  <th className="num">To projects</th>
-                  <th className="num">To the pool</th>
-                  <th className="num" title="Conversion costs: money in the lots of prepared parts (decision 0058 §4)">Conversion</th>
-                  <th className="num" title="Company costs of no product, by category (decision 0068)">Overhead</th>
-                  <th className="num">Excluded</th>
-                  <th className="num">Unassigned</th>
-                  <th className="num">Residual</th>
-                  <th className="num">Gap</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr>
-                  <td className="num">{inPln(s.total_usd)}</td>
-                  <td className="num">{inPln(s.to_runs_usd)}</td>
-                  <td className="num">{inPln(s.to_projects_usd)}</td>
-                  <td className="num">{inPln(s.to_pool_usd)}</td>
-                  <td className="num">{inPln(s.to_transformations_usd ?? 0)}</td>
-                  <td className="num">{inPln(s.to_overhead_usd ?? 0)}</td>
-                  <td
-                    className="num muted"
-                    title={"Charged to nobody on purpose: reclaimable VAT, and prepaid "
-                      + "components already in the pool.\n\n"
-                      + Object.entries(s.excluded_by_reason_usd || {})
-                          .map(([r, v]) => `${r}: ${inPln(v)}`).join("\n")}
-                  >
-                    {inPln(s.excluded_usd)}
-                    {s.excluded_unstated_usd ? (
-                      <>
-                        {" "}
-                        <span
-                          className="pill warn"
-                          title={"This much of the excluded money gives no reason. "
-                            + "`excluded` is a legal bucket in the identity, so an "
-                            + "exclusion is invisible to every other check — which is "
-                            + "how $14,443 of manufacturing once sat charged to nobody "
-                            + "while this page read clean."}
-                        >
-                          {inPln(s.excluded_unstated_usd)} unstated
-                        </span>
-                      </>
-                    ) : null}
-                  </td>
-                  <td className={s.unassigned_usd ? "num" : "num muted"}>
-                    {s.unassigned_usd ? (
-                      <span className="pill warn">{inPln(s.unassigned_usd)}</span>
-                    ) : (
-                      inPln(s.unassigned_usd)
-                    )}
-                  </td>
-                  <td className={s.residual_usd ? "num" : "num muted"}>
-                    {s.residual_usd ? (
-                      <span className="pill warn">{inPln(s.residual_usd)}</span>
-                    ) : (
-                      inPln(s.residual_usd)
-                    )}
-                  </td>
-                  {/* NO TOLERANCE. This is an invariant on the platform's own
-                      arithmetic, so anything but zero is a bug. It used to print
-                      a green "0" for anything under 0.05, which is how a
-                      permanent 0.0271 stayed invisible for months — the check
-                      was rounding away its own alarm (decision 0048). */}
-                  <td className="num">
-                    {(s.gap_usd ?? 0) === 0 ? (
-                      <span className="pill ok">0</span>
-                    ) : (
-                      <span className="pill err">{inPln(s.gap_usd)}</span>
-                    )}
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-          <p className="muted">
-            Component pool: purchased {inPln(reg.pool.purchased_usd)} ± adjustments{" "}
-            {inPln(reg.pool.adjustments_usd)} − drawn {inPln(reg.pool.drawn_usd)} ={" "}
-            {inPln(reg.pool.on_hand_usd)} on hand across {reg.pool.part_count} parts —{" "}
-            {reg.pool.balanced ? null : <><span className="pill err">does not balance</span>{" "}</>}
-            <span
-              className="dim"
-              title="Balanced by construction — on-hand is derived from the other three. The real check is the quantity comparison against JLCPCB on the Stock page."
-            >
-              (identity — the real check is <Link to="/stock">Stock</Link>)
-            </span>
-          </p>
+      <div className="card pad">
+        <h2 className="card-title">What each batch cost</h2>
+        <p className="card-subtitle">Newest batch first</p>
+        <p className="muted dim">
+          Cost is direct invoice positions plus what the run drew from the component pool
+          (materials, boards, assembly, labour, freight — not firmware, warranty or your
+          time). Cost/dev divides by the devices recorded as PRODUCED, which is what a
+          shipped unit carries onto its order; a batch with no device records yet shows no
+          figure rather than an estimate. Revenue and margin are on the orders. Every
+          batch links to its own page — click anywhere on its row.
+        </p>
+        <div className="table-wrap">
+          <DataTable
+            columns={runCols}
+            rows={rows}
+            rowKey={(r) => r.rid}
+            defaultSort={{ key: "date", dir: "desc" }}
+            persistKey="production-runs"
+            rowClass={() => "ledger-row"}
+            onRowClick={(r) => navigate(`/production/batches/${r.rid}`)}
+            empty="No batch has been charged yet."
+          />
         </div>
       </div>
-    </div>
+
+      <div className="card pad">
+        <h2 className="card-title">Where the money went{rate ? ", in PLN at today's rate" : ", in USD"}</h2>
+        <p className="muted dim">
+          Every document&apos;s total lands in exactly one bucket — the conservation check.
+          Assign and split positions on <Link to="/finance/invoices">Purchase invoices</Link>; the
+          pool reconciles part by part on <Link to="/stock">Stock</Link>.
+        </p>
+        <div className="table-wrap">
+          <table className="data data-fixed invoice-sum-table">
+            <thead>
+              <tr>
+                <th className="num">Invoiced</th>
+                <th className="num">To runs</th>
+                <th className="num">To projects</th>
+                <th className="num">To the pool</th>
+                <th className="num" title="Conversion costs: money in the lots of prepared parts (decision 0058 §4)">Conversion</th>
+                <th className="num" title="Company costs of no product, by category (decision 0068)">Overhead</th>
+                <th className="num">Excluded</th>
+                <th className="num">Unassigned</th>
+                <th className="num">Residual</th>
+                <th className="num">Gap</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td className="num">{inPln(s.total_usd)}</td>
+                <td className="num">{inPln(s.to_runs_usd)}</td>
+                <td className="num">{inPln(s.to_projects_usd)}</td>
+                <td className="num">{inPln(s.to_pool_usd)}</td>
+                <td className="num">{inPln(s.to_transformations_usd ?? 0)}</td>
+                <td className="num">{inPln(s.to_overhead_usd ?? 0)}</td>
+                <td
+                  className="num muted"
+                  title={"Charged to nobody on purpose: reclaimable VAT, and prepaid "
+                    + "components already in the pool.\n\n"
+                    + Object.entries(s.excluded_by_reason_usd || {})
+                        .map(([r, v]) => `${r}: ${inPln(v)}`).join("\n")}
+                >
+                  {inPln(s.excluded_usd)}
+                  {s.excluded_unstated_usd ? (
+                    <>
+                      {" "}
+                      <span
+                        className="pill warn"
+                        title={"This much of the excluded money gives no reason. "
+                          + "`excluded` is a legal bucket in the identity, so an "
+                          + "exclusion is invisible to every other check — which is "
+                          + "how $14,443 of manufacturing once sat charged to nobody "
+                          + "while this page read clean."}
+                      >
+                        {inPln(s.excluded_unstated_usd)} unstated
+                      </span>
+                    </>
+                  ) : null}
+                </td>
+                <td className={s.unassigned_usd ? "num" : "num muted"}>
+                  {s.unassigned_usd ? (
+                    <span className="pill warn">{inPln(s.unassigned_usd)}</span>
+                  ) : (
+                    inPln(s.unassigned_usd)
+                  )}
+                </td>
+                <td className={s.residual_usd ? "num" : "num muted"}>
+                  {s.residual_usd ? (
+                    <span className="pill warn">{inPln(s.residual_usd)}</span>
+                  ) : (
+                    inPln(s.residual_usd)
+                  )}
+                </td>
+                {/* NO TOLERANCE. This is an invariant on the platform's own
+                    arithmetic, so anything but zero is a bug. It used to print
+                    a green "0" for anything under 0.05, which is how a
+                    permanent 0.0271 stayed invisible for months — the check
+                    was rounding away its own alarm (decision 0048). */}
+                <td className="num">
+                  {(s.gap_usd ?? 0) === 0 ? (
+                    <span className="pill ok">0</span>
+                  ) : (
+                    <span className="pill err">{inPln(s.gap_usd)}</span>
+                  )}
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p className="muted">
+          Component pool: purchased {inPln(reg.pool.purchased_usd)} ± adjustments{" "}
+          {inPln(reg.pool.adjustments_usd)} − drawn {inPln(reg.pool.drawn_usd)} ={" "}
+          {inPln(reg.pool.on_hand_usd)} on hand across {reg.pool.part_count} parts —{" "}
+          {reg.pool.balanced ? null : <><span className="pill err">does not balance</span>{" "}</>}
+          <span
+            className="dim"
+            title="Balanced by construction — on-hand is derived from the other three. The real check is the quantity comparison against JLCPCB on the Stock page."
+          >
+            (identity — the real check is <Link to="/stock">Stock</Link>)
+          </span>
+        </p>
+      </div>
+    </PageShell>
   );
 }

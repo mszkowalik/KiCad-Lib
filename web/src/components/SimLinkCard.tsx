@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import {
   errorMessage,
@@ -20,6 +20,7 @@ import {
 import { useDialog } from "./Dialog";
 import { ErrorBanner, Spinner } from "./Ui";
 import { localWhen } from "../format";
+import { useLoad } from "./useLoad";
 
 /** One row per unique pin NUMBER, visible pin's name/type winning over a
  *  hidden stacked duplicate's — the map only has to name each number once
@@ -238,8 +239,6 @@ function BlockParams({
  *  anything with behaviour of its own — a behavioural source, a `.model`
  *  card — stays a hand-written model that this card merely links. */
 export default function SimLinkCard({ symbolId }: { symbolId: number }) {
-  const [info, setInfo] = useState<SymbolSimLinkInfo | null>(null);
-  const [error, setError] = useState<string | null>(null);
   const [mode, setMode] = useState<"model" | "composed">("composed");
   const [modelName, setModelName] = useState("");
   const [draft, setDraft] = useState<Record<string, string>>({});
@@ -252,30 +251,24 @@ export default function SimLinkCard({ symbolId }: { symbolId: number }) {
   const dialog = useDialog();
   const previewSeq = useRef(0);
 
-  const load = useCallback((signal?: AbortSignal) => {
-    return getSymbolSimLink(symbolId, signal).then((d) => {
-      setInfo(d);
-      setModelName(d.link?.model_name ?? "");
-      setDraft(d.link?.pin_map ?? {});
-      const composed = d.link?.mode === "composed" && d.link.composition;
-      setComp(composed ? { ...EMPTY, ...d.link!.composition! } : EMPTY);
-      setMode(d.link ? (d.link.mode === "composed" ? "composed" : "model") : "composed");
-      return d;
-    });
-  }, [symbolId]);
+  const { data: info, error, reload: load } = useLoad(
+    (signal) =>
+      getSymbolSimLink(symbolId, signal).then((d) => {
+        setModelName(d.link?.model_name ?? "");
+        setDraft(d.link?.pin_map ?? {});
+        const composed = d.link?.mode === "composed" && d.link.composition;
+        setComp(composed ? { ...EMPTY, ...d.link!.composition! } : EMPTY);
+        setMode(d.link ? (d.link.mode === "composed" ? "composed" : "model") : "composed");
+        return d;
+      }),
+    [symbolId],
+  );
 
   useEffect(() => {
-    const ctrl = new AbortController();
-    setInfo(null);
-    setError(null);
     setNotice(null);
     setWarnings([]);
     setPreview(null);
-    load(ctrl.signal).catch((err) => {
-      if (!isAbortError(err)) setError(errorMessage(err));
-    });
-    return () => ctrl.abort();
-  }, [load]);
+  }, [symbolId]);
 
   // Preview is debounced and sequenced: the editor changes on every keystroke
   // and a late response must not overwrite a newer one.

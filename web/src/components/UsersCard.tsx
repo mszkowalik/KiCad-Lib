@@ -9,7 +9,7 @@
  * are the whole client-setup flow — the user pastes one URL into KiCad and the
  * sync plugin arrives with their token already inside it.
  */
-import { useCallback, useEffect, useState } from "react";
+import { useState } from "react";
 
 import {
   addUserToken,
@@ -18,7 +18,6 @@ import {
   errorMessage,
   getUser,
   getUsers,
-  isAbortError,
   revokeUserSessions,
   revokeUserToken,
   updateUser,
@@ -30,6 +29,7 @@ import DataTable, { type Column } from "./DataTable";
 import Field, { CheckField, FieldSet } from "./Field";
 import { useAuth } from "../auth";
 import { localDate, localWhen } from "../format";
+import { useLoad } from "./useLoad";
 
 function CopyRow({ label, value }: { label: string; value: string }) {
   if (!value) return null;
@@ -197,49 +197,23 @@ function UserDetail({
 
 export default function UsersCard() {
   const dialog = useDialog();
-  const [users, setUsers] = useState<PlatformUser[] | null>(null);
-  const [error, setError] = useState("");
+  const { data: userRows, error, setError, reload: load } = useLoad(getUsers, []);
+  // 403 is not a failure to report loudly — a non-admin simply has no
+  // business here, and the card hides itself below.
+  const users = userRows ?? (error ? [] : null);
   const [openId, setOpenId] = useState<number | null>(null);
-  const [detail, setDetail] = useState<PlatformUser | null>(null);
+  // The list withholds token values on purpose, so opening a row fetches the
+  // one user again — that read is the only one that reveals them.
+  const { data: detail, setData: setDetail, error: detailError } = useLoad(
+    (signal) => getUser(openId as number, signal),
+    [openId],
+    { enabled: openId !== null, keep: true },
+  );
   const [username, setUsername] = useState("");
   const [displayName, setDisplayName] = useState("");
   const [password, setPassword] = useState("");
   const [role, setRole] = useState("user");
   const [busy, setBusy] = useState(false);
-
-  const load = useCallback((signal?: AbortSignal) => {
-    getUsers(signal)
-      .then(setUsers)
-      .catch((err) => {
-        if (isAbortError(err)) return;
-        // 403 is not a failure to report loudly — a non-admin simply has no
-        // business here, and the card hides itself below.
-        setUsers([]);
-        setError(errorMessage(err));
-      });
-  }, []);
-
-  useEffect(() => {
-    const ctrl = new AbortController();
-    load(ctrl.signal);
-    return () => ctrl.abort();
-  }, [load]);
-
-  // The list withholds token values on purpose, so opening a row fetches the
-  // one user again — that read is the only one that reveals them.
-  useEffect(() => {
-    if (openId === null) {
-      setDetail(null);
-      return;
-    }
-    const ctrl = new AbortController();
-    getUser(openId, ctrl.signal)
-      .then(setDetail)
-      .catch((err) => {
-        if (!isAbortError(err)) setError(errorMessage(err));
-      });
-    return () => ctrl.abort();
-  }, [openId]);
 
   async function add() {
     setBusy(true);
@@ -334,7 +308,7 @@ export default function UsersCard() {
         and no password recovery — reset a forgotten password below.
       </p>
 
-      <ErrorBanner message={error} />
+      <ErrorBanner message={error ?? detailError} />
 
       <div className="table-wrap">
         <DataTable

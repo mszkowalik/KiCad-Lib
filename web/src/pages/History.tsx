@@ -21,6 +21,8 @@ import { useDialog } from "../components/Dialog";
 import { StatChip } from "../components/FoldSection";
 import { ErrorBanner, Spinner } from "../components/Ui";
 import { localWhen } from "../format";
+import { useLoad } from "../components/useLoad";
+import PageShell from "../components/PageShell";
 
 const PAGE = 100;
 
@@ -40,15 +42,11 @@ function tablesText(g: ChangeGroup): string {
 }
 
 function GroupDetail({ groupKey }: { groupKey: string }) {
-  const [rows, setRows] = useState<JournalChange[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  useEffect(() => {
-    const ac = new AbortController();
-    getChangeGroup(groupKey, ac.signal)
-      .then((d) => setRows(d.changes))
-      .catch((err) => { if (!isAbortError(err)) setError(errorMessage(err)); });
-    return () => ac.abort();
-  }, [groupKey]);
+  const { data: rows, error } = useLoad(
+    (signal) => getChangeGroup(groupKey, signal).then((d) => d.changes),
+    [groupKey],
+    { keep: true },
+  );
   if (error) return <ErrorBanner message={error} />;
   if (!rows) return <Spinner />;
   return (
@@ -122,43 +120,41 @@ export default function History() {
 
   const undone = (rows ?? []).filter((g) => g.undone_by).length;
   return (
-    <div className="main-solo">
-      <div className="page">
-        <div className="toolbar">
-          <h1>My changes</h1>
-          <span className="toolbar-total">Each request of yours that changed rows, newest first.</span>
-        </div>
-        {error ? <ErrorBanner message={error} /> : null}
-        <div className="card pad">
-          {!rows ? <Spinner /> : (
-            <>
-              <div className="stat-row">
-                <StatChip n={rows.length}>{more ? "shown" : "changes"}</StatChip>
-                {undone ? <StatChip n={undone}>undone</StatChip> : null}
-              </div>
-              <DataTable
-                rows={rows}
-                rowKey={(g) => g.key}
-                empty="You have changed nothing yet."
-                expand={(g) => <GroupDetail groupKey={g.key} />}
-                columns={[
-                  { key: "at", label: "When", width: 15, className: "mono", get: (g) => g.at ?? "", render: (g) => localWhen(g.at) },
-                  { key: "req", label: "Request", width: 33, className: "mono", get: requestText },
-                  { key: "rows", label: "Rows", width: 6, numeric: true, get: (g) => g.rows },
-                  { key: "tables", label: "Tables", width: 32, className: "mono", get: tablesText },
-                  { key: "undo", label: "", width: 14, interactive: false, get: () => "",
-                    render: (g) => (g.undone_by ? <span className="pill neutral">undone</span>
-                      : g.undoes ? <span className="pill neutral">an undo</span>
-                      : <button type="button" className="btn btn-sm"
-                          onClick={(e) => { e.stopPropagation(); void undo(g); }}>Undo…</button>) },
-                ]}
-              />
-              {more ? <button type="button" className="btn btn-sm" onClick={() => void loadMore()}>Load more</button> : null}
-            </>
-          )}
-        </div>
+    <PageShell>
+      <div className="toolbar">
+        <h1>My changes</h1>
+        <span className="toolbar-total">Each request of yours that changed rows, newest first.</span>
       </div>
-    </div>
+      {error ? <ErrorBanner message={error} /> : null}
+      <div className="card pad">
+        {!rows ? <Spinner /> : (
+          <>
+            <div className="stat-row">
+              <StatChip n={rows.length}>{more ? "shown" : "changes"}</StatChip>
+              {undone ? <StatChip n={undone}>undone</StatChip> : null}
+            </div>
+            <DataTable
+              rows={rows}
+              rowKey={(g) => g.key}
+              empty="You have changed nothing yet."
+              expand={(g) => <GroupDetail groupKey={g.key} />}
+              columns={[
+                { key: "at", label: "When", width: 15, className: "mono", get: (g) => g.at ?? "", render: (g) => localWhen(g.at) },
+                { key: "req", label: "Request", width: 33, className: "mono", get: requestText },
+                { key: "rows", label: "Rows", width: 6, numeric: true, get: (g) => g.rows },
+                { key: "tables", label: "Tables", width: 32, className: "mono", get: tablesText },
+                { key: "undo", label: "", width: 14, interactive: false, get: () => "",
+                  render: (g) => (g.undone_by ? <span className="pill neutral">undone</span>
+                    : g.undoes ? <span className="pill neutral">an undo</span>
+                    : <button type="button" className="btn btn-sm"
+                        onClick={(e) => { e.stopPropagation(); void undo(g); }}>Undo…</button>) },
+              ]}
+            />
+            {more ? <button type="button" className="btn btn-sm" onClick={() => void loadMore()}>Load more</button> : null}
+          </>
+        )}
+      </div>
+    </PageShell>
   );
 }
 
@@ -167,14 +163,12 @@ export default function History() {
 export function Everyone() {
   const { isAdmin } = useAuth();
   return (
-    <div className="main-solo">
-      <div className="page">
-        <div className="toolbar">
-          <h1>Everyone</h1>
-          <span className="toolbar-total">Who changed what: every write call, and every row it changed.</span>
-        </div>
-        {isAdmin ? <ActivityCard /> : <ErrorBanner message="This list is for administrators." />}
+    <PageShell>
+      <div className="toolbar">
+        <h1>Everyone</h1>
+        <span className="toolbar-total">Who changed what: every write call, and every row it changed.</span>
       </div>
-    </div>
+      {isAdmin ? <ActivityCard /> : <ErrorBanner message="This list is for administrators." />}
+    </PageShell>
   );
 }

@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useState, type ReactNode } from "react";
+import { Fragment, useState, type ReactNode } from "react";
 import { Link, useLocation, useParams } from "react-router-dom";
 import {
   addComponentFile,
@@ -11,7 +11,6 @@ import {
   getModels3d,
   getPricePoints,
   getVersion,
-  isAbortError,
   refreshPricePoints,
   setComponentInLibrary,
   setComponentPurchasable,
@@ -29,7 +28,6 @@ import {
   uploadDatasheetFile,
   type ComponentDetail as ComponentDetailT,
   type DatasheetRow,
-  type Model3DFile,
   type PricePointsResponse,
   type LifecycleState,
   type PinnedRef,
@@ -63,6 +61,8 @@ import FilePick from "../components/FilePick";
 import GeometryPreview, { FootprintPreview } from "../components/GeometryPreview";
 import NumberInput from "../components/NumberInput";
 import { localDate, localWhen, price } from "../format";
+import { useLoad } from "../components/useLoad";
+import PageShell from "../components/PageShell";
 
 const FP_DATALIST_ID = "fp-options";
 
@@ -362,18 +362,8 @@ function fpKey(v: VersionDetail): string {
  *  mirror), linked through the /view page — STEP opens with a subelement
  *  tree, WRL with a mesh view. */
 function ModelFilesRow({ compId, versionNo }: { compId: number; versionNo: number }) {
-  const [files, setFiles] = useState<Model3DFile[]>([]);
-
-  useEffect(() => {
-    const ctrl = new AbortController();
-    setFiles([]);
-    getModels3d(compId, versionNo, ctrl.signal)
-      .then(setFiles)
-      .catch(() => {
-        /* cosmetic row — no error surface */
-      });
-    return () => ctrl.abort();
-  }, [compId, versionNo]);
+  // A cosmetic row, so its error shows nothing.
+  const files = useLoad((signal) => getModels3d(compId, versionNo, signal), [compId, versionNo]).data ?? [];
 
   if (files.length === 0) return null;
   return (
@@ -503,31 +493,21 @@ function ladderShort(points: Tier[]): string {
  *  part, ahead of every supplier, until it is moved onto a link. */
 function PriceLadderCard({ compId }: { compId: number }) {
   const dialog = useDialog();
-  const [data, setData] = useState<PricePointsResponse | null>(null);
   const [register, setRegister] = useState<Supplier[]>([]);
   const [editing, setEditing] = useState<number | null>(null);
   const [draft, setDraft] = useState<DraftLink | null>(null);
   const [newSupplier, setNewSupplier] = useState<number | "">("");
   const [newPn, setNewPn] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
 
-  useEffect(() => {
-    const ctrl = new AbortController();
-    setData(null);
+  const { data, setData, error, setError } = useLoad((signal) => {
     setEditing(null);
-    setError(null);
     setNote(null);
-    Promise.all([getPricePoints(compId, ctrl.signal), getSuppliers(ctrl.signal)])
-      .then(([points, suppliers]) => {
-        setData(points);
-        setRegister(suppliers);
-      })
-      .catch((err) => {
-        if (!isAbortError(err)) setError(errorMessage(err));
-      });
-    return () => ctrl.abort();
+    return Promise.all([getPricePoints(compId, signal), getSuppliers(signal)]).then(([points, suppliers]) => {
+      setRegister(suppliers);
+      return points;
+    });
   }, [compId]);
 
   const run = (label: string, work: () => Promise<PricePointsResponse>, done: string | null = null) => {
@@ -946,14 +926,7 @@ export default function ComponentDetail() {
   const location = useLocation();
   const backTo = (location.state as { backTo?: string } | null)?.backTo ?? "/library/components";
 
-  const [detail, setDetail] = useState<ComponentDetailT | null>(null);
-  const [detailError, setDetailError] = useState<string | null>(null);
   const [selectedNo, setSelectedNo] = useState<number | null>(null);
-  const [version, setVersion] = useState<VersionDetail | null>(null);
-  const [versionLoading, setVersionLoading] = useState(false);
-  const [versionError, setVersionError] = useState<string | null>(null);
-  // Current published version to diff an old draft against (null = not diffing).
-  const [baseline, setBaseline] = useState<VersionDetail | null>(null);
 
   const [dsRows, setDsRows] = useState<DatasheetRow[]>([]);
   const [dsBusyId, setDsBusyId] = useState<number | null>(null);
@@ -971,48 +944,25 @@ export default function ComponentDetail() {
   const { pickers, pickerError } = usePickers(editing);
   const dialog = useDialog();
 
-  useEffect(() => {
-    if (!Number.isFinite(compId)) {
-      setDetailError("Invalid component id.");
-      return;
-    }
-    const ctrl = new AbortController();
-    setDetail(null);
-    setDetailError(null);
+  const validId = Number.isFinite(compId);
+  const { data: detail, setData: setDetail, error: loadError } = useLoad((signal) => {
     setSelectedNo(null);
-    getComponent(compId, ctrl.signal)
-      .then((d) => {
-        setDetail(d);
-        const fallback = d.versions.length > 0 ? d.versions[d.versions.length - 1].version_no : null;
-        setSelectedNo(d.current_version_no ?? fallback);
-      })
-      .catch((err) => {
-        if (!isAbortError(err)) setDetailError(errorMessage(err));
-      });
-    return () => ctrl.abort();
-  }, [compId]);
+    return getComponent(compId, signal).then((d) => {
+      const fallback = d.versions.length > 0 ? d.versions[d.versions.length - 1].version_no : null;
+      setSelectedNo(d.current_version_no ?? fallback);
+      return d;
+    });
+  }, [compId], { enabled: validId });
+  const detailError = validId ? loadError : "Invalid component id.";
 
-  useEffect(() => {
-    if (!Number.isFinite(compId) || selectedNo === null) return;
-    const ctrl = new AbortController();
-    setVersion(null);
+  const { data: version, error: versionError, loading: versionLoading } = useLoad((signal) => {
     setDsRows([]);
     setDsHints({});
-    setVersionLoading(true);
-    setVersionError(null);
-    getVersion(compId, selectedNo, ctrl.signal)
-      .then((v) => {
-        setVersion(v);
-        setDsRows(v.datasheets);
-        setVersionLoading(false);
-      })
-      .catch((err) => {
-        if (isAbortError(err)) return;
-        setVersionError(errorMessage(err));
-        setVersionLoading(false);
-      });
-    return () => ctrl.abort();
-  }, [compId, selectedNo]);
+    return getVersion(compId, selectedNo as number, signal).then((v) => {
+      setDsRows(v.datasheets);
+      return v;
+    });
+  }, [compId, selectedNo], { enabled: validId && selectedNo !== null });
 
   // Viewing an old draft? Load the current published version so the meta and
   // properties can be shown as a diff against it (copper = the draft).
@@ -1022,17 +972,12 @@ export default function ComponentDetail() {
       ? currentNo
       : null;
 
-  useEffect(() => {
-    if (baselineNo === null) {
-      setBaseline(null);
-      return;
-    }
-    const ctrl = new AbortController();
-    getVersion(compId, baselineNo, ctrl.signal)
-      .then(setBaseline)
-      .catch(() => setBaseline(null));
-    return () => ctrl.abort();
-  }, [compId, baselineNo]);
+  // Current published version to diff an old draft against (null = not diffing).
+  const { data: baseline } = useLoad(
+    (signal) => getVersion(compId, baselineNo as number, signal).catch(() => null),
+    [compId, baselineNo],
+    { enabled: baselineNo !== null, keep: true },
+  );
 
   /** The header pills, or a version rail that gained a new (current) version. */
   const reloadDetail = () => {
@@ -1294,22 +1239,18 @@ export default function ComponentDetail() {
 
   if (detailError) {
     return (
-      <div className="main-solo">
-        <div className="page">
-          <BackLink to={backTo} />
-          <ErrorBanner message={`Component failed to load: ${detailError}`} />
-        </div>
-      </div>
+      <PageShell>
+        <BackLink to={backTo} />
+        <ErrorBanner message={`Component failed to load: ${detailError}`} />
+      </PageShell>
     );
   }
 
   if (detail === null) {
     return (
-      <div className="main-solo">
-        <div className="page block-loading">
-          <Spinner label="Loading component" />
-        </div>
-      </div>
+      <PageShell className="block-loading">
+        <Spinner label="Loading component" />
+      </PageShell>
     );
   }
 

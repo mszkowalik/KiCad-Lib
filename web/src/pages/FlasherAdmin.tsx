@@ -10,21 +10,18 @@
  *  The active section lives in the URL (`?tab=`), and `?open=<set id>` opens
  *  one release on arrival, which is how the version card links here.
  */
-import { useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import {
-  errorMessage,
   getFlasherMeta,
   getProjects,
-  isAbortError,
-  type FlasherMeta,
-  type ProjectInfo,
 } from "../api";
 import { ErrorBanner, Spinner } from "../components/Ui";
 import FileSetsPanel from "../components/flasher/FileSetsPanel";
 import FirmwarePanel from "../components/flasher/FirmwarePanel";
 import TabStrip from "../components/TabStrip";
 import { useStickyState } from "../useStickyState";
+import { useLoad } from "../components/useLoad";
+import PageShell from "../components/PageShell";
 
 const TABS = ["releases", "artwork", "firmware"] as const;
 type Tab = (typeof TABS)[number];
@@ -45,9 +42,9 @@ const BLURBS: Record<Tab, string> = {
 const ALIASES: Record<string, Tab> = { bundles: "releases", files: "releases" };
 
 export default function FlasherAdmin() {
-  const [projects, setProjects] = useState<ProjectInfo[] | null>(null);
-  const [meta, setMeta] = useState<FlasherMeta | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const { data, error } = useLoad((signal) => Promise.all([getProjects(signal), getFlasherMeta(signal)]), []);
+  const projects = data?.[0] ?? null;
+  const meta = data?.[1] ?? null;
   const [projectId, setProjectId] = useStickyState<number | null>("flasher.project", null);
   const [searchParams, setSearchParams] = useSearchParams();
 
@@ -59,60 +56,45 @@ export default function FlasherAdmin() {
   const setTab = (t: Tab) =>
     setSearchParams(t === "releases" ? {} : { tab: t }, { replace: true });
 
-  useEffect(() => {
-    const ac = new AbortController();
-    Promise.all([getProjects(ac.signal), getFlasherMeta(ac.signal)])
-      .then(([p, m]) => {
-        setProjects(p);
-        setMeta(m);
-      })
-      .catch((err) => {
-        if (!isAbortError(err)) setError(errorMessage(err));
-      });
-    return () => ac.abort();
-  }, []);
-
   const valid = projects?.some((p) => p.id === projectId) ? projectId : projects?.[0]?.id ?? null;
 
   return (
-    <div className="main-solo">
-      <div className="page">
-        <div className="toolbar">
-          <h1>Files</h1>
-          {tab === "firmware" && projects ? (
-            <select
-              className="row-input"
-              value={valid ?? ""}
-              onChange={(e) => setProjectId(Number(e.target.value))}
-            >
-              {projects.map((p) => (
-                <option key={p.id} value={p.id}>{p.name}</option>
-              ))}
-            </select>
-          ) : null}
-          <span className="toolbar-total">{BLURBS[tab]}</span>
-        </div>
-
-        <TabStrip
-          tabs={TABS.map((t) => ({ id: t, label: LABELS[t] }))}
-          value={tab}
-          onChange={setTab}
-          label="File administration"
-        />
-
-        {error ? <ErrorBanner message={error} /> : null}
-        {tab === "releases" ? (
-          <FileSetsPanel kind="berryware" openId={openId} />
-        ) : tab === "artwork" ? (
-          <FileSetsPanel kind="artwork" openId={openId} />
-        ) : projects === null ? (
-          <Spinner label="Loading projects…" />
-        ) : valid === null ? (
-          <p className="muted">No projects.</p>
-        ) : (
-          <FirmwarePanel projectId={valid} meta={meta} />
-        )}
+    <PageShell>
+      <div className="toolbar">
+        <h1>Files</h1>
+        {tab === "firmware" && projects ? (
+          <select
+            className="row-input"
+            value={valid ?? ""}
+            onChange={(e) => setProjectId(Number(e.target.value))}
+          >
+            {projects.map((p) => (
+              <option key={p.id} value={p.id}>{p.name}</option>
+            ))}
+          </select>
+        ) : null}
+        <span className="toolbar-total">{BLURBS[tab]}</span>
       </div>
-    </div>
+
+      <TabStrip
+        tabs={TABS.map((t) => ({ id: t, label: LABELS[t] }))}
+        value={tab}
+        onChange={setTab}
+        label="File administration"
+      />
+
+      {error ? <ErrorBanner message={error} /> : null}
+      {tab === "releases" ? (
+        <FileSetsPanel kind="berryware" openId={openId} />
+      ) : tab === "artwork" ? (
+        <FileSetsPanel kind="artwork" openId={openId} />
+      ) : projects === null ? (
+        <Spinner label="Loading projects…" />
+      ) : valid === null ? (
+        <p className="muted">No projects.</p>
+      ) : (
+        <FirmwarePanel projectId={valid} meta={meta} />
+      )}
+    </PageShell>
   );
 }

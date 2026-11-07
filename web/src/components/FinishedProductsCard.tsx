@@ -19,19 +19,18 @@
  *  the number counted, so the answer to "which ones?" is one click and arrives
  *  as serials.
  */
-import { useEffect, useMemo, useState } from "react";
+import { useMemo } from "react";
 import { Link } from "react-router-dom";
 
 import {
-  errorMessage,
   getProductStock,
-  isAbortError,
   type ProductStockRow,
 } from "../api";
 import { plnAmount } from "../format";
 import DataTable, { type Column } from "./DataTable";
 import FoldSection, { StatChip } from "./FoldSection";
 import { ErrorBanner, Spinner } from "./Ui";
+import { useLoad } from "./useLoad";
 
 export const CONDITION_WORD: Record<string, string> = {
   ok: "sellable",
@@ -57,23 +56,13 @@ function devicesHref(projectId: number, condition: string): string {
 }
 
 export default function FinishedProductsCard() {
-  const [stock, setStock] = useState<ProductStockRow[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    const ac = new AbortController();
-    getProductStock(ac.signal)
-      .then((s) => {
-        // A product that never built anything is noise; one whose every unit
-        // has shipped is still a fact worth printing.
-        setStock(s.products.filter((p) => p.in_stock > 0 || p.shipped > 0));
-        setError(null);
-      })
-      .catch((err) => {
-        if (!isAbortError(err)) setError(errorMessage(err));
-      });
-    return () => ac.abort();
-  }, []);
+  const { data: stock, error } = useLoad(
+    (signal) =>
+      // A product that never built anything is noise; one whose every unit
+      // has shipped is still a fact worth printing.
+      getProductStock(signal).then((s) => s.products.filter((p) => p.in_stock > 0 || p.shipped > 0)),
+    [],
+  );
 
   const rows = useMemo(() => stock ?? [], [stock]);
   const totals = useMemo(() => ({

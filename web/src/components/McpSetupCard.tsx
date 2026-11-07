@@ -19,16 +19,15 @@
  *  `AccountSecurityCard` — a token created or revoked there shows up here
  *  without a reload.
  */
-import { useEffect, useState } from "react";
+import { useState } from "react";
 
 import {
-  errorMessage,
   getKicadConfig,
-  isAbortError,
   type PlatformUser,
 } from "../api";
 import Field from "./Field";
 import { CopyButton, ErrorBanner, Spinner } from "./Ui";
+import { useLoad } from "./useLoad";
 
 /** Where the setup puts things. The MCP server's own defaults must match. */
 const TOKEN_FILE = "~/.config/henry/token";
@@ -109,20 +108,12 @@ function masked(token: string): string {
 }
 
 export default function McpSetupCard({ me }: { me: PlatformUser | null }) {
-  const [base, setBase] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const { data: base, error } = useLoad(
+    (signal) => getKicadConfig(signal).then((c) => c.public_base_url.replace(/\/+$/, "")),
+    [],
+  );
   const [pick, setPick] = useState<number | null>(null);
   const [shown, setShown] = useState(false);
-
-  useEffect(() => {
-    const ctrl = new AbortController();
-    getKicadConfig(ctrl.signal)
-      .then((c) => setBase(c.public_base_url.replace(/\/+$/, "")))
-      .catch((err) => {
-        if (!isAbortError(err)) setError(errorMessage(err));
-      });
-    return () => ctrl.abort();
-  }, []);
 
   const tokens = me?.tokens ?? [];
   const token = tokens.find((t) => t.id === pick) ?? tokens[0] ?? null;

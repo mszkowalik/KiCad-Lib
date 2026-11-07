@@ -87,7 +87,7 @@ export function CopyButton({
   );
 }
 
-export function ErrorBanner({ message }: { message: string }) {
+export function ErrorBanner({ message }: { message: string | null | undefined }) {
   // Nothing to report renders nothing. This used to draw the bordered box
   // regardless, so every caller had to guard it with `{error && <ErrorBanner/>}`
   // and any that forgot got an empty red rectangle on the page. Guarding here

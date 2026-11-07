@@ -19,7 +19,6 @@ import {
   getIndexStatus,
   getRestamps,
   indexDatasheets,
-  isAbortError,
   purgeBrokenDatasheets,
   reclaimDatasheetStorage,
   searchDatasheets,
@@ -34,6 +33,8 @@ import Field, { CheckField } from "../components/Field";
 import { StatChip } from "../components/FoldSection";
 import TabStrip from "../components/TabStrip";
 import { ErrorBanner, Spinner } from "../components/Ui";
+import { useLoad } from "../components/useLoad";
+import PageShell from "../components/PageShell";
 
 const TABS = [
   { id: "search", label: "Search" },
@@ -53,22 +54,8 @@ function Snippet({ text }: { text: string }) {
 function PageView({ hit }: { hit: DatasheetHit }) {
   const id = Number(/\/datasheets\/(\d+)\//.exec(hit.uri)?.[1]);
   const [page, setPage] = useState(hit.page);
-  const [text, setText] = useState<Awaited<ReturnType<typeof getDatasheetPage>> | null>(null);
-  const [outline, setOutline] = useState<Awaited<ReturnType<typeof getDatasheetOutline>> | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  useEffect(() => {
-    const ac = new AbortController();
-    getDatasheetOutline(id, ac.signal).then(setOutline).catch(() => setOutline(null));
-    return () => ac.abort();
-  }, [id]);
-  useEffect(() => {
-    const ac = new AbortController();
-    setText(null);
-    getDatasheetPage(id, page, ac.signal)
-      .then((t) => { setText(t); setError(null); })
-      .catch((err) => { if (!isAbortError(err)) setError(errorMessage(err)); });
-    return () => ac.abort();
-  }, [id, page]);
+  const { data: outline } = useLoad((signal) => getDatasheetOutline(id, signal).catch(() => null), [id], { keep: true });
+  const { data: text, error } = useLoad((signal) => getDatasheetPage(id, page, signal), [id, page]);
   return (
     <div className="stack">
       {outline?.sections.length ? (
@@ -93,20 +80,11 @@ function SearchTab() {
   const q = params.get("q") ?? "";
   const [typed, setTyped] = useState(q);
   const [old, setOld] = useState(false);
-  const [hits, setHits] = useState<DatasheetHit[] | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!q) { setHits(null); return; }
-    const ac = new AbortController();
-    setBusy(true);
-    searchDatasheets(q, { limit: 50, includeSuperseded: old }, ac.signal)
-      .then((r) => { setHits(r.hits); setError(null); })
-      .catch((err) => { if (!ac.signal.aborted) setError(errorMessage(err)); })
-      .finally(() => { if (!ac.signal.aborted) setBusy(false); });
-    return () => ac.abort();
-  }, [q, old]);
+  const { data: hits, loading: busy, error } = useLoad(
+    (signal) => searchDatasheets(q, { limit: 50, includeSuperseded: old }, signal).then((r) => r.hits),
+    [q, old],
+    { enabled: !!q, keep: true },
+  );
 
   const go = () => {
     const next = new URLSearchParams(params);
@@ -287,18 +265,16 @@ export default function Datasheets() {
   const raw = params.get("tab");
   const tab: Tab = TABS.some((t) => t.id === raw) ? (raw as Tab) : "search";
   return (
-    <div className="main-solo">
-      <div className="page">
-        <div className="toolbar">
-          <h1>Datasheets</h1>
-          <span className="toolbar-total">Every datasheet URL is re-fetched once a night, and KiCad reads the archived copy.</span>
-        </div>
-        <TabStrip tabs={TABS} value={tab} label="Datasheet sections"
-          onChange={(t) => setParams(t === "search" ? {} : { tab: t }, { replace: true })} />
-        {tab === "search" ? <SearchTab /> : null}
-        {tab === "archive" ? <DatasheetArchiveCard /> : null}
-        {tab === "jobs" ? <JobsTab /> : null}
+    <PageShell>
+      <div className="toolbar">
+        <h1>Datasheets</h1>
+        <span className="toolbar-total">Every datasheet URL is re-fetched once a night, and KiCad reads the archived copy.</span>
       </div>
-    </div>
+      <TabStrip tabs={TABS} value={tab} label="Datasheet sections"
+        onChange={(t) => setParams(t === "search" ? {} : { tab: t }, { replace: true })} />
+      {tab === "search" ? <SearchTab /> : null}
+      {tab === "archive" ? <DatasheetArchiveCard /> : null}
+      {tab === "jobs" ? <JobsTab /> : null}
+    </PageShell>
   );
 }

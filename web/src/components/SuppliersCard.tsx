@@ -1,10 +1,9 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import {
   createSupplier,
   deleteSupplier,
   errorMessage,
   getSuppliers,
-  isAbortError,
   setSupplierOrder,
   updateSupplier,
   type Supplier,
@@ -13,6 +12,7 @@ import { useAuth } from "../auth";
 import { useDialog } from "./Dialog";
 import Field, { FieldRow } from "./Field";
 import { ErrorBanner, Spinner } from "./Ui";
+import { useLoad } from "./useLoad";
 
 /** The supplier register, in LIBRARY ORDER — decision 0055.
  *
@@ -29,21 +29,10 @@ import { ErrorBanner, Spinner } from "./Ui";
 export default function SuppliersCard() {
   const { isAdmin } = useAuth();
   const dialog = useDialog();
-  const [rows, setRows] = useState<Supplier[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const { data: rows, setData: setRows, error, setError } = useLoad(getSuppliers, []);
   const [busy, setBusy] = useState(false);
   const [name, setName] = useState("");
   const [website, setWebsite] = useState("");
-
-  useEffect(() => {
-    const ctrl = new AbortController();
-    getSuppliers(ctrl.signal)
-      .then(setRows)
-      .catch((err) => {
-        if (!isAbortError(err)) setError(errorMessage(err));
-      });
-    return () => ctrl.abort();
-  }, []);
 
   const run = (work: () => Promise<Supplier[]>) => {
     setBusy(true);

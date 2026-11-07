@@ -10,10 +10,9 @@
  *  The page owns the account record (`me`) because two cards show its tokens:
  *  the password-and-tokens card and the MCP card.
  */
-import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 
-import { errorMessage, getAccount, isAbortError, type PlatformUser } from "../api";
+import { getAccount } from "../api";
 import { useAuth } from "../auth";
 import AccountSecurityCard from "../components/AccountSecurityCard";
 import AppearanceCard from "../components/AppearanceCard";
@@ -21,61 +20,50 @@ import GitCredentialsCard from "../components/GitCredentialsCard";
 import KicadClientCards from "../components/KicadClientCards";
 import McpSetupCard from "../components/McpSetupCard";
 import { ErrorBanner } from "../components/Ui";
+import { useLoad } from "../components/useLoad";
+import PageShell from "../components/PageShell";
 
 export default function Account() {
   const { user, isAdmin } = useAuth();
-  const [me, setMe] = useState<PlatformUser | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    const ctrl = new AbortController();
-    getAccount(ctrl.signal)
-      .then(setMe)
-      .catch((err) => {
-        if (!isAbortError(err)) setError(errorMessage(err));
-      });
-    return () => ctrl.abort();
-  }, []);
+  const { data: me, setData: setMe, error } = useLoad(getAccount, []);
 
   return (
-    <div className="main-solo">
-      <div className="page">
-        <div className="toolbar">
-          <h1>Account</h1>
-        </div>
-
-        {user ? (
-          <div className="card pad">
-            <h2 className="card-title">Signed in as</h2>
-            <dl className="kv">
-              <dt>User</dt>
-              <dd className="mono">{user.username}</dd>
-              {user.display_name ? (
-                <>
-                  <dt>Name</dt>
-                  <dd>{user.display_name}</dd>
-                </>
-              ) : null}
-              <dt>Role</dt>
-              <dd>{user.role}</dd>
-            </dl>
-            <p className="muted">
-              Other people's accounts are administered on{" "}
-              <Link className="comp-link" to="/admin">
-                Admin
-              </Link>
-              {isAdmin ? " → Users." : "."}
-            </p>
-          </div>
-        ) : null}
-
-        <ErrorBanner message={error ?? ""} />
-        <AppearanceCard />
-        <AccountSecurityCard me={me} setMe={setMe} />
-        <GitCredentialsCard />
-        <KicadClientCards />
-        <McpSetupCard me={me} />
+    <PageShell>
+      <div className="toolbar">
+        <h1>Account</h1>
       </div>
-    </div>
+
+      {user ? (
+        <div className="card pad">
+          <h2 className="card-title">Signed in as</h2>
+          <dl className="kv">
+            <dt>User</dt>
+            <dd className="mono">{user.username}</dd>
+            {user.display_name ? (
+              <>
+                <dt>Name</dt>
+                <dd>{user.display_name}</dd>
+              </>
+            ) : null}
+            <dt>Role</dt>
+            <dd>{user.role}</dd>
+          </dl>
+          <p className="muted">
+            Other people's accounts are administered on{" "}
+            <Link className="comp-link" to="/admin">
+              Admin
+            </Link>
+            {isAdmin ? " → Users." : "."}
+          </p>
+        </div>
+      ) : null}
+
+      <ErrorBanner message={error ?? ""} />
+      <AppearanceCard />
+      <AccountSecurityCard me={me} setMe={setMe} />
+      <GitCredentialsCard />
+      <KicadClientCards />
+      <McpSetupCard me={me} />
+    </PageShell>
   );
 }

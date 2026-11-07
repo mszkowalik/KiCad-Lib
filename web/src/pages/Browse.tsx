@@ -4,11 +4,8 @@ import {
   bulkSignoff,
   errorMessage,
   getCategories,
-  isAbortError,
   listComponents,
-  type CategoryNode,
   type ComponentListItem,
-  type ComponentListResponse,
 } from "../api";
 import CategoryTree from "../components/CategoryTree";
 import DataTable, { type Column } from "../components/DataTable";
@@ -28,6 +25,7 @@ import {
 } from "../components/Ui";
 import { useStickyState } from "../useStickyState";
 import { plural } from "../format";
+import { useLoad } from "../components/useLoad";
 
 const PAGE_SIZE = 1000;
 const DEBOUNCE_MS = 300;
@@ -52,14 +50,8 @@ export default function Browse() {
   const categoryId = catParam != null && catParam !== "" ? Number(catParam) : null;
 
   const [input, setInput] = useState(q);
-  const [tree, setTree] = useState<CategoryNode[] | null>(null);
-  const [treeError, setTreeError] = useState<string | null>(null);
-  const [data, setData] = useState<ComponentListResponse | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [signing, setSigning] = useState(false);
-  const [refresh, setRefresh] = useState(0);
   const dialog = useDialog();
 
   // Remember the selected library + search across navigation. A link from the top
@@ -103,43 +95,14 @@ export default function Browse() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [settledInput]);
 
-  const [treeRefresh, setTreeRefresh] = useState(0);
-  useEffect(() => {
-    const ctrl = new AbortController();
-    getCategories(ctrl.signal)
-      .then((t) => {
-        setTree(t);
-        setTreeError(null);
-      })
-      .catch((err) => {
-        if (!isAbortError(err)) setTreeError(errorMessage(err));
-      });
-    return () => ctrl.abort();
-  }, [treeRefresh]);
+  const { data: tree, error: treeError, reload: reloadTree } = useLoad(getCategories, []);
 
-  useEffect(() => {
-    const ctrl = new AbortController();
-    setLoading(true);
-    setError(null);
-    listComponents(
-      {
-        q: q || undefined,
-        category_id: categoryId ?? undefined,
-        page_size: PAGE_SIZE,
-      },
-      ctrl.signal,
-    )
-      .then((res) => {
-        setData(res);
-        setLoading(false);
-      })
-      .catch((err) => {
-        if (isAbortError(err)) return;
-        setError(errorMessage(err));
-        setLoading(false);
-      });
-    return () => ctrl.abort();
-  }, [q, categoryId, refresh]);
+  const { data, error, loading, reload } = useLoad(
+    (signal) =>
+      listComponents({ q: q || undefined, category_id: categoryId ?? undefined, page_size: PAGE_SIZE }, signal),
+    [q, categoryId],
+    { keep: true },
+  );
 
   const selectCategory = (id: number | null) =>
     setParams((prev) => {
@@ -197,7 +160,7 @@ export default function Browse() {
     try {
       const res = await bulkSignoff(ids);
       setSelected(new Set());
-      setRefresh((n) => n + 1);
+      void reload();
       if (res.skipped.length > 0) {
         await dialog.alert(
           `Signed ${res.total}. Skipped ${res.skipped.length}: ` +
@@ -342,7 +305,7 @@ export default function Browse() {
             tree={tree}
             selectedId={categoryId}
             onSelect={selectCategory}
-            onChanged={() => setTreeRefresh((n) => n + 1)}
+            onChanged={reloadTree}
           />
         )}
       </aside>

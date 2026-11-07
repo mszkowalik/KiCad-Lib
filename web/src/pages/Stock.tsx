@@ -58,6 +58,7 @@ import { localWhen, pln, qty, plural } from "../format";
 import { useTodayRate } from "../useTodayRate";
 import { useStickyState } from "../useStickyState";
 import CountTile from "../components/CountTile";
+import PageShell from "../components/PageShell";
 
 
 /** The table asks ONE question — do the two sides agree, and is it worth money.
@@ -479,277 +480,275 @@ export default function Stock() {
   ];
 
   return (
-    <div className="main-solo">
-      <div className="page">
-        <div className="toolbar">
-          <h1>Stock</h1>
-          <span className="toolbar-total">
-            {stock?.last_sync
-              ? `JLC counted ${localWhen(stock.last_sync)}`
-              : "JLC never synced"}
-          </span>
-          <button className="btn btn-primary" disabled={syncing} onClick={doSync}
-                  title="Fetch JLCPCB's own consigned-stock count — the only external check the register has.">
-            {syncing ? "Syncing stock count…" : "Sync stock count"}
-          </button>
-          <button className="btn" disabled={syncingLedger} onClick={() => void doSyncLedger()}
-                  title="Read JLCPCB's own movement ledger through the browser session. It moves no stock.">
-            {syncingLedger ? "Syncing JLC ledger…" : "Sync JLC ledger"}
-          </button>
-        </div>
-
-        {error ? <ErrorBanner message={error} /> : null}
-        {syncMsg ? <div className="banner-ok">{syncMsg}</div> : null}
-
-        {stock && stock.totals.events_since_sync > 0 ? (
-          <div className="banner-warn">
-            Every quantity below is compared as of{" "}
-            <b>{stock.totals.compared_as_of}</b>, the day JLC counted.{" "}
-            {plural(stock.totals.events_since_sync, "stock event")}{" "}
-            {stock.totals.events_since_sync === 1 ? "has" : "have"} been recorded
-            since, so <b>Ours</b> and <b>Δ qty</b> are measuring different moments —
-            Δ is the disagreement, Ours is today. Sync the count to close the gap.
-          </div>
-        ) : null}
-
-        {recon &&
-        (recon.totals.unexplained_rows > 0 || recon.totals.unconfirmed_lines > 0) ? (
-          <div className="banner-warn">
-            <b>JLCPCB&rsquo;s own ledger disagrees with ours.</b>{" "}
-            {recon.totals.unexplained_rows > 0 ? (
-              <>
-                {plural(recon.totals.unexplained_rows, "movement")} JLC recorded that no
-                document of ours reports.{" "}
-              </>
-            ) : null}
-            {recon.totals.unconfirmed_lines > 0 ? (
-              <>
-                {recon.totals.unconfirmed_qty.toLocaleString()} piece
-                {recon.totals.unconfirmed_qty === 1 ? "" : "s"} we booked as bought that
-                JLC never received — refresh that parts order to take their correction.{" "}
-              </>
-            ) : null}
-            <ul className="tight">
-              {recon.jlc_rows_we_cannot_explain.slice(0, 8).map((r) => (
-                <li key={`${r.lcsc}:${r.changed_at}:${r.change_qty}`}>
-                  <span className="mono">{r.changed_at.slice(0, 10)}</span>{" "}
-                  {r.change_qty > 0 ? "+" : ""}
-                  {r.change_qty} × {r.mpn || r.lcsc} — {r.remark}
-                </li>
-              ))}
-              {recon.our_lines_jlc_never_received.map((r) => (
-                <li key={`${r.lcsc}:${r.parts_order}`}>
-                  <span className="mono">{r.parts_order}</span> — we hold{" "}
-                  {r.booked_qty.toLocaleString()} of {r.lcsc}, JLC received{" "}
-                  {r.ledger_receipt_qty.toLocaleString()}
-                </li>
-              ))}
-            </ul>
-            {recon.bookable.length > 0 ? (
-              <div className="btn-row">
-                {companies.length > 1 ? (
-                  <Field label="Whose stock">
-                    <select className="row-input" value={ledgerCompany}
-                            onChange={(e) => setLedgerCompany(e.target.value)}>
-                      <option value="">— say whose —</option>
-                      {companies.map((c) => <option key={c.id} value={String(c.id)}>{c.name}</option>)}
-                    </select>
-                  </Field>
-                ) : null}
-                <button className="btn" disabled={booking} onClick={bookLedgerRows}
-                        title="Write each as a draw charged to no batch, using JLC's quantity, date and wording.">
-                  {booking ? "Recording…" : `Record ${recon.bookable.length} movement(s) JLC reports`}
-                </button>
-              </div>
-            ) : null}
-          </div>
-        ) : null}
-
-        {drift.length > 0 ? (
-          <div className="banner-warn">
-            <b>A batch was built with a different part, and the design has not caught up.</b>{" "}
-            Buying against the design will order the superseded part again — which is how 476
-            pieces of one were bought three months after it stopped being fitted.
-            <ul className="tight">
-              {drift.map((d) => (
-                <li key={d.substitution_id}>
-                  <Link to={`/production/batches/${d.run_id}`}>{d.run_label}</Link> fitted{" "}
-                  <span className="mono">{d.fitted_lcsc || d.fitted_mpn}</span> at{" "}
-                  <span className="mono">{d.designator}</span>, the design still specifies{" "}
-                  <span className="mono">{d.specified_lcsc || d.specified_mpn}</span>
-                  {d.specified_still_held > 0 ? (
-                    <> — <b>{d.specified_still_held.toLocaleString()}</b> still held at JLC</>
-                  ) : null}
-                </li>
-              ))}
-            </ul>
-          </div>
-        ) : null}
-
-        {available === false ? (
-          <div className="banner-warn">
-            JLCPCB API credentials are not configured, so the physical side is whatever was last
-            cached. Apply at{" "}
-            <a href="https://api.jlcpcb.com" target="_blank" rel="noreferrer">api.jlcpcb.com</a>,
-            then set <span className="mono">JLC_APP_ID</span>,{" "}
-            <span className="mono">JLC_ACCESS_KEY</span> and{" "}
-            <span className="mono">JLC_SECRET_KEY</span> in <span className="mono">.env</span>{" "}
-            and restart the api service.
-          </div>
-        ) : null}
-
-        {stock === null && !error ? <Spinner label="Loading stock" /> : null}
-
-        {stock && t ? (
-          <>
-            {/* Only what is wrong: the chips above the list already count the rest. */}
-            {!reconciles || t.missing_invoice_parts > 0 || zeroCost > 0 ? (
-              <div className="toolbar">
-                {!reconciles ? <span className="pill err">{counts.disagree} PARTS DO NOT RECONCILE</span> : null}
-                {t.missing_invoice_parts > 0 ? (
-                  <span
-                    className="pill err"
-                    title="JLC holds these and the platform has no purchase for them — a missing invoice."
-                  >
-                    {t.missing_invoice_parts} held with no purchase
-                  </span>
-                ) : null}
-                {zeroCost > 0 ? (
-                  <span className="pill warn" title={ZERO_COST_HINT}>{zeroCost} zero-cost stock additions</span>
-                ) : null}
-              </div>
-            ) : null}
-
-            {!reconciles && (
-              <div className="banner-warn">
-                A positive Δ qty means JLC holds MORE than the platform accounts for — a purchase
-                was never entered. A negative Δ qty means the platform still counts parts JLC no
-                longer has: boards were built without recording the draw, the stock was lost, or
-                a draw was counted twice.
-              </div>
-            )}
-
-            <div className="card pad">
-              <h2 className="card-title">The money in parts</h2>
-              <p className="muted dim">
-                The cost pool: what was paid for components, what batches have drawn from it, and what
-                the unconsumed remainder cost — next to what that same remainder is worth today.
-                In PLN at today's rate. The pool's moving average is kept in USD, and so is a part's price.
-              </p>
-              <div className="counts counts-sm">
-                <CountTile value={pln(t.spent_usd, rate)} label="spent on parts" />
-                <CountTile value={pln(t.drawn_usd, rate)} label="drawn by batches" />
-                <CountTile value={pln(t.adjusted_usd, rate)} label="adjustments" />
-                <CountTile value={pln(t.remaining_at_cost_usd, rate)} label="remainder at cost" />
-                <CountTile value={pln(t.comparable_market_usd, rate)} label="same remainder at market" />
-                <CountTile
-                  value={unrealised != null ? `${unrealised >= 0 ? "+" : ""}${pln(unrealised, rate)}` : "—"}
-                  label="unrealised, priced parts only"
-                  bad={unrealised != null && unrealised < 0}
-                />
-                <CountTile value={qty(t.jlc_held_qty)} label="pieces JLC holds" />
-              </div>
-              {t.missing_invoice_parts > 0 ? (
-                <div className="banner-warn">
-                  <strong>
-                    {t.missing_invoice_parts} part(s) JLC holds have no purchase in the platform
-                  </strong>{" "}
-                  — worth {pln(t.missing_invoice_value_usd, rate)} at market. Either the invoice is
-                  missing, or the part is known here under a different MPN. Filter to “at JLC, no
-                  invoice” below.
-                </div>
-              ) : null}
-              {t.over_pool_parts > 0 ? (
-                <div className="banner-warn">
-                  {t.over_pool_parts} part(s) show a pool remainder larger than JLC now holds —
-                  boards built without a recorded draw, or stock lost. Record the loss as a stock
-                  adjustment so a run carries it.
-                </div>
-              ) : null}
-            </div>
-
-            <div className="stat-row">
-              {(["all", "disagree", "both", "pool_only", "jlc_only"] as StateFilter[])
-                .filter((s) => s === "all" || s === stateFilter || (s === "disagree" ? counts.disagree : counts[s]) > 0)
-                .map((s) => (
-                <StatChip
-                  key={s}
-                  n={(s === "all" ? stock.parts.length : s === "disagree" ? counts.disagree : counts[s]).toLocaleString()}
-                  tone={s === "disagree" && counts.disagree ? "warn" : undefined}
-                  on={stateFilter === s}
-                  onClick={() => setStateFilter(s)}
-                >
-                  {s === "disagree" ? "disagreements" : s === "all" ? "all" : STATE_LABEL[s]}
-                </StatChip>
-              ))}
-            </div>
-
-            <div className="toolbar">
-              <input className="text search"
-                     placeholder="Filter by MPN / LCSC / description / component…"
-                     value={filter} onChange={(e) => setFilter(e.target.value)} />
-              <span className="toolbar-total">{rows.length} / {stock.parts.length}</span>
-              {anyFilter ? (
-                <button type="button" className="row-del clear-filters"
-                        onClick={() => { setFilter(""); setStateFilter("all"); }}
-                        title="Clear filters" aria-label="Clear filters">
-                  &#x2715;
-                </button>
-              ) : null}
-            </div>
-
-            <div className="card table-wrap">
-              <DataTable
-                columns={stockCols}
-                rows={rows}
-                rowKey={(r) => r.key}
-                persistKey="stock"
-                rowClass={() => "ledger-row"}
-                openKey={openLedger}
-                onOpenChange={(k) => setOpenLedger(k === null ? null : String(k))}
-                expand={(r) => (
-                  <PartLedgerPanel row={r} />
-                )}
-                empty={
-                  stateFilter === "disagree"
-                    ? "Every part JLC holds agrees with the platform, piece for piece."
-                    : "No parts match."
-                }
-              />
-            </div>
-
-            {adjs && (
-              <FoldSection
-                title="Stock adjustments"
-                count={adjs.length}
-                foldKey="stock:adjustments"
-                chips={adjs.length ? (
-                  <>
-                    {zeroCost ? <StatChip n={zeroCost} tone="warn" title={ZERO_COST_HINT}>zero-cost additions</StatChip> : null}
-                    {adjs.some((a) => !a.note) ? <StatChip n={adjs.filter((a) => !a.note).length} tone="warn">no reason given</StatChip> : null}
-                    <StatChip n={adjs.filter((a) => a.qty_delta > 0).length}>added</StatChip>
-                    <StatChip n={adjs.filter((a) => a.qty_delta < 0).length}>removed</StatChip>
-                  </>
-                ) : undefined}
-              >
-                <p className="muted dim">
-                  The least evidenced write in the system — stock moving with no invoice behind it.
-                  Including the ones that belong to no project, which the per-project view cannot
-                  show and which is exactly what a reconciliation pass writes.
-                </p>
-                <DataTable
-                  rows={adjs}
-                  rowKey={(a) => a.id}
-                  columns={adjCols}
-                  empty="No stock adjustment yet."
-                />
-              </FoldSection>
-            )}
-
-          </>
-        ) : null}
+    <PageShell>
+      <div className="toolbar">
+        <h1>Stock</h1>
+        <span className="toolbar-total">
+          {stock?.last_sync
+            ? `JLC counted ${localWhen(stock.last_sync)}`
+            : "JLC never synced"}
+        </span>
+        <button className="btn btn-primary" disabled={syncing} onClick={doSync}
+                title="Fetch JLCPCB's own consigned-stock count — the only external check the register has.">
+          {syncing ? "Syncing stock count…" : "Sync stock count"}
+        </button>
+        <button className="btn" disabled={syncingLedger} onClick={() => void doSyncLedger()}
+                title="Read JLCPCB's own movement ledger through the browser session. It moves no stock.">
+          {syncingLedger ? "Syncing JLC ledger…" : "Sync JLC ledger"}
+        </button>
       </div>
-    </div>
+
+      {error ? <ErrorBanner message={error} /> : null}
+      {syncMsg ? <div className="banner-ok">{syncMsg}</div> : null}
+
+      {stock && stock.totals.events_since_sync > 0 ? (
+        <div className="banner-warn">
+          Every quantity below is compared as of{" "}
+          <b>{stock.totals.compared_as_of}</b>, the day JLC counted.{" "}
+          {plural(stock.totals.events_since_sync, "stock event")}{" "}
+          {stock.totals.events_since_sync === 1 ? "has" : "have"} been recorded
+          since, so <b>Ours</b> and <b>Δ qty</b> are measuring different moments —
+          Δ is the disagreement, Ours is today. Sync the count to close the gap.
+        </div>
+      ) : null}
+
+      {recon &&
+      (recon.totals.unexplained_rows > 0 || recon.totals.unconfirmed_lines > 0) ? (
+        <div className="banner-warn">
+          <b>JLCPCB&rsquo;s own ledger disagrees with ours.</b>{" "}
+          {recon.totals.unexplained_rows > 0 ? (
+            <>
+              {plural(recon.totals.unexplained_rows, "movement")} JLC recorded that no
+              document of ours reports.{" "}
+            </>
+          ) : null}
+          {recon.totals.unconfirmed_lines > 0 ? (
+            <>
+              {recon.totals.unconfirmed_qty.toLocaleString()} piece
+              {recon.totals.unconfirmed_qty === 1 ? "" : "s"} we booked as bought that
+              JLC never received — refresh that parts order to take their correction.{" "}
+            </>
+          ) : null}
+          <ul className="tight">
+            {recon.jlc_rows_we_cannot_explain.slice(0, 8).map((r) => (
+              <li key={`${r.lcsc}:${r.changed_at}:${r.change_qty}`}>
+                <span className="mono">{r.changed_at.slice(0, 10)}</span>{" "}
+                {r.change_qty > 0 ? "+" : ""}
+                {r.change_qty} × {r.mpn || r.lcsc} — {r.remark}
+              </li>
+            ))}
+            {recon.our_lines_jlc_never_received.map((r) => (
+              <li key={`${r.lcsc}:${r.parts_order}`}>
+                <span className="mono">{r.parts_order}</span> — we hold{" "}
+                {r.booked_qty.toLocaleString()} of {r.lcsc}, JLC received{" "}
+                {r.ledger_receipt_qty.toLocaleString()}
+              </li>
+            ))}
+          </ul>
+          {recon.bookable.length > 0 ? (
+            <div className="btn-row">
+              {companies.length > 1 ? (
+                <Field label="Whose stock">
+                  <select className="row-input" value={ledgerCompany}
+                          onChange={(e) => setLedgerCompany(e.target.value)}>
+                    <option value="">— say whose —</option>
+                    {companies.map((c) => <option key={c.id} value={String(c.id)}>{c.name}</option>)}
+                  </select>
+                </Field>
+              ) : null}
+              <button className="btn" disabled={booking} onClick={bookLedgerRows}
+                      title="Write each as a draw charged to no batch, using JLC's quantity, date and wording.">
+                {booking ? "Recording…" : `Record ${recon.bookable.length} movement(s) JLC reports`}
+              </button>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+
+      {drift.length > 0 ? (
+        <div className="banner-warn">
+          <b>A batch was built with a different part, and the design has not caught up.</b>{" "}
+          Buying against the design will order the superseded part again — which is how 476
+          pieces of one were bought three months after it stopped being fitted.
+          <ul className="tight">
+            {drift.map((d) => (
+              <li key={d.substitution_id}>
+                <Link to={`/production/batches/${d.run_id}`}>{d.run_label}</Link> fitted{" "}
+                <span className="mono">{d.fitted_lcsc || d.fitted_mpn}</span> at{" "}
+                <span className="mono">{d.designator}</span>, the design still specifies{" "}
+                <span className="mono">{d.specified_lcsc || d.specified_mpn}</span>
+                {d.specified_still_held > 0 ? (
+                  <> — <b>{d.specified_still_held.toLocaleString()}</b> still held at JLC</>
+                ) : null}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+
+      {available === false ? (
+        <div className="banner-warn">
+          JLCPCB API credentials are not configured, so the physical side is whatever was last
+          cached. Apply at{" "}
+          <a href="https://api.jlcpcb.com" target="_blank" rel="noreferrer">api.jlcpcb.com</a>,
+          then set <span className="mono">JLC_APP_ID</span>,{" "}
+          <span className="mono">JLC_ACCESS_KEY</span> and{" "}
+          <span className="mono">JLC_SECRET_KEY</span> in <span className="mono">.env</span>{" "}
+          and restart the api service.
+        </div>
+      ) : null}
+
+      {stock === null && !error ? <Spinner label="Loading stock" /> : null}
+
+      {stock && t ? (
+        <>
+          {/* Only what is wrong: the chips above the list already count the rest. */}
+          {!reconciles || t.missing_invoice_parts > 0 || zeroCost > 0 ? (
+            <div className="toolbar">
+              {!reconciles ? <span className="pill err">{counts.disagree} PARTS DO NOT RECONCILE</span> : null}
+              {t.missing_invoice_parts > 0 ? (
+                <span
+                  className="pill err"
+                  title="JLC holds these and the platform has no purchase for them — a missing invoice."
+                >
+                  {t.missing_invoice_parts} held with no purchase
+                </span>
+              ) : null}
+              {zeroCost > 0 ? (
+                <span className="pill warn" title={ZERO_COST_HINT}>{zeroCost} zero-cost stock additions</span>
+              ) : null}
+            </div>
+          ) : null}
+
+          {!reconciles && (
+            <div className="banner-warn">
+              A positive Δ qty means JLC holds MORE than the platform accounts for — a purchase
+              was never entered. A negative Δ qty means the platform still counts parts JLC no
+              longer has: boards were built without recording the draw, the stock was lost, or
+              a draw was counted twice.
+            </div>
+          )}
+
+          <div className="card pad">
+            <h2 className="card-title">The money in parts</h2>
+            <p className="muted dim">
+              The cost pool: what was paid for components, what batches have drawn from it, and what
+              the unconsumed remainder cost — next to what that same remainder is worth today.
+              In PLN at today's rate. The pool's moving average is kept in USD, and so is a part's price.
+            </p>
+            <div className="counts counts-sm">
+              <CountTile value={pln(t.spent_usd, rate)} label="spent on parts" />
+              <CountTile value={pln(t.drawn_usd, rate)} label="drawn by batches" />
+              <CountTile value={pln(t.adjusted_usd, rate)} label="adjustments" />
+              <CountTile value={pln(t.remaining_at_cost_usd, rate)} label="remainder at cost" />
+              <CountTile value={pln(t.comparable_market_usd, rate)} label="same remainder at market" />
+              <CountTile
+                value={unrealised != null ? `${unrealised >= 0 ? "+" : ""}${pln(unrealised, rate)}` : "—"}
+                label="unrealised, priced parts only"
+                bad={unrealised != null && unrealised < 0}
+              />
+              <CountTile value={qty(t.jlc_held_qty)} label="pieces JLC holds" />
+            </div>
+            {t.missing_invoice_parts > 0 ? (
+              <div className="banner-warn">
+                <strong>
+                  {t.missing_invoice_parts} part(s) JLC holds have no purchase in the platform
+                </strong>{" "}
+                — worth {pln(t.missing_invoice_value_usd, rate)} at market. Either the invoice is
+                missing, or the part is known here under a different MPN. Filter to “at JLC, no
+                invoice” below.
+              </div>
+            ) : null}
+            {t.over_pool_parts > 0 ? (
+              <div className="banner-warn">
+                {t.over_pool_parts} part(s) show a pool remainder larger than JLC now holds —
+                boards built without a recorded draw, or stock lost. Record the loss as a stock
+                adjustment so a run carries it.
+              </div>
+            ) : null}
+          </div>
+
+          <div className="stat-row">
+            {(["all", "disagree", "both", "pool_only", "jlc_only"] as StateFilter[])
+              .filter((s) => s === "all" || s === stateFilter || (s === "disagree" ? counts.disagree : counts[s]) > 0)
+              .map((s) => (
+              <StatChip
+                key={s}
+                n={(s === "all" ? stock.parts.length : s === "disagree" ? counts.disagree : counts[s]).toLocaleString()}
+                tone={s === "disagree" && counts.disagree ? "warn" : undefined}
+                on={stateFilter === s}
+                onClick={() => setStateFilter(s)}
+              >
+                {s === "disagree" ? "disagreements" : s === "all" ? "all" : STATE_LABEL[s]}
+              </StatChip>
+            ))}
+          </div>
+
+          <div className="toolbar">
+            <input className="text search"
+                   placeholder="Filter by MPN / LCSC / description / component…"
+                   value={filter} onChange={(e) => setFilter(e.target.value)} />
+            <span className="toolbar-total">{rows.length} / {stock.parts.length}</span>
+            {anyFilter ? (
+              <button type="button" className="row-del clear-filters"
+                      onClick={() => { setFilter(""); setStateFilter("all"); }}
+                      title="Clear filters" aria-label="Clear filters">
+                &#x2715;
+              </button>
+            ) : null}
+          </div>
+
+          <div className="card table-wrap">
+            <DataTable
+              columns={stockCols}
+              rows={rows}
+              rowKey={(r) => r.key}
+              persistKey="stock"
+              rowClass={() => "ledger-row"}
+              openKey={openLedger}
+              onOpenChange={(k) => setOpenLedger(k === null ? null : String(k))}
+              expand={(r) => (
+                <PartLedgerPanel row={r} />
+              )}
+              empty={
+                stateFilter === "disagree"
+                  ? "Every part JLC holds agrees with the platform, piece for piece."
+                  : "No parts match."
+              }
+            />
+          </div>
+
+          {adjs && (
+            <FoldSection
+              title="Stock adjustments"
+              count={adjs.length}
+              foldKey="stock:adjustments"
+              chips={adjs.length ? (
+                <>
+                  {zeroCost ? <StatChip n={zeroCost} tone="warn" title={ZERO_COST_HINT}>zero-cost additions</StatChip> : null}
+                  {adjs.some((a) => !a.note) ? <StatChip n={adjs.filter((a) => !a.note).length} tone="warn">no reason given</StatChip> : null}
+                  <StatChip n={adjs.filter((a) => a.qty_delta > 0).length}>added</StatChip>
+                  <StatChip n={adjs.filter((a) => a.qty_delta < 0).length}>removed</StatChip>
+                </>
+              ) : undefined}
+            >
+              <p className="muted dim">
+                The least evidenced write in the system — stock moving with no invoice behind it.
+                Including the ones that belong to no project, which the per-project view cannot
+                show and which is exactly what a reconciliation pass writes.
+              </p>
+              <DataTable
+                rows={adjs}
+                rowKey={(a) => a.id}
+                columns={adjCols}
+                empty="No stock adjustment yet."
+              />
+            </FoldSection>
+          )}
+
+        </>
+      ) : null}
+    </PageShell>
   );
 }
 

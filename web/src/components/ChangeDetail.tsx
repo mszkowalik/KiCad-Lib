@@ -1,10 +1,7 @@
-import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 
 import {
-  errorMessage,
   getChangeDetail,
-  isAbortError,
   type ChangeDetailPayload,
   type ChangeKind,
   type ChangeRowDiff,
@@ -13,6 +10,7 @@ import DataTable from "./DataTable";
 import { fmtBytes } from "./flasher/common";
 import GeometryDiff from "./GeometryDiff";
 import { ErrorBanner, Spinner } from "./Ui";
+import { useLoad } from "./useLoad";
 
 /** The unfolded half of one change-feed row.
  *
@@ -120,20 +118,7 @@ function subjectLink(d: ChangeDetailPayload) {
 }
 
 export default function ChangeDetail({ kind, id }: { kind: ChangeKind; id: number }) {
-  const [data, setData] = useState<ChangeDetailPayload | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    const ctrl = new AbortController();
-    setData(null);
-    setError(null);
-    getChangeDetail(kind, id, ctrl.signal)
-      .then(setData)
-      .catch((err) => {
-        if (!isAbortError(err)) setError(errorMessage(err));
-      });
-    return () => ctrl.abort();
-  }, [kind, id]);
+  const { data, error } = useLoad((signal) => getChangeDetail(kind, id, signal), [kind, id]);
 
   if (error !== null) return <ErrorBanner message={error} />;
   if (data === null) return <Spinner label="loading the diff" />;

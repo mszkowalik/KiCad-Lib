@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 
-import { errorMessage, fetchSvgUnits, isAbortError } from "../api";
+import { fetchSvgUnits } from "../api";
 import { UnitPager, unitUrl } from "./GeometryPreview";
 import { ErrorBanner, Spinner } from "./Ui";
+import { useLoad } from "./useLoad";
 
 /** Before, after, and the difference — for a symbol or a land pattern.
  *
@@ -63,10 +64,6 @@ export default function GeometryDiff({
   beforeLabel: string;
   afterLabel: string;
 }) {
-  const [before, setBefore] = useState<Dims | null>(null);
-  const [after, setAfter] = useState<Dims | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
   // Tagged with the path they belong to, so opening another change starts at
   // unit 1 instead of inheriting the last one paged to. Same shape as the
   // preview's `nav` state.
@@ -74,29 +71,19 @@ export default function GeometryDiff({
   const unit = nav.path === afterPath ? nav.unit : 1;
   const unitCount = nav.path === afterPath ? nav.count : 1;
 
-  useEffect(() => {
-    const ctrl = new AbortController();
-    setLoading(true);
-    setError(null);
-    setBefore(null);
-    setAfter(null);
-    Promise.all([
-      fetchSvgUnits(unitUrl(afterPath, unit), ctrl.signal),
-      beforePath ? fetchSvgUnits(unitUrl(beforePath, unit), ctrl.signal) : Promise.resolve(null),
-    ])
-      .then(([a, b]) => {
+  const { data: pair, error, loading } = useLoad(
+    (signal) =>
+      Promise.all([
+        fetchSvgUnits(unitUrl(afterPath, unit), signal),
+        beforePath ? fetchSvgUnits(unitUrl(beforePath, unit), signal) : Promise.resolve(null),
+      ]).then(([a, b]) => {
         setNav({ path: afterPath, unit, count: a.units });
-        setAfter(parseDims(a.text));
-        setBefore(b === null ? null : parseDims(b.text));
-        setLoading(false);
-      })
-      .catch((err) => {
-        if (isAbortError(err)) return;
-        setError(errorMessage(err));
-        setLoading(false);
-      });
-    return () => ctrl.abort();
-  }, [beforePath, afterPath, unit]);
+        return { after: parseDims(a.text), before: b === null ? null : parseDims(b.text) };
+      }),
+    [beforePath, afterPath, unit],
+  );
+  const before = pair?.before ?? null;
+  const after = pair?.after ?? null;
 
   // One scale for both, so the overlay is a real comparison and not two
   // pictures each fitted to its own box.

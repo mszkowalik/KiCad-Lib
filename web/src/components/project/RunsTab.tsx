@@ -1,7 +1,7 @@
 /** Production batches of this project — a plain table. Everything about one batch
  *  (economics, materials, costs, files, serials) lives on its own page at
  *  /production/batches/:id; this tab only lists, creates and deletes. */
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import {
   createRun,
@@ -9,7 +9,6 @@ import {
   deleteRun,
   errorMessage,
   getRuns,
-  isAbortError,
   type ProjectInfo,
   type RunInfo,
   type SnapshotInfo,
@@ -20,6 +19,7 @@ import FoldSection, { StatChip } from "../FoldSection";
 import NumberInput from "../NumberInput";
 import { ErrorBanner, Spinner, StatusPill } from "../Ui";
 import DataTable, { type Column } from "../DataTable";
+import { useLoad } from "../useLoad";
 
 interface Props {
   project: ProjectInfo;
@@ -30,8 +30,11 @@ interface Props {
 }
 
 export default function RunsTab({ project, snapshots, snapshot, board, variant }: Props) {
-  const [runs, setRuns] = useState<RunInfo[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const { data: runs, error, setError, reload: load } = useLoad(
+    (signal) => getRuns(project.id, signal),
+    [project.id],
+    { keep: true },
+  );
   const [showNew, setShowNew] = useState(false);
   const [label, setLabel] = useState("");
   const [qty, setQty] = useState(10);
@@ -39,24 +42,6 @@ export default function RunsTab({ project, snapshots, snapshot, board, variant }
   const [creating, setCreating] = useState(false);
   const dialog = useDialog();
   const navigate = useNavigate();
-
-  const load = (signal?: AbortSignal) => {
-    getRuns(project.id, signal)
-      .then((rows) => {
-        setRuns(rows);
-        setError(null);
-      })
-      .catch((err) => {
-        if (!isAbortError(err)) setError(errorMessage(err));
-      });
-  };
-
-  useEffect(() => {
-    const ctrl = new AbortController();
-    load(ctrl.signal);
-    return () => ctrl.abort();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [project.id]);
 
   const create = async (ack = false) => {
     setCreating(true);

@@ -15,7 +15,7 @@
  *  lose a half-scanned carton. Its check results are NOT kept — they are
  *  re-asked on load, because stock may have moved meanwhile.
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import {
   cancelShipment,
@@ -23,7 +23,6 @@ import {
   deleteShipment,
   errorMessage,
   getShipment,
-  isAbortError,
   markShipmentReplacement,
   packShipment,
   patchShipment,
@@ -41,63 +40,48 @@ import FoldSection, { StatChip } from "../components/FoldSection";
 import { ScanBox, useScanList, type Scan, type ScanBoxHandle } from "../components/ScanList";
 import { BackLink, ErrorBanner, Spinner, StatusPill } from "../components/Ui";
 import { localWhen, today, plural } from "../format";
+import { useLoad } from "../components/useLoad";
+import PageShell from "../components/PageShell";
 
 export default function ShipmentDetail() {
   const { id: idParam } = useParams();
   const id = Number(idParam);
-  const [sh, setSh] = useState<Detail | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  const reload = useCallback(() => {
-    const ac = new AbortController();
-    getShipment(id, ac.signal)
-      .then((s) => {
-        setSh(s);
-        setError(null);
-      })
-      .catch((err) => {
-        if (!isAbortError(err)) setError(errorMessage(err));
-      });
-    return () => ac.abort();
-  }, [id]);
-  useEffect(reload, [reload]);
+  const { data: sh, setData: setSh, error } = useLoad((signal) => getShipment(id, signal), [id], { keep: true });
 
   return (
-    <div className="main-solo">
-      <div className="page">
-        <BackLink to="/sales/shipments">← Shipments</BackLink>
-        <div className="toolbar">
-          <h1>Shipment #{id}</h1>
-          {sh ? <StatusPill status={sh.status} /> : null}
-          {sh ? (
-            <a
-              className="btn btn-sm"
-              href={shipmentMosquittoPath(sh.id)}
-              download
-              title="Plaintext user:password file for the units in this shipment, each with its current MQTT account only — the file the client installs on their broker. Hash it with mosquitto_passwd -U before you deploy it."
-            >
-              MQTT accounts
-            </a>
-          ) : null}
-        </div>
-        {error ? <ErrorBanner message={error} /> : null}
-        {!sh ? (
-          error ? null : <Spinner label="Loading shipment…" />
-        ) : (
-          <>
-            <HeaderCard sh={sh} />
-            {sh.status === "open" ? (
-              <>
-                <PackCard sh={sh} onChange={setSh} />
-                <SendCard sh={sh} onChange={setSh} />
-              </>
-            ) : (
-              <ContentCard sh={sh} />
-            )}
-          </>
-        )}
+    <PageShell>
+      <BackLink to="/sales/shipments">← Shipments</BackLink>
+      <div className="toolbar">
+        <h1>Shipment #{id}</h1>
+        {sh ? <StatusPill status={sh.status} /> : null}
+        {sh ? (
+          <a
+            className="btn btn-sm"
+            href={shipmentMosquittoPath(sh.id)}
+            download
+            title="Plaintext user:password file for the units in this shipment, each with its current MQTT account only — the file the client installs on their broker. Hash it with mosquitto_passwd -U before you deploy it."
+          >
+            MQTT accounts
+          </a>
+        ) : null}
       </div>
-    </div>
+      {error ? <ErrorBanner message={error} /> : null}
+      {!sh ? (
+        error ? null : <Spinner label="Loading shipment…" />
+      ) : (
+        <>
+          <HeaderCard sh={sh} />
+          {sh.status === "open" ? (
+            <>
+              <PackCard sh={sh} onChange={setSh} />
+              <SendCard sh={sh} onChange={setSh} />
+            </>
+          ) : (
+            <ContentCard sh={sh} />
+          )}
+        </>
+      )}
+    </PageShell>
   );
 }
 

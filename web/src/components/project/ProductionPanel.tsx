@@ -8,11 +8,9 @@ import {
   generateProductionFab,
   getRunProduction,
   importProductionFromRepo,
-  isAbortError,
   productionFileUrl,
   renderGerbers,
   uploadProductionFiles,
-  type ProductionInfo,
   type ProductionSet,
 } from "../../api";
 import DataTable from "../DataTable";
@@ -23,6 +21,7 @@ import FoldSection, { StatChip } from "../FoldSection";
 import { ErrorBanner, Spinner } from "../Ui";
 import { LAYER_COLORS } from "./BoardTab";
 import { localWhen } from "../../format";
+import { useLoad } from "../useLoad";
 
 /** Which layer a Gerber file holds, by its name, for the board's own colours. */
 const GERBER_LAYERS: [RegExp, string][] = [
@@ -50,8 +49,7 @@ function layerColor(filename: string): string {
 const DEFAULT_VISIBLE = [/f[_-]?cu|\.gtl$/i, /f[_-]?silk|\.gto$/i, /edge|\.gm1$/i];
 
 export default function ProductionPanel({ runId }: { runId: number }) {
-  const [info, setInfo] = useState<ProductionInfo | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const { data: info, error, setError, reload: load } = useLoad((signal) => getRunProduction(runId, signal), [runId]);
   const [busy, setBusy] = useState<string | null>(null);
   const [viewSetId, setViewSetId] = useState<number | null>(null);
   const [selection, setSelection] = useState<Set<string>>(new Set());
@@ -59,25 +57,9 @@ export default function ProductionPanel({ runId }: { runId: number }) {
   const [rendering, setRendering] = useState(false);
   const dialog = useDialog();
 
-  const load = (signal?: AbortSignal) => {
-    getRunProduction(runId, signal)
-      .then((i) => {
-        setInfo(i);
-        setError(null);
-      })
-      .catch((err) => {
-        if (!isAbortError(err)) setError(errorMessage(err));
-      });
-  };
-
   useEffect(() => {
-    const ctrl = new AbortController();
-    setInfo(null);
     setViewSetId(null);
     setGerberUrl(null);
-    load(ctrl.signal);
-    return () => ctrl.abort();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [runId]);
 
   const currentSet: ProductionSet | null = info?.sets[0] ?? null;

@@ -10,14 +10,12 @@
  *  disagreement is settled by reading one against the other, so they belong in
  *  the same frame at the same size, never in two places on the page.
  */
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import {
-  errorMessage,
   getJlcPartLedger,
   getJlcStockItemRaw,
   getPartsLedger,
-  isAbortError,
   type JlcPartLedger,
   type PartLedger,
   type PartsStockRow,
@@ -26,6 +24,7 @@ import { pln, qty, usd } from "../format";
 import { useTodayRate } from "../useTodayRate";
 import FoldSection, { StatChip } from "./FoldSection";
 import { ErrorBanner, Spinner } from "./Ui";
+import { useLoad } from "./useLoad";
 
 const KIND_LABEL: Record<string, string> = { buy: "purchase", use: "draw", adj: "adjust" };
 
@@ -94,23 +93,18 @@ function yearTicks(t0: number, t1: number): Array<{ t: number; label: string }> 
 
 export default function PartLedgerPanel({ row }: { row: PartsStockRow }) {
   const { component_id: componentId, mpn, lcsc } = row;
-  const [ledger, setLedger] = useState<PartLedger | null>(null);
-  const [jlc, setJlc] = useState<JlcPartLedger | null>(null);
   const [source, setSource] = useState<"ours" | "jlc">("ours");
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    const ctrl = new AbortController();
-    getPartsLedger({ component_id: componentId, mpn, lcsc }, ctrl.signal)
-      .then((l) => { setLedger(l); setError(null); })
-      .catch((err) => { if (!isAbortError(err)) setError(errorMessage(err)); });
-    // JLC's own ledger for the same part, when one has been synced. A 404 means
-    // this part is not consigned to JLC, which is ordinary — not an error.
-    setJlc(null);
+  const { data: ledger, error } = useLoad((signal) => {
     setSource("ours");
-    if (lcsc) getJlcPartLedger(lcsc, ctrl.signal).then(setJlc).catch(() => setJlc(null));
-    return () => ctrl.abort();
-  }, [componentId, mpn, lcsc]);
+    return getPartsLedger({ component_id: componentId, mpn, lcsc }, signal);
+  }, [componentId, mpn, lcsc], { keep: true });
+  // JLC's own ledger for the same part, when one has been synced. A 404 means
+  // this part is not consigned to JLC, which is ordinary — not an error.
+  const { data: jlc } = useLoad(
+    (signal) => getJlcPartLedger(lcsc as string, signal),
+    [componentId, mpn, lcsc],
+    { enabled: !!lcsc },
+  );
 
   if (error) return <ErrorBanner message={error} />;
   if (!ledger) return <Spinner label="Replaying the ledger…" />;
@@ -170,17 +164,12 @@ export default function PartLedgerPanel({ row }: { row: PartsStockRow }) {
 /** JLC's untouched stock payload, for a field that reads wrong. Fetched when the fold
  *  opens, and from local rows: it needs no JLC session. A part under two LCSC codes has two. */
 function RawJlcData({ ids }: { ids: number[] }) {
-  const [raw, setRaw] = useState<unknown[] | null>(null);
-  const [error, setError] = useState("");
   const idList = ids.join(",");
-
-  useEffect(() => {
-    const ac = new AbortController();
-    Promise.all(idList.split(",").map((id) => getJlcStockItemRaw(Number(id), ac.signal)))
-      .then(setRaw)
-      .catch((err) => { if (!isAbortError(err)) setError(errorMessage(err)); });
-    return () => ac.abort();
-  }, [idList]);
+  const { data: raw, error } = useLoad<unknown[]>(
+    (signal) => Promise.all(idList.split(",").map((id) => getJlcStockItemRaw(Number(id), signal))),
+    [idList],
+    { keep: true },
+  );
 
   if (error) return <ErrorBanner message={error} />;
   if (raw === null) return <Spinner label="Reading…" />;

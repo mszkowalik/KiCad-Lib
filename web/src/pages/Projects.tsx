@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import {
   createProject,
@@ -6,8 +6,6 @@ import {
   errorMessage,
   getGitCredentials,
   getProjects,
-  isAbortError,
-  type GitCredential,
   type ProjectInfo,
 } from "../api";
 import DataTable, { type Column } from "../components/DataTable";
@@ -15,18 +13,20 @@ import Field, { FieldGrid } from "../components/Field";
 import { ErrorBanner, Spinner, StatusPill } from "../components/Ui";
 import { useAuth } from "../auth";
 import { localDate } from "../format";
+import { useLoad } from "../components/useLoad";
+import PageShell from "../components/PageShell";
 
 export default function Projects() {
   const navigate = useNavigate();
-  const [list, setList] = useState<ProjectInfo[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const { data: list, error, reload: load } = useLoad(getProjects, []);
   const [showNew, setShowNew] = useState(false);
   const [name, setName] = useState("");
   const [gitUrl, setGitUrl] = useState("");
   const [token, setToken] = useState("");
   // "" = use a named account (credId), which is the normal answer.
   const [credId, setCredId] = useState<number | "">("");
-  const [creds, setCreds] = useState<GitCredential[]>([]);
+  // Without an answer the picker shows "none", and a new project still works.
+  const creds = useLoad(getGitCredentials, []).data ?? [];
   const [branch, setBranch] = useState("main");
   const [creating, setCreating] = useState(false);
   // Decision 0063: a project belongs to a company. The switcher's company is
@@ -35,33 +35,6 @@ export default function Projects() {
   const [companyId, setCompanyId] = useState<number | "">(
     scope !== "all" ? Number(scope) : companies.length === 1 ? companies[0].id : "");
   const [createError, setCreateError] = useState<string | null>(null);
-
-  const load = (signal?: AbortSignal) => {
-    getProjects(signal)
-      .then((rows) => {
-        setList(rows);
-        setError(null);
-      })
-      .catch((err) => {
-        if (!isAbortError(err)) setError(errorMessage(err));
-      });
-  };
-
-  useEffect(() => {
-    const ctrl = new AbortController();
-    load(ctrl.signal);
-    return () => ctrl.abort();
-  }, []);
-
-  useEffect(() => {
-    const ctrl = new AbortController();
-    getGitCredentials(ctrl.signal)
-      .then(setCreds)
-      .catch(() => {
-        /* the picker degrades to "none"; creating a project must still work */
-      });
-    return () => ctrl.abort();
-  }, []);
 
   const submit = () => {
     setCreating(true);
@@ -158,110 +131,108 @@ export default function Projects() {
   ];
 
   return (
-    <div className="main-solo">
-      <div className="page">
-        <div className="toolbar">
-          <h1>Projects</h1>
-          <span className="toolbar-total">
-            {list ? `${list.length} tracked` : ""}
-          </span>
-          <button className="btn btn-primary" onClick={() => setShowNew((v) => !v)}>
-            {showNew ? "Cancel" : "New project"}
-          </button>
-        </div>
-
-        {error ? <ErrorBanner message={error} /> : null}
-
-        {showNew ? (
-          <div className="card pad edit-card">
-            <div className="card-title">Track a KiCad project from git</div>
-            <FieldGrid>
-              <Field label="Name">
-                <input className="text" value={name} onChange={(e) => setName(e.target.value)} placeholder="My Board" />
-              </Field>
-              <Field label="Company">
-                <select className="text" value={companyId}
-                  onChange={(e) => setCompanyId(e.target.value === "" ? "" : Number(e.target.value))}>
-                  <option value="">— choose —</option>
-                  {companies.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-                </select>
-              </Field>
-              <Field label="Git URL">
-                <input className="text" value={gitUrl} onChange={(e) => setGitUrl(e.target.value)} placeholder="https://github.com/me/my-board.git" />
-              </Field>
-              <Field label="Git account">
-                <select
-                  className="text"
-                  value={credId}
-                  onChange={(e) => setCredId(e.target.value === "" ? "" : Number(e.target.value))}
-                >
-                  <option value="">none — public repo, or a token below</option>
-                  {creds.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.name}
-                    </option>
-                  ))}
-                </select>
-              </Field>
-              {/* The account is the normal answer; this is the escape hatch for
-                  a one-off repository that does not warrant a named one. The
-                  account WINS when both are set, and the project page says so. */}
-              <Field label="Access token (only if no account above)">
-                <input
-                  className="text"
-                  type="password"
-                  autoComplete="new-password"
-                  value={token}
-                  onChange={(e) => setToken(e.target.value)}
-                  placeholder="PAT for this project alone"
-                  disabled={credId !== ""}
-                />
-              </Field>
-              <Field label="Default branch">
-                <input className="text" value={branch} onChange={(e) => setBranch(e.target.value)} />
-              </Field>
-            </FieldGrid>
-            {createError ? <ErrorBanner message={createError} /> : null}
-            <div className="btn-row">
-              <button
-                className="btn btn-primary"
-                disabled={creating || !name.trim() || !gitUrl.trim()}
-                onClick={submit}
-              >
-                {creating ? "Creating…" : "Create project"}
-              </button>
-              <span className="muted">
-                After creating, use Fetch to clone the repo and ingest tags + head.
-              </span>
-            </div>
-          </div>
-        ) : null}
-
-        {list === null && !error ? <Spinner label="Loading projects" /> : null}
-
-        {list !== null && list.length === 0 && !showNew ? (
-          <div className="card pad">
-            <p className="muted">
-              No projects yet. Track your KiCad designs from their git repositories:
-              BOMs priced at any volume, board/schematic previews, production batches.
-            </p>
-          </div>
-        ) : null}
-
-        {list !== null && list.length > 0 ? (
-          <div className="card table-wrap">
-            <DataTable
-              columns={cols}
-              rows={list}
-              rowKey={(p) => p.id}
-              persistKey="projects"
-              rowClass={() => "ledger-row"}
-              onRowClick={(p) => navigate(`/projects/${p.id}`)}
-              empty="No projects yet."
-            />
-          </div>
-        ) : null}
+    <PageShell>
+      <div className="toolbar">
+        <h1>Projects</h1>
+        <span className="toolbar-total">
+          {list ? `${list.length} tracked` : ""}
+        </span>
+        <button className="btn btn-primary" onClick={() => setShowNew((v) => !v)}>
+          {showNew ? "Cancel" : "New project"}
+        </button>
       </div>
-    </div>
+
+      {error ? <ErrorBanner message={error} /> : null}
+
+      {showNew ? (
+        <div className="card pad edit-card">
+          <div className="card-title">Track a KiCad project from git</div>
+          <FieldGrid>
+            <Field label="Name">
+              <input className="text" value={name} onChange={(e) => setName(e.target.value)} placeholder="My Board" />
+            </Field>
+            <Field label="Company">
+              <select className="text" value={companyId}
+                onChange={(e) => setCompanyId(e.target.value === "" ? "" : Number(e.target.value))}>
+                <option value="">— choose —</option>
+                {companies.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </select>
+            </Field>
+            <Field label="Git URL">
+              <input className="text" value={gitUrl} onChange={(e) => setGitUrl(e.target.value)} placeholder="https://github.com/me/my-board.git" />
+            </Field>
+            <Field label="Git account">
+              <select
+                className="text"
+                value={credId}
+                onChange={(e) => setCredId(e.target.value === "" ? "" : Number(e.target.value))}
+              >
+                <option value="">none — public repo, or a token below</option>
+                {creds.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            {/* The account is the normal answer; this is the escape hatch for
+                a one-off repository that does not warrant a named one. The
+                account WINS when both are set, and the project page says so. */}
+            <Field label="Access token (only if no account above)">
+              <input
+                className="text"
+                type="password"
+                autoComplete="new-password"
+                value={token}
+                onChange={(e) => setToken(e.target.value)}
+                placeholder="PAT for this project alone"
+                disabled={credId !== ""}
+              />
+            </Field>
+            <Field label="Default branch">
+              <input className="text" value={branch} onChange={(e) => setBranch(e.target.value)} />
+            </Field>
+          </FieldGrid>
+          {createError ? <ErrorBanner message={createError} /> : null}
+          <div className="btn-row">
+            <button
+              className="btn btn-primary"
+              disabled={creating || !name.trim() || !gitUrl.trim()}
+              onClick={submit}
+            >
+              {creating ? "Creating…" : "Create project"}
+            </button>
+            <span className="muted">
+              After creating, use Fetch to clone the repo and ingest tags + head.
+            </span>
+          </div>
+        </div>
+      ) : null}
+
+      {list === null && !error ? <Spinner label="Loading projects" /> : null}
+
+      {list !== null && list.length === 0 && !showNew ? (
+        <div className="card pad">
+          <p className="muted">
+            No projects yet. Track your KiCad designs from their git repositories:
+            BOMs priced at any volume, board/schematic previews, production batches.
+          </p>
+        </div>
+      ) : null}
+
+      {list !== null && list.length > 0 ? (
+        <div className="card table-wrap">
+          <DataTable
+            columns={cols}
+            rows={list}
+            rowKey={(p) => p.id}
+            persistKey="projects"
+            rowClass={() => "ledger-row"}
+            onRowClick={(p) => navigate(`/projects/${p.id}`)}
+            empty="No projects yet."
+          />
+        </div>
+      ) : null}
+    </PageShell>
   );
 }

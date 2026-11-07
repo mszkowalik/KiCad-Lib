@@ -2,14 +2,13 @@
  *  issued elsewhere (decision 0077), and the old script's register (decision 0066).
  *  The API gates both, because they write past revenue.
  */
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import {
   errorMessage,
   importSalesRegister,
   listOrders,
   recordSalesHistory,
   type CustomerRow,
-  type OrderRow,
   type SalesHistoryIn,
   type SalesImportPlan,
 } from "../../api";
@@ -23,6 +22,7 @@ import { VAT_RATES } from "../PrintedInvoice";
 import { DryRunDialog } from "../process/StageDialogs";
 import { ErrorBanner, Spinner } from "../Ui";
 import { CustomerSelect } from "./SalesLines";
+import { useLoad } from "../useLoad";
 
 const HISTORY_KINDS = [
   { value: "vat", label: "VAT invoice" },
@@ -69,15 +69,9 @@ export function RecordHistoryDialog({ customers, onClose }: {
   const [paidDate, setPaidDate] = useState("");
   const [orderId, setOrderId] = useState<number | null>(null);
   const [note, setNote] = useState("");
-  const [orders, setOrders] = useState<OrderRow[]>([]);
+  const orders = useLoad(listOrders, []).data ?? [];
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    const ac = new AbortController();
-    listOrders(ac.signal).then(setOrders).catch(() => setOrders([]));
-    return () => ac.abort();
-  }, []);
 
   const typed = lines.filter((l) => l.name.trim());
   const shaped = typed.map((l) => {

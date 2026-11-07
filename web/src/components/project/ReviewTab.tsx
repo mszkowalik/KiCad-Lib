@@ -1,11 +1,10 @@
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import {
   bulkSignoff,
   completeProjectReview,
   errorMessage,
   getProjectReview,
-  isAbortError,
   type ProjectInfo,
   type ProjectReview,
   type SnapshotInfo,
@@ -15,6 +14,7 @@ import { useDialog } from "../Dialog";
 import FoldSection, { StatChip } from "../FoldSection";
 import { ErrorBanner, LifecyclePill, ReviewPill, SignoffPill, Spinner } from "../Ui";
 import { localDate, localWhen } from "../../format";
+import { useLoad } from "../useLoad";
 
 /** The end-of-design review: every BOM-matched component of the snapshot with
  * its verification, sign-off and lifecycle state, per-selection bulk sign-off,
@@ -26,33 +26,17 @@ export default function ReviewTab({
   project: ProjectInfo;
   snapshot: SnapshotInfo | null;
 }) {
-  const [data, setData] = useState<ProjectReview | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const { data, setData, error, setError, reload: load } = useLoad(
+    (signal) => getProjectReview(project.id, snapshot?.sha, signal),
+    [project.id, snapshot?.sha],
+  );
   const [busy, setBusy] = useState(false);
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const dialog = useDialog();
 
-  const load = useCallback(
-    (signal?: AbortSignal) => {
-      getProjectReview(project.id, snapshot?.sha, signal)
-        .then((d) => {
-          setData(d);
-          setError(null);
-        })
-        .catch((err) => {
-          if (!isAbortError(err)) setError(errorMessage(err));
-        });
-    },
-    [project.id, snapshot?.sha],
-  );
-
   useEffect(() => {
-    const ctrl = new AbortController();
-    setData(null);
     setSelected(new Set());
-    load(ctrl.signal);
-    return () => ctrl.abort();
-  }, [load]);
+  }, [project.id, snapshot?.sha]);
 
   if (error) return <ErrorBanner message={error} />;
   if (!data) return <Spinner label="Loading design review" />;

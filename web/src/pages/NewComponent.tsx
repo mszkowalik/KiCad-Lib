@@ -15,6 +15,7 @@ import {
 } from "../components/editing";
 import Field, { FieldGrid } from "../components/Field";
 import { BackLink, ErrorBanner } from "../components/Ui";
+import PageShell from "../components/PageShell";
 
 const FP_DATALIST_ID = "fp-options-new";
 
@@ -73,86 +74,84 @@ export default function NewComponent() {
   };
 
   return (
-    <div className="main-solo">
-      <div className="page">
-        <BackLink to="/library/components">&larr; Components</BackLink>
-        <h1>New component</h1>
-        <p className="muted">
-          Creates a published v1 directly — you are the approval. Names are globally unique.
-        </p>
+    <PageShell>
+      <BackLink to="/library/components">&larr; Components</BackLink>
+      <h1>New component</h1>
+      <p className="muted">
+        Creates a published v1 directly — you are the approval. Names are globally unique.
+      </p>
 
-        {pickerError ? <ErrorBanner message={`Pickers failed to load: ${pickerError}`} /> : null}
-        {error ? <ErrorBanner message={error} /> : null}
+      {pickerError ? <ErrorBanner message={`Pickers failed to load: ${pickerError}`} /> : null}
+      {error ? <ErrorBanner message={error} /> : null}
 
-        <section className="card pad edit-card">
-          <FieldGrid>
-            <Field label="Name">
-              <input
-                type="text"
-                className="text mono new-name"
-                value={name}
-                placeholder="e.g. RC0402FR-071KL"
-                onChange={(e) => setName(e.target.value)}
-                autoFocus
-              />
-            </Field>
-            <span />
-            <Field label="Base symbol">
-              <BaseSymbolSelect value={base} pickers={pickers} onChange={setBase} />
-            </Field>
-            <Field label="Category">
-              <CategorySelect value={catId} pickers={pickers} fallbackLabel="" onChange={setCatId} />
-            </Field>
-          </FieldGrid>
-          <p className="muted edit-hint">
-            The <span className="mono">Footprint</span> property drives the pinned footprint —
-            its value field suggests <span className="mono">7Sigma:</span> footprints.
-          </p>
-          <FootprintDatalist id={FP_DATALIST_ID} pickers={pickers} />
-        </section>
-
-        <section className="card">
-          <h3 className="card-title pad-title">Properties</h3>
-          <PropertiesEditor
-            rows={rows}
-            newKey={newKey}
-            newValue={newValue}
-            fpDatalistId={FP_DATALIST_ID}
-            onRows={setRows}
-            onNew={(p) => {
-              if (p.newKey !== undefined) setNewKey(p.newKey);
-              if (p.newValue !== undefined) setNewValue(p.newValue);
-            }}
-            onError={setError}
-          />
-        </section>
-
-        <section className="card">
-          <h3 className="card-title pad-title">Datasheets</h3>
-          <DatasheetsEditor rows={datasheets} onRows={setDatasheets} />
-        </section>
-
-        <section className="card pad">
-          <div className="edit-actions">
+      <section className="card pad edit-card">
+        <FieldGrid>
+          <Field label="Name">
             <input
               type="text"
-              className="text comment"
-              placeholder="comment (optional)"
-              value={comment}
-              maxLength={600}
-              onChange={(e) => setComment(e.target.value)}
+              className="text mono new-name"
+              value={name}
+              placeholder="e.g. RC0402FR-071KL"
+              onChange={(e) => setName(e.target.value)}
+              autoFocus
             />
-            <button
-              type="button"
-              className="btn btn-primary"
-              disabled={!canSubmit}
-              onClick={() => void submit()}
-            >
-              {submitting ? "Creating…" : "Create component"}
-            </button>
-          </div>
-        </section>
-      </div>
-    </div>
+          </Field>
+          <span />
+          <Field label="Base symbol">
+            <BaseSymbolSelect value={base} pickers={pickers} onChange={setBase} />
+          </Field>
+          <Field label="Category">
+            <CategorySelect value={catId} pickers={pickers} fallbackLabel="" onChange={setCatId} />
+          </Field>
+        </FieldGrid>
+        <p className="muted edit-hint">
+          The <span className="mono">Footprint</span> property drives the pinned footprint —
+          its value field suggests <span className="mono">7Sigma:</span> footprints.
+        </p>
+        <FootprintDatalist id={FP_DATALIST_ID} pickers={pickers} />
+      </section>
+
+      <section className="card">
+        <h3 className="card-title pad-title">Properties</h3>
+        <PropertiesEditor
+          rows={rows}
+          newKey={newKey}
+          newValue={newValue}
+          fpDatalistId={FP_DATALIST_ID}
+          onRows={setRows}
+          onNew={(p) => {
+            if (p.newKey !== undefined) setNewKey(p.newKey);
+            if (p.newValue !== undefined) setNewValue(p.newValue);
+          }}
+          onError={setError}
+        />
+      </section>
+
+      <section className="card">
+        <h3 className="card-title pad-title">Datasheets</h3>
+        <DatasheetsEditor rows={datasheets} onRows={setDatasheets} />
+      </section>
+
+      <section className="card pad">
+        <div className="edit-actions">
+          <input
+            type="text"
+            className="text comment"
+            placeholder="comment (optional)"
+            value={comment}
+            maxLength={600}
+            onChange={(e) => setComment(e.target.value)}
+          />
+          <button
+            type="button"
+            className="btn btn-primary"
+            disabled={!canSubmit}
+            onClick={() => void submit()}
+          >
+            {submitting ? "Creating…" : "Create component"}
+          </button>
+        </div>
+      </section>
+    </PageShell>
   );
 }

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useState } from "react";
 import {
   applyJlcDecision,
   clearJlcDecision,
@@ -6,12 +6,10 @@ import {
   fetchJlcOrderBom,
   getAllRuns,
   getJlcQueue,
-  isAbortError,
   setJlcDecision,
   syncJlcImport,
   voidJlcShopDraws,
   type JlcDecisionApplyResult,
-  type JlcQueue,
   type JlcQueueOrder,
   type RunInfo,
 } from "../../api";
@@ -20,6 +18,7 @@ import DataTable from "../DataTable";
 import { useDialog } from "../Dialog";
 import { CheckField } from "../Field";
 import { ErrorBanner, Spinner } from "../Ui";
+import { useLoad } from "../useLoad";
 
 /**
  * Decide what each JLC ASSEMBLY ORDER means. One row per order, never per
@@ -38,11 +37,9 @@ import { ErrorBanner, Spinner } from "../Ui";
  */
 export default function JlcImportPanel({ onApplied }: { onApplied?: () => void } = {}) {
   const dialog = useDialog();
-  const [queue, setQueue] = useState<JlcQueue | null>(null);
+  const { data: queue, loading, error, setError, reload: load } = useLoad(getJlcQueue, []);
   // Per-order dry-run result: what applying WOULD do, from the real write path.
   const [plan, setPlan] = useState<Record<string, JlcDecisionApplyResult | string>>({});
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
   const [syncing, setSyncing] = useState(false);
   const [syncMsg, setSyncMsg] = useState("");
   const [open, setOpen] = useState<string | null>(null);
@@ -54,29 +51,7 @@ export default function JlcImportPanel({ onApplied }: { onApplied?: () => void }
   // and must be able to say so. Without this, a real order was linkable only to
   // "External project", which removes its stock value from batch costing
   // (reported 2026-09-22, order SMT026092263197 against batch 2164).
-  const [runs, setRuns] = useState<RunInfo[]>([]);
-
-  const load = useCallback((signal?: AbortSignal) => {
-    setLoading(true);
-    getJlcQueue(signal)
-      .then((q) => {
-        setQueue(q);
-        setError("");
-      })
-      .catch((err) => {
-        if (!isAbortError(err)) setError(errorMessage(err));
-      })
-      .finally(() => setLoading(false));
-  }, []);
-
-  useEffect(() => {
-    const ac = new AbortController();
-    load(ac.signal);
-    getAllRuns(ac.signal)
-      .then(setRuns)
-      .catch(() => {});
-    return () => ac.abort();
-  }, [load]);
+  const runs = useLoad(getAllRuns, []).data ?? [];
 
   async function runSync() {
     setSyncing(true);

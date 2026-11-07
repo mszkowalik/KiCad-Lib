@@ -5,7 +5,7 @@
  *  it. Changing the stackup keeps every profile and its numbers — results computed
  *  against the previous stackup are marked outdated rather than thrown away.
  */
-import { useCallback, useEffect, useState } from "react";
+import { useState } from "react";
 import { Link } from "react-router-dom";
 import {
   errorMessage,
@@ -15,17 +15,16 @@ import {
   fsColors,
   fsSetAppearance,
   fsStackups,
-  isAbortError,
   type FsBoardState,
   type FsColors,
   type FsComparison,
-  type FsStackup,
 } from "../../api";
 import { useAuth } from "../../auth";
 import StackupTable, { StackupLegend } from "../StackupTable";
 import { useDialog } from "../Dialog";
 import { ErrorBanner, Spinner } from "../Ui";
 import { localDate } from "../../format";
+import { useLoad } from "../useLoad";
 
 export interface SnapshotInfo {
   id: number;
@@ -45,35 +44,23 @@ export default function StackupTab({
   const { isAdmin } = useAuth();
   const dialog = useDialog();
   const [state, setState] = useState<FsBoardState | null>(null);
-  const [stackups, setStackups] = useState<FsStackup[]>([]);
-  const [palette, setPalette] = useState<FsColors | null>(null);
-  const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
-  const load = useCallback(
-    (signal?: AbortSignal) => {
+  const { data: lists, error, setError } = useLoad(
+    (signal) =>
       Promise.all([
         fsBoardState(projectId, board, snapshot?.id ?? null, signal),
         fsStackups(signal),
         fsColors(signal),
-      ])
-        .then(([s, list, cols]) => {
-          setState(s);
-          setStackups(list);
-          setPalette(cols);
-        })
-        .catch((e) => {
-          if (!isAbortError(e)) setError(errorMessage(e));
-        });
-    },
+      ]).then(([s, list, cols]) => {
+        setState(s);
+        return { list, cols };
+      }),
     [projectId, board, snapshot?.id],
+    { keep: true },
   );
-
-  useEffect(() => {
-    const ac = new AbortController();
-    load(ac.signal);
-    return () => ac.abort();
-  }, [load]);
+  const stackups = lists?.list ?? [];
+  const palette = lists?.cols ?? null;
 
   const assign = async (key: string) => {
     setBusy(true);

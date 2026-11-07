@@ -24,7 +24,6 @@ import {
   getDocument,
   getDocumentAttachments,
   getInvoiceRegister,
-  isAbortError,
   resolveDocumentParts,
   uploadCustomsDocument,
   uploadDocumentAttachment,
@@ -33,7 +32,6 @@ import {
   type RunCostDocumentRow,
   type RunCostLineRow,
   listTransformations,
-  type TransformationOption,
 } from "../api";
 import { CheckField } from "../components/Field";
 import FilePick from "../components/FilePick";
@@ -61,6 +59,8 @@ import { useTodayRate } from "../useTodayRate";
 import {
   type RunOption,
 } from "../components/costs";
+import { useLoad } from "../components/useLoad";
+import { PageLoading } from "../components/PageShell";
 
 /** The document's header fields as the shared form holds them. */
 function headerOf(d: RunCostDocumentRow): InvoiceHeader {
@@ -139,8 +139,7 @@ export default function Invoices() {
   const rate = useTodayRate();
   const dialog = useDialog();
   const { companyName } = useAuth();
-  const [reg, setReg] = useState<InvoiceRegister | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const { data: reg, error, reload: load } = useLoad(getInvoiceRegister, []);
   const [busy, setBusy] = useState(false);
   const [expanded, setExpanded] = useStickyState<number | null>("invoices:expanded", null);
   // `?doc=<id>` opens that document: the KSeF inbox links here after an import.
@@ -150,8 +149,11 @@ export default function Invoices() {
     if (d) setExpanded(d);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-  const [doc, setDoc] = useState<RunCostDocumentRow | null>(null);
-  const [docError, setDocError] = useState<string | null>(null);
+  const { data: doc, setData: setDoc, error: docError, reload: loadDoc } = useLoad(
+    (signal) => getDocument(expanded as number, signal),
+    [expanded],
+    { enabled: expanded != null, keep: true },
+  );
   const [splitting, setSplitting] = useState<RunCostLineRow | null>(null);
   // The open document's lines as editable drafts. Rebuilt whenever the document
   // is (re)loaded; the table stages edits on this copy and writes them as one
@@ -172,51 +174,8 @@ export default function Invoices() {
   const [onlyProblems, setOnlyProblems] = useStickyState("invoices:problems", false);
   /** a state chip above the list, the same word as the State column */
   const [narrow, setNarrow] = useState("");
-  const [stepCatalog, setStepCatalog] = useState<CostStepCatalog | null>(null);
-  useEffect(() => {
-    const ac = new AbortController();
-    getCostSteps(ac.signal).then(setStepCatalog).catch(() => setStepCatalog(null));
-    return () => ac.abort();
-  }, []);
+  const { data: stepCatalog } = useLoad(getCostSteps, []);
 
-
-  const load = useCallback((signal?: AbortSignal) => {
-    getInvoiceRegister(signal)
-      .then((r) => {
-        setReg(r);
-        setError(null);
-      })
-      .catch((err) => {
-        if (!isAbortError(err)) setError(errorMessage(err));
-      });
-  }, []);
-
-  useEffect(() => {
-    const ac = new AbortController();
-    load(ac.signal);
-    return () => ac.abort();
-  }, [load]);
-
-  const loadDoc = useCallback((id: number, signal?: AbortSignal) => {
-    getDocument(id, signal)
-      .then((d) => {
-        setDoc(d);
-        setDocError(null);
-      })
-      .catch((err) => {
-        if (!isAbortError(err)) setDocError(errorMessage(err));
-      });
-  }, []);
-
-  useEffect(() => {
-    if (expanded == null) {
-      setDoc(null);
-      return;
-    }
-    const ac = new AbortController();
-    loadDoc(expanded, ac.signal);
-    return () => ac.abort();
-  }, [expanded, loadDoc]);
 
   const runOptions: RunOption[] = useMemo(() => {
     if (!reg) return [];
@@ -232,12 +191,7 @@ export default function Invoices() {
 
   // Live transformations, for a conversion cost (decision 0058 §4). Not
   // critical: without them a position simply cannot be aimed at one.
-  const [transformOpts, setTransformOpts] = useState<TransformationOption[]>([]);
-  useEffect(() => {
-    const ac = new AbortController();
-    listTransformations(ac.signal).then(setTransformOpts).catch(() => undefined);
-    return () => ac.abort();
-  }, []);
+  const transformOpts = useLoad(listTransformations, []).data ?? [];
 
   const projectOptions = useMemo(
     () =>
@@ -251,7 +205,7 @@ export default function Invoices() {
 
   const refreshAll = () => {
     load();
-    if (expanded != null) loadDoc(expanded);
+    loadDoc();
   };
 
 
@@ -315,24 +269,7 @@ export default function Invoices() {
     setSaveError(null);
   }, [rowsKey]);
 
-  if (error) {
-    return (
-      <div className="main-solo">
-        <div className="page">
-          <ErrorBanner message={error} />
-        </div>
-      </div>
-    );
-  }
-  if (!reg) {
-    return (
-      <div className="main-solo">
-        <div className="page">
-          <Spinner label="Loading the invoice register…" />
-        </div>
-      </div>
-    );
-  }
+  if (error || !reg) return <PageLoading error={error} label="Loading the invoice register…" />;
 
   const s = reg.summary;
   const problem = (d: RunCostDocumentRow) =>
@@ -611,7 +548,7 @@ export default function Invoices() {
                 <CorrectionLinks doc={doc} onOpen={setExpanded} />
                 <div className="btn-row">
                   <AccountantMark companyId={doc.company_id} kind="document" id={d.id} state={doc.accountant}
-                                  onChange={() => { load(); loadDoc(d.id); }} />
+                                  onChange={() => { load(); loadDoc(); }} />
                 </div>
                 <div className="btn-row">
                   <Originals docId={d.id} onChange={load} />

@@ -2,14 +2,11 @@
  *  Batches tab. Read-only: an order is created and shipped on Sales → Orders
  *  (/sales/orders), this tab only shows which orders want this project's
  *  devices and whether the shelf plus the planned batches cover them. */
-import { useEffect, useMemo, useState } from "react";
+import { useMemo } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import {
-  errorMessage,
   getDemand,
-  isAbortError,
   listOrders,
-  type DemandRow,
   type OrderLineRow,
   type OrderRow,
   type ProjectInfo,
@@ -18,6 +15,7 @@ import DataTable, { type Column } from "../DataTable";
 import { ErrorBanner, Spinner, StatusPill } from "../Ui";
 import { amount } from "../../format";
 import DemandCard from "../DemandCard";
+import { useLoad } from "../useLoad";
 
 interface Props {
   project: ProjectInfo;
@@ -30,28 +28,18 @@ interface LineRow {
 }
 
 export default function OrdersTab({ project }: Props) {
-  const [orders, setOrders] = useState<OrderRow[] | null>(null);
-  const [demand, setDemand] = useState<DemandRow[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const { data: orders, error: ordersError } = useLoad(
+    (signal) => listOrders(signal, project.id),
+    [project.id],
+    { keep: true },
+  );
+  const { data: demand, error: demandError } = useLoad(
+    (signal) => getDemand(project.id, signal),
+    [project.id],
+    { keep: true },
+  );
+  const error = ordersError ?? demandError;
   const navigate = useNavigate();
-
-  useEffect(() => {
-    const ac = new AbortController();
-    listOrders(ac.signal, project.id)
-      .then((rows) => {
-        setOrders(rows);
-        setError(null);
-      })
-      .catch((err) => {
-        if (!isAbortError(err)) setError(errorMessage(err));
-      });
-    getDemand(project.id, ac.signal)
-      .then(setDemand)
-      .catch((err) => {
-        if (!isAbortError(err)) setError(errorMessage(err));
-      });
-    return () => ac.abort();
-  }, [project.id]);
 
   const rows = useMemo<LineRow[]>(
     () =>

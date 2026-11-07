@@ -1,16 +1,15 @@
 /** Free-form project notes — same pattern as component comments. */
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import {
   addProjectNote,
   deleteProjectNote,
   errorMessage,
   getProjectNotes,
-  isAbortError,
-  type ProjectNoteRow,
 } from "../../api";
 import { ErrorBanner, Spinner } from "../Ui";
 import { useDialog } from "../Dialog";
 import { localWhen } from "../../format";
+import { useLoad } from "../useLoad";
 
 interface Props {
   projectId: number;
@@ -21,28 +20,13 @@ interface Props {
 
 export default function NotesTab({ projectId, snapshotId }: Props) {
   const dialog = useDialog();
-  const [notes, setNotes] = useState<ProjectNoteRow[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const { data: notes, error, setError, reload: load } = useLoad(
+    (signal) => getProjectNotes(projectId, signal),
+    [projectId],
+    { keep: true },
+  );
   const [draft, setDraft] = useState("");
   const [saving, setSaving] = useState(false);
-
-  const load = (signal?: AbortSignal) => {
-    getProjectNotes(projectId, signal)
-      .then((rows) => {
-        setNotes(rows);
-        setError(null);
-      })
-      .catch((err) => {
-        if (!isAbortError(err)) setError(errorMessage(err));
-      });
-  };
-
-  useEffect(() => {
-    const ctrl = new AbortController();
-    load(ctrl.signal);
-    return () => ctrl.abort();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [projectId]);
 
   const submit = () => {
     if (!draft.trim()) return;

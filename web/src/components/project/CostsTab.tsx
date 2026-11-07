@@ -28,7 +28,6 @@ import {
   type ProcessMaterial,
   type SnapshotInfo,
   getCostSteps,
-  type CostStepCatalog,
 } from "../../api";
 import { usd } from "../../format";
 import DataTable from "../DataTable";
@@ -38,6 +37,7 @@ import NumberInput from "../NumberInput";
 import { useDialog } from "../Dialog";
 import { ErrorBanner, Spinner } from "../Ui";
 import { StepSelect } from "../costs";
+import { useLoad } from "../useLoad";
 
 const EMPTY_COST: CostItemIn = {
   label: "", basis: "per_device", price: 0, steps: [], currency: "PLN", step_key: "",
@@ -79,12 +79,7 @@ export default function CostsTab({
   const dialog = useDialog();
   const [costs, setCosts] = useState<CostItem[] | null>(null);
 
-  const [stepCatalog, setStepCatalog] = useState<CostStepCatalog | null>(null);
-  useEffect(() => {
-    const ac = new AbortController();
-    getCostSteps(ac.signal).then(setStepCatalog).catch(() => setStepCatalog(null));
-    return () => ac.abort();
-  }, []);
+  const { data: stepCatalog } = useLoad(getCostSteps, []);
   const stepLabel = (key: string) =>
     stepCatalog?.steps.find((st) => st.key === key)?.label ?? key;
   const [extras, setExtras] = useState<ExtraItem[] | null>(null);

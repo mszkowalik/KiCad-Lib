@@ -9,19 +9,16 @@
  *  A check that passes draws nothing, so this has no spinner and no empty state. A
  *  fetch that fails draws a banner: the check could not run.
  */
-import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import {
-  errorMessage,
   getBatchProgramming,
-  isAbortError,
-  type BatchProgramming,
   type ProgrammingRunSummary,
 } from "../../api";
 import DataTable, { type Column } from "../DataTable";
 import { localWhen } from "../../format";
 import FoldSection, { StatChip } from "../FoldSection";
 import { ErrorBanner, StatusPill } from "../Ui";
+import { useLoad } from "../useLoad";
 
 const COLUMNS: Column<ProgrammingRunSummary>[] = [
   { key: "id", label: "Run", width: 8, className: "mono", get: (r) => r.id,
@@ -36,18 +33,7 @@ const COLUMNS: Column<ProgrammingRunSummary>[] = [
 ];
 
 export default function ProgrammingCoverage({ runId }: { runId: number }) {
-  const [data, setData] = useState<BatchProgramming | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    const ac = new AbortController();
-    setData(null);
-    setError(null);
-    getBatchProgramming(runId, ac.signal)
-      .then(setData)
-      .catch((err) => { if (!isAbortError(err)) setError(errorMessage(err)); });
-    return () => ac.abort();
-  }, [runId]);
+  const { data, error } = useLoad((signal) => getBatchProgramming(runId, signal), [runId]);
 
   if (error) return <ErrorBanner message={`Programming coverage could not be read: ${error}`} />;
   if (!data) return null;

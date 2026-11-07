@@ -15,7 +15,7 @@
  *  refused while any deployment version pins the set; the "Used by" column
  *  prints the same join before the click.
  */
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import {
   deleteFileSet,
@@ -25,7 +25,6 @@ import {
   getFileSet,
   getFileSetEntry,
   importFileSet,
-  isAbortError,
   listFileSets,
   patchFileSet,
   type FileSetRow,
@@ -39,6 +38,7 @@ import { ErrorBanner, Spinner } from "../Ui";
 import { useModal } from "../modal";
 import { fmtBytes, lbrnThumbnail, shortSha } from "./common";
 import { localWhen, plural } from "../../format";
+import { useLoad } from "../useLoad";
 
 const KIND_TITLE: Record<string, string> = { berryware: "release", artwork: "drawing" };
 
@@ -69,8 +69,7 @@ export default function FileSetsPanel({
   openId?: number | null;
 }) {
   const dialog = useDialog();
-  const [sets, setSets] = useState<FileSetRow[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const { data: sets, error, setError, reload } = useLoad((signal) => listFileSets(kind, signal), [kind]);
   const [note, setNote] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [open, setOpen] = useState<number | null>(openId ?? null);
@@ -80,21 +79,9 @@ export default function FileSetsPanel({
   const [deriving, setDeriving] = useState<FileSetRow | null>(null);
   const noun = KIND_TITLE[kind];
 
-  const reload = useCallback(() => {
-    const ac = new AbortController();
-    listFileSets(kind, ac.signal)
-      .then(setSets)
-      .catch((err) => {
-        if (!isAbortError(err)) setError(errorMessage(err));
-      });
-    return () => ac.abort();
-  }, [kind]);
-
   useEffect(() => {
-    setSets(null);
     setNote(null);
-    return reload();
-  }, [reload]);
+  }, [kind]);
 
   useEffect(() => {
     if (openId) setOpen(openId);
@@ -350,18 +337,7 @@ function SetDetail({
   setId: number;
   onPreview: (set: FileSetRow, file: VersionFileRow) => void;
 }) {
-  const [set, setSet] = useState<FileSetRow | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  useEffect(() => {
-    const ac = new AbortController();
-    setSet(null);
-    getFileSet(setId, ac.signal)
-      .then(setSet)
-      .catch((err) => {
-        if (!isAbortError(err)) setError(errorMessage(err));
-      });
-    return () => ac.abort();
-  }, [setId]);
+  const { data: set, error } = useLoad((signal) => getFileSet(setId, signal), [setId]);
   if (error) return <ErrorBanner message={error} />;
   if (!set) return <Spinner label="Loading the files…" />;
   const users = set.users ?? [];
@@ -438,20 +414,10 @@ function FilePreview({
   onClose: () => void;
 }) {
   const modal = useModal(onClose, { active: true });
-  const [content, setContent] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    const ac = new AbortController();
-    setContent(null);
-    setError(null);
-    getFileSetEntry(set.id, file.filename, ac.signal)
-      .then((e) => setContent(e.content))
-      .catch((err) => {
-        if (!isAbortError(err)) setError(errorMessage(err));
-      });
-    return () => ac.abort();
-  }, [set.id, file.filename]);
+  const { data: content, error } = useLoad(
+    (signal) => getFileSetEntry(set.id, file.filename, signal).then((e) => e.content),
+    [set.id, file.filename],
+  );
 
   const thumb = content ? lbrnThumbnail(content) : null;
   return (
@@ -504,37 +470,23 @@ function DeriveDialog({
   onMade: (made: FileSetRow, created: boolean) => void;
 }) {
   const modal = useModal(onClose, { active: true });
-  const [rows, setRows] = useState<Planned[] | null>(null);
   const [label, setLabel] = useState("");
   const [comment, setComment] = useState("");
-  const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [borrowFrom, setBorrowFrom] = useState<FileSetRow | null>(null);
-  const [borrowFiles, setBorrowFiles] = useState<VersionFileRow[] | null>(null);
-
-  useEffect(() => {
-    const ac = new AbortController();
-    getFileSet(base.id, ac.signal)
-      .then((s) => setRows((s.files ?? []).map((f) => ({
+  const { data: rows, setData: setRows, error, setError } = useLoad<Planned[]>(
+    (signal) =>
+      getFileSet(base.id, signal).then((s) => (s.files ?? []).map((f) => ({
         filename: f.filename, state: "kept", size_bytes: f.size_bytes,
-      }))))
-      .catch((err) => {
-        if (!isAbortError(err)) setError(errorMessage(err));
-      });
-    return () => ac.abort();
-  }, [base.id]);
-
-  useEffect(() => {
-    if (!borrowFrom) { setBorrowFiles(null); return; }
-    const ac = new AbortController();
-    setBorrowFiles(null);
-    getFileSet(borrowFrom.id, ac.signal)
-      .then((s) => setBorrowFiles(s.files ?? []))
-      .catch((err) => {
-        if (!isAbortError(err)) setError(errorMessage(err));
-      });
-    return () => ac.abort();
-  }, [borrowFrom]);
+      }))),
+    [base.id],
+    { keep: true },
+  );
+  const { data: borrowFiles, error: borrowError } = useLoad(
+    (signal) => getFileSet((borrowFrom as FileSetRow).id, signal).then((s) => s.files ?? []),
+    [borrowFrom],
+    { enabled: !!borrowFrom },
+  );
 
   const put = (next: Planned) =>
     setRows((xs) => {
@@ -599,7 +551,7 @@ function DeriveDialog({
           <span className="muted">{base.label} itself is not changed</span>
           <button type="button" className="btn btn-sm" onClick={onClose}>Cancel</button>
         </div>
-        {error ? <ErrorBanner message={error} /> : null}
+        <ErrorBanner message={error ?? borrowError} />
         <FieldGrid>
           <Field label="Name of the new release">
             <input

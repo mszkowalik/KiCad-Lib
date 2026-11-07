@@ -5,12 +5,10 @@
  *  other, and the difference is load-bearing: a device that names no batch is
  *  invisible to every per-batch figure, and both cards say so in a banner.
  */
-import { useEffect, useMemo, useState } from "react";
+import { useMemo } from "react";
 import { Link } from "react-router-dom";
 import {
-  errorMessage,
   getFinishedStock,
-  isAbortError,
   type FinishedStock,
   type FinishedStockRow,
 } from "../api";
@@ -19,6 +17,8 @@ import FinishedProductsCard from "../components/FinishedProductsCard";
 import FoldSection, { StatChip } from "../components/FoldSection";
 import { ErrorBanner, Spinner } from "../components/Ui";
 import { plnAmount } from "../format";
+import { useLoad } from "../components/useLoad";
+import PageShell from "../components/PageShell";
 
 /** More devices passed programming than the batch is recorded to hold. The one
  *  arithmetic in the card that is impossible rather than merely unlucky: the run
@@ -178,26 +178,16 @@ function ShelfByBatchCard({ stock }: { stock: FinishedStock | null }) {
 }
 
 export default function FinishedDevices() {
-  const [stock, setStock] = useState<FinishedStock | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  useEffect(() => {
-    const ac = new AbortController();
-    getFinishedStock(undefined, ac.signal)
-      .then(setStock)
-      .catch((err) => { if (!isAbortError(err)) setError(errorMessage(err)); });
-    return () => ac.abort();
-  }, []);
+  const { data: stock, error } = useLoad((signal) => getFinishedStock(undefined, signal), []);
   return (
-    <div className="main-solo">
-      <div className="page">
-        <div className="toolbar">
-          <h1>Finished devices</h1>
-          <span className="toolbar-total">What we hold, per product and per batch.</span>
-        </div>
-        {error ? <ErrorBanner message={error} /> : null}
-        <FinishedProductsCard />
-        <ShelfByBatchCard stock={stock} />
+    <PageShell>
+      <div className="toolbar">
+        <h1>Finished devices</h1>
+        <span className="toolbar-total">What we hold, per product and per batch.</span>
       </div>
-    </div>
+      {error ? <ErrorBanner message={error} /> : null}
+      <FinishedProductsCard />
+      <ShelfByBatchCard stock={stock} />
+    </PageShell>
   );
 }

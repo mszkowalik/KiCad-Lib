@@ -6,7 +6,7 @@
  *  it has been solved) is saved exactly as the project's own Stackup tab would save
  *  it. Assignments are commit-versioned: they apply from the chosen commit forward.
  */
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   errorMessage,
   fsAssignStackup,
@@ -17,12 +17,12 @@ import {
   isAbortError,
   type FsBoardProfile,
   type FsBoardState,
-  type ProjectInfo,
   type SnapshotInfo,
 } from "../../api";
 import { zKey, type Profile } from "./model";
 import { fmtHz } from "./model";
 import { localDate, plural } from "../../format";
+import { useLoad } from "../../components/useLoad";
 
 export interface ProjectPanelProps {
   /** The stackup the page is working on, for the "assign it" action and the gate. */
@@ -63,18 +63,19 @@ const zOf = (p: Profile): number | null => {
 };
 
 export default function ProjectPanel({ stackupKey, profiles, liveResult, initial, onLoadProfile }: ProjectPanelProps) {
-  const [projects, setProjects] = useState<ProjectInfo[]>([]);
+  // The panel's other reads and writes report through this error too.
+  const { data: projectRows, error, setError } = useLoad(getProjects, []);
+  const projects = projectRows ?? [];
   const [snapshots, setSnapshots] = useState<SnapshotInfo[]>([]);
   const [projectId, setProjectId] = useState<number | null>(initial?.projectId ?? null);
   const [snapshotId, setSnapshotId] = useState<number | null>(initial?.snapshotId ?? null);
   const [board, setBoard] = useState(initial?.board ?? "");
-  const [state, setState] = useState<FsBoardState | null>(null);
-  const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState("");
   // Which profiles to keep. Solved ones are ticked by default: an unsolved profile is
   // a target with no answer, and saving one writes a row with nothing in it.
   const [picked, setPicked] = useState<Record<number, boolean>>({});
+  const [state, setState] = useState<FsBoardState | null>(null);
 
   useEffect(() => {
     setPicked((old) => {
@@ -84,16 +85,8 @@ export default function ProjectPanel({ stackupKey, profiles, liveResult, initial
     });
   }, [profiles]);
 
-  useEffect(() => {
-    const ac = new AbortController();
-    getProjects(ac.signal)
-      .then(setProjects)
-      .catch((e) => {
-        if (!isAbortError(e)) setError(errorMessage(e));
-      });
-    return () => ac.abort();
-  }, []);
-
+  // These two keep the old lists when the project goes back to "none", so they
+  // keep their own effects: `useLoad` clears the data when it is disabled.
   useEffect(() => {
     if (projectId == null) return;
     const ac = new AbortController();
@@ -111,25 +104,20 @@ export default function ProjectPanel({ stackupKey, profiles, liveResult, initial
         if (!isAbortError(e)) setError(errorMessage(e));
       });
     return () => ac.abort();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId]);
 
-  const reload = useCallback(
-    (signal?: AbortSignal) => {
-      if (projectId == null) return;
-      fsBoardState(projectId, board, snapshotId, signal)
-        .then(setState)
-        .catch((e) => {
-          if (!isAbortError(e)) setError(errorMessage(e));
-        });
-    },
-    [projectId, board, snapshotId],
-  );
-
   useEffect(() => {
+    if (projectId == null) return;
     const ac = new AbortController();
-    reload(ac.signal);
+    fsBoardState(projectId, board, snapshotId, ac.signal)
+      .then(setState)
+      .catch((e) => {
+        if (!isAbortError(e)) setError(errorMessage(e));
+      });
     return () => ac.abort();
-  }, [reload]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectId, board, snapshotId]);
 
   const act = async (fn: () => Promise<FsBoardState>) => {
     setBusy(true);

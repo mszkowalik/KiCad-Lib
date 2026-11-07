@@ -12,16 +12,11 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import {
-  errorMessage,
   getBoardMap,
   getSimGeometry,
   getSimSheets,
   getSimTheme,
-  isAbortError,
-  type BoardMap,
   type MapSymbol,
-  type SimGeometry,
-  type SimSheet,
   type SimSourceRef,
   type SnapshotBoard,
   type SnapshotInfo,
@@ -30,6 +25,7 @@ import { ErrorBanner, Spinner } from "../Ui";
 import SchematicView from "../../sim/draw/SchematicView";
 import { FALLBACK_THEME, type SchTheme } from "../../sim/draw/types";
 import PartInfo from "./PartInfo";
+import { useLoad } from "../useLoad";
 
 interface Props {
   snapshot: SnapshotInfo;
@@ -51,59 +47,41 @@ export default function SchematicTab({ snapshot, board: design, variant }: Props
   useEffect(() => setPick(design.name), [design.name, snapshot.id]);
   const board: SnapshotBoard = harnesses.find((b) => b.name === pick) ?? design;
 
-  const [sheets, setSheets] = useState<SimSheet[] | null>(null);
   const [path, setPath] = useState<string>("");
-  const [geometry, setGeometry] = useState<SimGeometry | null>(null);
-  const [map, setMap] = useState<BoardMap | null>(null);
   const [selected, setSelected] = useState<MapSymbol | null>(null);
-  const [theme, setTheme] = useState<SchTheme>(FALLBACK_THEME);
-  const [error, setError] = useState<string | null>(null);
 
   const source: SimSourceRef = useMemo(
     () => ({ kind: "snapshot", snapshotId: snapshot.id, board: board.name }),
     [snapshot.id, board.name],
   );
 
-  useEffect(() => {
-    const ctrl = new AbortController();
-    getSimTheme(ctrl.signal)
-      .then((r) => setTheme({ ...FALLBACK_THEME, ...r.schematic }))
-      .catch(() => undefined);
-    return () => ctrl.abort();
-  }, []);
+  const theme = useLoad(
+    (signal): Promise<SchTheme> => getSimTheme(signal).then((r) => ({ ...FALLBACK_THEME, ...r.schematic })),
+    [],
+  ).data ?? FALLBACK_THEME;
 
-  useEffect(() => {
-    if (!board.sch) return;
-    const ctrl = new AbortController();
-    setSheets(null);
+  const { data: sheets, error: sheetsError } = useLoad((signal) => {
     setPath("");
-    setGeometry(null);
     setSelected(null);
-    setError(null);
-    getSimSheets(source, ctrl.signal)
-      .then((r) => {
-        setSheets(r.sheets);
-        setPath(r.sheets[0]?.path ?? "");
-      })
-      .catch((err) => {
-        if (!isAbortError(err)) setError(errorMessage(err));
-      });
-    // The BOM row and the library link behind a part. Hotspots come from the
-    // geometry, so a missing map costs the extra detail, never the drawing.
-    getBoardMap(snapshot.id, board.name, ctrl.signal).then(setMap).catch(() => setMap(null));
-    return () => ctrl.abort();
-  }, [source, snapshot.id, board.name, board.sch]);
+    return getSimSheets(source, signal).then((r) => {
+      setPath(r.sheets[0]?.path ?? "");
+      return r.sheets;
+    });
+  }, [source, snapshot.id, board.name, board.sch], { enabled: !!board.sch });
+  // The BOM row and the library link behind a part. Hotspots come from the
+  // geometry, so a missing map costs the extra detail, never the drawing.
+  const { data: map } = useLoad(
+    (signal) => getBoardMap(snapshot.id, board.name, signal).catch(() => null),
+    [source, snapshot.id, board.name, board.sch],
+    { enabled: !!board.sch, keep: true },
+  );
 
-  useEffect(() => {
-    if (!sheets) return;
-    const ctrl = new AbortController();
-    getSimGeometry(source, path, ctrl.signal)
-      .then(setGeometry)
-      .catch((err) => {
-        if (!isAbortError(err)) setError(errorMessage(err));
-      });
-    return () => ctrl.abort();
-  }, [source, path, sheets]);
+  const { data: geometry, error: geometryError } = useLoad(
+    (signal) => getSimGeometry(source, path, signal),
+    [source, path, sheets],
+    { enabled: !!sheets, keep: true },
+  );
+  const error = sheetsError ?? geometryError;
 
   /** Every part the click-map knows, by reference — the map is keyed by page,
    *  and a reference is unique across the board. */

@@ -1,11 +1,10 @@
-import { useCallback, useEffect, useState } from "react";
+import { useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import {
   errorMessage,
   getFootprints,
   getSimModels,
   getSymbols,
-  isAbortError,
   listModels3d,
   proposeNewSimModel,
   type FootprintListItem,
@@ -19,6 +18,8 @@ import Models3dPanel from "../components/Models3dPanel";
 import TabStrip from "../components/TabStrip";
 import TemplateThumb from "../components/TemplateThumb";
 import { ErrorBanner, Spinner } from "../components/Ui";
+import { useLoad } from "../components/useLoad";
+import PageShell from "../components/PageShell";
 
 type Tab = TemplateKind | "sim" | "models";
 
@@ -174,126 +175,100 @@ export default function Templates() {
     tabParam === "footprints" || tabParam === "sim" || tabParam === "models" ? tabParam : "symbols";
   const setTab = (t: Tab) =>
     setSearchParams(t === "symbols" ? {} : { tab: t }, { replace: true });
-  const [symbols, setSymbols] = useState<SymbolListItem[] | null>(null);
-  const [footprints, setFootprints] = useState<FootprintListItem[] | null>(null);
-  const [simModels, setSimModels] = useState<SimModelListItem[] | null>(null);
-  const [modelCount, setModelCount] = useState<number | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  const load = useCallback((signal?: AbortSignal) => {
-    setError(null);
-    return Promise.all([getSymbols(signal), getFootprints(signal), getSimModels(signal)])
-      .then(([s, f, m]) => {
-        setSymbols(s);
-        setFootprints(f);
-        setSimModels(m);
-      })
-      .catch((err) => {
-        if (!isAbortError(err)) setError(errorMessage(err));
-      });
-  }, []);
-
-  useEffect(() => {
-    const ctrl = new AbortController();
-    void load(ctrl.signal);
-    return () => ctrl.abort();
-  }, [load]);
+  const { data: lists, error, reload: load } = useLoad(
+    (signal) => Promise.all([getSymbols(signal), getFootprints(signal), getSimModels(signal)]),
+    [],
+  );
+  const symbols = lists?.[0] ?? null;
+  const footprints = lists?.[1] ?? null;
+  const simModels = lists?.[2] ?? null;
 
   // Only the count. The list is the tab's own, and a failure here must not take
   // the other three tabs down, so a missing count just prints no number.
-  const loadModelCount = useCallback((signal?: AbortSignal) => {
-    listModels3d("", 1, signal)
-      .then((r) => setModelCount(r.total_matching))
-      .catch(() => undefined);
-  }, []);
-
-  useEffect(() => {
-    const ctrl = new AbortController();
-    loadModelCount(ctrl.signal);
-    return () => ctrl.abort();
-  }, [loadModelCount]);
+  const { data: modelCount, reload: loadModelCount } = useLoad(
+    (signal) => listModels3d("", 1, signal).then((r) => r.total_matching),
+    [],
+  );
 
   const loading = symbols === null || footprints === null || simModels === null;
 
   return (
-    <div className="main-solo">
-      <div className="page">
-        <div className="toolbar">
-          <h1>Templates</h1>
-          <span className="toolbar-total">
-            {symbols && footprints && simModels
-              ? `${symbols.length} symbols · ${footprints.length} footprints · ${simModels.length} sim models` +
-                (modelCount !== null ? ` · ${modelCount} 3D models` : "")
-              : ""}
-          </span>
-        </div>
-        <p className="muted">
-          Base symbols, footprints and simulation models — the shared templates that
-          components are built from. Open one to see its preview or source and notes.
-          The 3D models tab holds the files that footprints name.
-        </p>
-
-        <TabStrip<Tab>
-          label="Template type"
-          value={tab}
-          onChange={setTab}
-          tabs={[
-            { id: "symbols", label: `Symbols${symbols ? ` (${symbols.length})` : ""}` },
-            { id: "footprints", label: `Footprints${footprints ? ` (${footprints.length})` : ""}` },
-            { id: "sim", label: `Sim models${simModels ? ` (${simModels.length})` : ""}` },
-            { id: "models", label: `3D models${modelCount !== null ? ` (${modelCount})` : ""}` },
-          ]}
-        />
-
-        {error && tab !== "models" ? <ErrorBanner message={error} /> : null}
-        {loading && !error && tab !== "models" ? <Spinner label="Loading templates" /> : null}
-        {tab === "models" ? <Models3dPanel onChanged={() => loadModelCount()} /> : null}
-
-        {!loading && tab === "symbols" ? (
-          <div className="card table-wrap">
-            <DataTable<SymbolListItem>
-              rows={symbols ?? []}
-              rowKey={(r) => r.id}
-              empty="No symbols."
-              columns={symbolColumns}
-            />
-          </div>
-        ) : null}
-        {!loading && tab === "footprints" ? (
-          <div className="card table-wrap">
-            <DataTable<FootprintListItem>
-              rows={footprints ?? []}
-              rowKey={(r) => r.id}
-              empty="No footprints."
-              columns={footprintColumns}
-            />
-          </div>
-        ) : null}
-        {!loading && tab === "sim" ? (
-          <div className="card table-wrap">
-            <DataTable<SimModelListItem>
-              rows={simModels ?? []}
-              rowKey={(r) => r.id}
-              empty="No sim models."
-              columns={simColumns}
-            />
-          </div>
-        ) : null}
-
-        {!loading && (tab === "symbols" || tab === "footprints") ? (
-          <details className="card pad" key={tab}>
-            <summary>New {tab === "symbols" ? "symbol" : "footprint"} from the clipboard</summary>
-            {/* A paste publishes at once, so the list is stale the moment it succeeds. */}
-            <GeometryPaste kind={tab} onFiled={() => void load()} />
-          </details>
-        ) : null}
-        {!loading && tab === "sim" ? (
-          <details className="card pad" key="sim-new">
-            <summary>New sim model from the clipboard</summary>
-            <SimModelPaste onFiled={() => void load()} />
-          </details>
-        ) : null}
+    <PageShell>
+      <div className="toolbar">
+        <h1>Templates</h1>
+        <span className="toolbar-total">
+          {symbols && footprints && simModels
+            ? `${symbols.length} symbols · ${footprints.length} footprints · ${simModels.length} sim models` +
+              (modelCount !== null ? ` · ${modelCount} 3D models` : "")
+            : ""}
+        </span>
       </div>
-    </div>
+      <p className="muted">
+        Base symbols, footprints and simulation models — the shared templates that
+        components are built from. Open one to see its preview or source and notes.
+        The 3D models tab holds the files that footprints name.
+      </p>
+
+      <TabStrip<Tab>
+        label="Template type"
+        value={tab}
+        onChange={setTab}
+        tabs={[
+          { id: "symbols", label: `Symbols${symbols ? ` (${symbols.length})` : ""}` },
+          { id: "footprints", label: `Footprints${footprints ? ` (${footprints.length})` : ""}` },
+          { id: "sim", label: `Sim models${simModels ? ` (${simModels.length})` : ""}` },
+          { id: "models", label: `3D models${modelCount !== null ? ` (${modelCount})` : ""}` },
+        ]}
+      />
+
+      {error && tab !== "models" ? <ErrorBanner message={error} /> : null}
+      {loading && !error && tab !== "models" ? <Spinner label="Loading templates" /> : null}
+      {tab === "models" ? <Models3dPanel onChanged={() => loadModelCount()} /> : null}
+
+      {!loading && tab === "symbols" ? (
+        <div className="card table-wrap">
+          <DataTable<SymbolListItem>
+            rows={symbols ?? []}
+            rowKey={(r) => r.id}
+            empty="No symbols."
+            columns={symbolColumns}
+          />
+        </div>
+      ) : null}
+      {!loading && tab === "footprints" ? (
+        <div className="card table-wrap">
+          <DataTable<FootprintListItem>
+            rows={footprints ?? []}
+            rowKey={(r) => r.id}
+            empty="No footprints."
+            columns={footprintColumns}
+          />
+        </div>
+      ) : null}
+      {!loading && tab === "sim" ? (
+        <div className="card table-wrap">
+          <DataTable<SimModelListItem>
+            rows={simModels ?? []}
+            rowKey={(r) => r.id}
+            empty="No sim models."
+            columns={simColumns}
+          />
+        </div>
+      ) : null}
+
+      {!loading && (tab === "symbols" || tab === "footprints") ? (
+        <details className="card pad" key={tab}>
+          <summary>New {tab === "symbols" ? "symbol" : "footprint"} from the clipboard</summary>
+          {/* A paste publishes at once, so the list is stale the moment it succeeds. */}
+          <GeometryPaste kind={tab} onFiled={() => void load()} />
+        </details>
+      ) : null}
+      {!loading && tab === "sim" ? (
+        <details className="card pad" key="sim-new">
+          <summary>New sim model from the clipboard</summary>
+          <SimModelPaste onFiled={() => void load()} />
+        </details>
+      ) : null}
+    </PageShell>
   );
 }

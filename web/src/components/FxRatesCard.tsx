@@ -1,8 +1,7 @@
-import { useCallback, useEffect, useState } from "react";
+import { useState } from "react";
 import {
   errorMessage,
   getFxRates,
-  isAbortError,
   refreshFxRates,
   setFxRate,
   type FxRate,
@@ -12,6 +11,7 @@ import DataTable, { type Column } from "./DataTable";
 import { useDialog } from "./Dialog";
 import { ErrorBanner, Spinner } from "./Ui";
 import { localDate } from "../format";
+import { useLoad } from "./useLoad";
 
 /* Was a hand-rolled `<table className="data">` — the same header font as every
    other table, but no sort control and no filter row, so it read as a different
@@ -76,27 +76,9 @@ export default function FxRatesCard() {
   // run pages and has to be able to look up before asking for it.
   const { isAdmin } = useAuth();
   const dialog = useDialog();
-  const [rates, setRates] = useState<FxRate[] | null>(null);
-  const [error, setError] = useState("");
+  const { data: rates, error, setError, reload: load } = useLoad(getFxRates, []);
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
-
-  const load = useCallback((signal?: AbortSignal) => {
-    getFxRates(signal)
-      .then((r) => {
-        setRates(r);
-        setError("");
-      })
-      .catch((err) => {
-        if (!isAbortError(err)) setError(errorMessage(err));
-      });
-  }, []);
-
-  useEffect(() => {
-    const ac = new AbortController();
-    load(ac.signal);
-    return () => ac.abort();
-  }, [load]);
 
   async function refresh() {
     setBusy(true);

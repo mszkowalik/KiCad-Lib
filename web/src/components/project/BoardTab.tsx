@@ -2,7 +2,7 @@
  *  clickable footprints from the snapshot's click-map), GLB in
  *  <model-viewer> (3D), STEP download, ERC/DRC counts. Production files
  *  (gerbers etc.) live with production runs — see the Runs tab. */
-import { Suspense, lazy, useEffect, useMemo, useState } from "react";
+import { Suspense, lazy, useMemo, useState } from "react";
 import {
   boardGlbUrl,
   boardStepUrl,
@@ -13,7 +13,6 @@ import {
   getBoardMap,
   isAbortError,
   type BoardChecks,
-  type BoardMap,
   type MapSymbol,
   type SnapshotBoard,
   type SnapshotInfo,
@@ -22,6 +21,7 @@ import { Spinner } from "../Ui";
 import PartInfo from "./PartInfo";
 import CountTile from "../CountTile";
 import Field from "../Field";
+import { useLoad } from "../useLoad";
 
 const ModelViewer = lazy(() => import("../ModelViewer"));
 
@@ -52,21 +52,16 @@ export default function BoardTab({ snapshot, board }: Props) {
   const [checks, setChecks] = useState<BoardChecks | null>(null);
   const [checksError, setChecksError] = useState<string | null>(null);
   const [checksLoading, setChecksLoading] = useState(false);
-  const [map, setMap] = useState<BoardMap | null>(null);
   const [clickParts, setClickParts] = useState(true);
   const [selected, setSelected] = useState<MapSymbol | null>(null);
 
-  useEffect(() => {
+  const { data: map } = useLoad((signal) => {
     setVisible(new Set(layers.filter((l) => DEFAULT_VISIBLE.has(l.name)).map((l) => l.name)));
     setChecks(null);
     setChecksError(null);
     setSelected(null);
-    const ctrl = new AbortController();
-    getBoardMap(snapshot.id, board.name, ctrl.signal)
-      .then(setMap)
-      .catch(() => setMap(null)); // hotspots are an enhancement, never block
-    return () => ctrl.abort();
-  }, [snapshot.id, board.name, layers]);
+    return getBoardMap(snapshot.id, board.name, signal).catch(() => null); // hotspots are an enhancement, never block
+  }, [snapshot.id, board.name, layers], { keep: true });
 
   const toggle = (name: string) => {
     setVisible((prev) => {

@@ -17,6 +17,7 @@ import JlcJobsPanel from "../components/invoices/JlcJobsPanel";
 import JlcOrdersPanel from "../components/invoices/JlcOrdersPanel";
 import JlcSessionStrip from "../components/invoices/JlcSessionStrip";
 import JlcStagedPanel from "../components/invoices/JlcStagedPanel";
+import PageShell from "../components/PageShell";
 
 export default function ProductionJlc() {
   // Bumped when the session changes or an import lands, so the sibling
@@ -25,20 +26,18 @@ export default function ProductionJlc() {
   const bump = () => setSeq((n) => n + 1);
 
   return (
-    <div className="main-solo">
-      <div className="page">
-        <div className="toolbar">
-          <h1>JLCPCB</h1>
-          <span className="toolbar-total">
-            session → sync → decide → apply → import, top to bottom
-          </span>
-        </div>
-        <JlcSessionStrip onChange={bump} />
-        <JlcImportPanel key={`q-${seq}`} onApplied={bump} />
-        <JlcStagedPanel key={`s-${seq}`} onImported={bump} />
-        <JlcOrdersPanel key={`o-${seq}`} />
-        <JlcJobsPanel onDone={bump} />
+    <PageShell>
+      <div className="toolbar">
+        <h1>JLCPCB</h1>
+        <span className="toolbar-total">
+          session → sync → decide → apply → import, top to bottom
+        </span>
       </div>
-    </div>
+      <JlcSessionStrip onChange={bump} />
+      <JlcImportPanel key={`q-${seq}`} onApplied={bump} />
+      <JlcStagedPanel key={`s-${seq}`} onImported={bump} />
+      <JlcOrdersPanel key={`o-${seq}`} />
+      <JlcJobsPanel onDone={bump} />
+    </PageShell>
   );
 }

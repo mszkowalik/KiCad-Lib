@@ -1,9 +1,8 @@
-import { useCallback, useEffect, useState } from "react";
+import { useState } from "react";
 import {
   errorMessage,
   getWriteBatch,
   getWriteBatches,
-  isAbortError,
   reverseWriteBatch,
   type WriteBatch,
   type WriteBatchRow,
@@ -14,6 +13,7 @@ import DataTable, { type Column } from "../DataTable";
 import { useDialog } from "../Dialog";
 import { ErrorBanner, Spinner } from "../Ui";
 import { localWhen } from "../../format";
+import { useLoad } from "../useLoad";
 
 const OP_TONE: Record<string, string> = { insert: "ok", delete: "err" };
 
@@ -32,15 +32,11 @@ const ROW_COLUMNS: Column<WriteBatchRow>[] = [
 function BatchRows({ batch }: { batch: WriteBatch }) {
   // History → Everyone is admin-only, so only an admin is offered the link to it.
   const { isAdmin } = useAuth();
-  const [rows, setRows] = useState<WriteBatchRow[] | null>(null);
-  const [error, setError] = useState("");
-  useEffect(() => {
-    const ac = new AbortController();
-    getWriteBatch(batch.id, ac.signal)
-      .then((d) => setRows(d.rows))
-      .catch((err) => { if (!isAbortError(err)) setError(errorMessage(err)); });
-    return () => ac.abort();
-  }, [batch.id]);
+  const { data: rows, error } = useLoad(
+    (signal) => getWriteBatch(batch.id, signal).then((d) => d.rows),
+    [batch.id],
+    { keep: true },
+  );
   return (
     <>
       {isAdmin && batch.request_id ? (
@@ -73,29 +69,13 @@ function BatchRows({ batch }: { batch: WriteBatch }) {
  */
 export default function WriteLog({ onReversed }: { onReversed?: () => void } = {}) {
   const dialog = useDialog();
-  const [batches, setBatches] = useState<WriteBatch[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
+  const { data, loading, error, reload: load } = useLoad(
+    (signal) => getWriteBatches({ limit: 40 }, signal).then((r) => r.batches),
+    [],
+  );
+  const batches = data ?? [];
   const [busy, setBusy] = useState<number | null>(null);
   const [plan, setPlan] = useState<Record<number, string>>({});
-  const load = useCallback((signal?: AbortSignal) => {
-    setLoading(true);
-    getWriteBatches({ limit: 40 }, signal)
-      .then((r) => {
-        setBatches(r.batches);
-        setError("");
-      })
-      .catch((err) => {
-        if (!isAbortError(err)) setError(errorMessage(err));
-      })
-      .finally(() => setLoading(false));
-  }, []);
-
-  useEffect(() => {
-    const ac = new AbortController();
-    load(ac.signal);
-    return () => ac.abort();
-  }, [load]);
 
   async function preview(b: WriteBatch) {
     setBusy(b.id);

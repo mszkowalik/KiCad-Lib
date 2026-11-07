@@ -4,7 +4,6 @@ import {
   deleteComment,
   errorMessage,
   getComments,
-  isAbortError,
   type Comment,
   type CommentTargetKind,
 } from "../api";
@@ -12,6 +11,7 @@ import { useDialog } from "./Dialog";
 import FoldSection, { FOLD_LIMIT, StatChip } from "./FoldSection";
 import { Spinner } from "./Ui";
 import { localDate, localWhen } from "../format";
+import { useLoad } from "./useLoad";
 
 /** Free-form notes (Facebook-style, not versioned) on any entity — the user's
  *  future-reference notebook. Shared by components, symbols and footprints.
@@ -29,8 +29,12 @@ export default function CommentsPanel({
   /** Word used in the "Add a note about this …" placeholder. */
   noun?: string;
 }) {
-  const [comments, setComments] = useState<Comment[] | null>(null);
-  const [loadError, setLoadError] = useState<string | null>(null);
+  const { data: comments, setData: setComments, error: loadError } = useLoad((signal) => {
+    setActionError(null);
+    setDraft("");
+    setAdding(false);
+    return getComments(kind, id, signal);
+  }, [kind, id]);
   /** "Add note" on a folded list: the form stays open until the person says done. */
   const [adding, setAdding] = useState(false);
   const box = useRef<HTMLTextAreaElement>(null);
@@ -47,23 +51,6 @@ export default function CommentsPanel({
   useEffect(() => {
     if (adding) box.current?.focus();
   }, [adding]);
-
-  useEffect(() => {
-    const ctrl = new AbortController();
-    setComments(null);
-    setLoadError(null);
-    setActionError(null);
-    setDraft("");
-    setAdding(false);
-    getComments(kind, id, ctrl.signal)
-      .then((list) => {
-        setComments(list);
-      })
-      .catch((err) => {
-        if (!isAbortError(err)) setLoadError(errorMessage(err));
-      });
-    return () => ctrl.abort();
-  }, [kind, id]);
 
   const submit = async () => {
     const text = draft.trim();

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Link, useParams, useSearchParams } from "react-router-dom";
+import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import {
   deleteProject,
   designBoards,
@@ -10,7 +10,6 @@ import {
   getSnapshots,
   isAbortError,
   updateProject,
-  type GitCredential,
   type ProjectInfo,
   type ProjectPatchBody,
   type SnapshotInfo,
@@ -32,6 +31,8 @@ import ReviewTab from "../components/project/ReviewTab";
 import SchematicTab from "../components/project/SchematicTab";
 import OwnershipCard from "../components/project/OwnershipCard";
 import TabStrip, { type TabDef } from "../components/TabStrip";
+import { useLoad } from "../components/useLoad";
+import PageShell, { PageLoading } from "../components/PageShell";
 
 const TABS = ["BOM", "Board", "Schematic", "Stackup", "History", "Review", "Costs", "Process", "Runs", "Orders", "Devices", "Notes", "Settings"] as const;
 type Tab = (typeof TABS)[number];
@@ -60,6 +61,7 @@ export default function ProjectDetail() {
 
   const [project, setProject] = useState<ProjectInfo | null>(null);
   const [snapshots, setSnapshots] = useState<SnapshotInfo[]>([]);
+  const navigate = useNavigate();
   const [error, setError] = useState<string | null>(null);
   // THE URL WINS, and the sticky value is the fallback for a bare visit — the
   // rule every other tabbed page here follows. It had no URL form at all, so a
@@ -105,18 +107,9 @@ export default function ProjectDetail() {
     description: string; token: string;
     credId: number | "";
   } | null>(null);
-  const [creds, setCreds] = useState<GitCredential[]>([]);
+  // Without an answer the picker shows "none", and editing still works.
+  const creds = useLoad(getGitCredentials, []).data ?? [];
   const [settingsMsg, setSettingsMsg] = useState<string | null>(null);
-
-  useEffect(() => {
-    const ctrl = new AbortController();
-    getGitCredentials(ctrl.signal)
-      .then(setCreds)
-      .catch(() => {
-        /* the picker degrades to "none"; editing must still work */
-      });
-    return () => ctrl.abort();
-  }, []);
   const [confirmDelete, setConfirmDelete] = useState("");
 
   const loadProject = useCallback((signal?: AbortSignal) => {
@@ -204,278 +197,268 @@ export default function ProjectDetail() {
 
   if (error && !project) {
     return (
-      <div className="main-solo">
-        <div className="page">
-          <ErrorBanner message={error} />
-          <BackLink to="/projects">← All projects</BackLink>
-        </div>
-      </div>
+      <PageShell>
+        <ErrorBanner message={error} />
+        <BackLink to="/projects">← All projects</BackLink>
+      </PageShell>
     );
   }
-  if (!project) {
-    return (
-      <div className="main-solo">
-        <div className="page"><Spinner label="Loading project" /></div>
-      </div>
-    );
-  }
+  if (!project) return <PageLoading label="Loading project" />;
 
   return (
-    <div className="main-solo">
-      <div className="page">
-        <div className="detail-top">
-          <div>
-            <BackLink to="/projects">← All projects</BackLink>
-            <h1>{project.name}</h1>
-            <div className="muted mono">{project.git_url}</div>
-          </div>
-          <div className="btn-row">
-            <button className="btn btn-primary" disabled={fetching} onClick={doFetch}>
-              {fetching ? "Fetching…" : "Fetch"}
-            </button>
-          </div>
+    <PageShell>
+      <div className="detail-top">
+        <div>
+          <BackLink to="/projects">← All projects</BackLink>
+          <h1>{project.name}</h1>
+          <div className="muted mono">{project.git_url}</div>
         </div>
+        <div className="btn-row">
+          <button className="btn btn-primary" disabled={fetching} onClick={doFetch}>
+            {fetching ? "Fetching…" : "Fetch"}
+          </button>
+        </div>
+      </div>
 
-        {fetchNote ? <div className="banner-ok">{fetchNote}</div> : null}
-        {error ? <ErrorBanner message={error} /> : null}
+      {fetchNote ? <div className="banner-ok">{fetchNote}</div> : null}
+      {error ? <ErrorBanner message={error} /> : null}
 
-        <div className="toolbar">
-          <Field inline label="Snapshot">
-            <select
-              className="text"
-              value={snapshotId ?? ""}
-              onChange={(e) => setSnapshotId(e.target.value === "" ? null : Number(e.target.value))}
-            >
-              {snapshots.length === 0 ? <option value="">none ingested</option> : null}
-              {snapshots.map((s) => (
-                <option key={s.id} value={s.id} disabled={s.status !== "ready"}>
-                  {s.is_tag ? "🏷 " : ""}{s.ref_name} ({s.sha.slice(0, 8)}) {s.status !== "ready" ? `— ${s.status}` : ""}
-                </option>
+      <div className="toolbar">
+        <Field inline label="Snapshot">
+          <select
+            className="text"
+            value={snapshotId ?? ""}
+            onChange={(e) => setSnapshotId(e.target.value === "" ? null : Number(e.target.value))}
+          >
+            {snapshots.length === 0 ? <option value="">none ingested</option> : null}
+            {snapshots.map((s) => (
+              <option key={s.id} value={s.id} disabled={s.status !== "ready"}>
+                {s.is_tag ? "🏷 " : ""}{s.ref_name} ({s.sha.slice(0, 8)}) {s.status !== "ready" ? `— ${s.status}` : ""}
+              </option>
+            ))}
+          </select>
+        </Field>
+        {/* Design boards only. A repository also carries one simulation
+            harness per block (CP_sim, TEMP_sim, …); those are projects too,
+            but they are the Simulator's to list, not a board to build. */}
+        {snapshot && boards.length > 1 ? (
+          <Field inline label="Board">
+            <select className="text" value={boardName} onChange={(e) => setBoardName(e.target.value)}>
+              {boards.map((b) => (
+                <option key={b.name} value={b.name}>{b.name}</option>
               ))}
             </select>
           </Field>
-          {/* Design boards only. A repository also carries one simulation
-              harness per block (CP_sim, TEMP_sim, …); those are projects too,
-              but they are the Simulator's to list, not a board to build. */}
-          {snapshot && boards.length > 1 ? (
-            <Field inline label="Board">
-              <select className="text" value={boardName} onChange={(e) => setBoardName(e.target.value)}>
-                {boards.map((b) => (
-                  <option key={b.name} value={b.name}>{b.name}</option>
-                ))}
-              </select>
-            </Field>
-          ) : null}
-          {board && board.variants.length > 0 ? (
-            <Field inline label="Variant">
-              <select className="text" value={variant} onChange={(e) => setVariant(e.target.value)}>
-                <option value="">default</option>
-                {board.variants.map((v) => (
-                  <option key={v.name} value={v.name} title={v.description}>{v.name}</option>
-                ))}
-              </select>
-            </Field>
-          ) : null}
-          {snapshot ? (
-            <span className="muted">
-              {snapshot.commit_message.slice(0, 60)}
-              {snapshot.report?.warnings?.length ? ` · ${snapshot.report.warnings.length} warning(s)` : ""}
-            </span>
-          ) : null}
-          {anyBusy ? <Spinner label="ingesting" /> : null}
-        </div>
+        ) : null}
+        {board && board.variants.length > 0 ? (
+          <Field inline label="Variant">
+            <select className="text" value={variant} onChange={(e) => setVariant(e.target.value)}>
+              <option value="">default</option>
+              {board.variants.map((v) => (
+                <option key={v.name} value={v.name} title={v.description}>{v.name}</option>
+              ))}
+            </select>
+          </Field>
+        ) : null}
+        {snapshot ? (
+          <span className="muted">
+            {snapshot.commit_message.slice(0, 60)}
+            {snapshot.report?.warnings?.length ? ` · ${snapshot.report.warnings.length} warning(s)` : ""}
+          </span>
+        ) : null}
+        {anyBusy ? <Spinner label="ingesting" /> : null}
+      </div>
 
-        <TabStrip tabs={TAB_STRIP} value={tab} onChange={setTab} label="Project sections" />
+      <TabStrip tabs={TAB_STRIP} value={tab} onChange={setTab} label="Project sections" />
 
-        {tab === "BOM" ? (
-          snapshot && board ? (
-            <BomTab project={project} snapshot={snapshot} snapshots={snapshots} board={board.name} variant={variant} />
-          ) : (
-            <p className="muted">No ready snapshot — fetch the repo, then ingest a commit in History.</p>
-          )
-        ) : null}
-        {tab === "Board" ? (
-          snapshot && board ? (
-            <BoardTab snapshot={snapshot} board={board} />
-          ) : (
-            <p className="muted">No ready snapshot.</p>
-          )
-        ) : null}
-        {tab === "Schematic" ? (
-          snapshot && board ? (
-            <SchematicTab snapshot={snapshot} board={board} variant={variant} />
-          ) : (
-            <p className="muted">No ready snapshot.</p>
-          )
-        ) : null}
-        {tab === "History" ? (
-          <HistoryTab
-            project={project}
-            snapshots={snapshots}
-            selectedSnapshotId={snapshotId}
-            onSelectSnapshot={(sid) => setSnapshotId(sid)}
-            onIngested={() => loadSnapshots()}
-          />
-        ) : null}
-        {tab === "Stackup" ? (
-          <StackupTab projectId={project.id} snapshot={snapshot} board={board?.name ?? ""} />
-        ) : null}
-        {tab === "Review" ? <ReviewTab project={project} snapshot={snapshot} /> : null}
-        {tab === "Costs" ? <CostsTab projectId={project.id} snapshot={snapshot} /> : null}
-        {tab === "Runs" ? (
-          <RunsTab project={project} snapshots={snapshots} snapshot={snapshot} board={boardName} variant={variant} />
-        ) : null}
-        {tab === "Process" ? <ProcessTab project={project} /> : null}
-        {tab === "Orders" ? <OrdersTab project={project} /> : null}
-        {tab === "Devices" ? <DevicesTab project={project} /> : null}
-        {tab === "Notes" ? <NotesTab projectId={project.id} snapshotId={snapshotId} /> : null}
+      {tab === "BOM" ? (
+        snapshot && board ? (
+          <BomTab project={project} snapshot={snapshot} snapshots={snapshots} board={board.name} variant={variant} />
+        ) : (
+          <p className="muted">No ready snapshot — fetch the repo, then ingest a commit in History.</p>
+        )
+      ) : null}
+      {tab === "Board" ? (
+        snapshot && board ? (
+          <BoardTab snapshot={snapshot} board={board} />
+        ) : (
+          <p className="muted">No ready snapshot.</p>
+        )
+      ) : null}
+      {tab === "Schematic" ? (
+        snapshot && board ? (
+          <SchematicTab snapshot={snapshot} board={board} variant={variant} />
+        ) : (
+          <p className="muted">No ready snapshot.</p>
+        )
+      ) : null}
+      {tab === "History" ? (
+        <HistoryTab
+          project={project}
+          snapshots={snapshots}
+          selectedSnapshotId={snapshotId}
+          onSelectSnapshot={(sid) => setSnapshotId(sid)}
+          onIngested={() => loadSnapshots()}
+        />
+      ) : null}
+      {tab === "Stackup" ? (
+        <StackupTab projectId={project.id} snapshot={snapshot} board={board?.name ?? ""} />
+      ) : null}
+      {tab === "Review" ? <ReviewTab project={project} snapshot={snapshot} /> : null}
+      {tab === "Costs" ? <CostsTab projectId={project.id} snapshot={snapshot} /> : null}
+      {tab === "Runs" ? (
+        <RunsTab project={project} snapshots={snapshots} snapshot={snapshot} board={boardName} variant={variant} />
+      ) : null}
+      {tab === "Process" ? <ProcessTab project={project} /> : null}
+      {tab === "Orders" ? <OrdersTab project={project} /> : null}
+      {tab === "Devices" ? <DevicesTab project={project} /> : null}
+      {tab === "Notes" ? <NotesTab projectId={project.id} snapshotId={snapshotId} /> : null}
 
-        {tab === "Settings" ? (
-          <OwnershipCard
-            project={project}
-            onMoved={() => getProject(project.id).then(setProject).catch((err) => setSettingsMsg(errorMessage(err)))}
-          />
-        ) : null}
-        {tab === "Settings" ? (
-          <div className="card pad edit-card">
-            <div className="card-title">Project settings</div>
-            {settingsDraft === null ? (
+      {tab === "Settings" ? (
+        <OwnershipCard
+          project={project}
+          onMoved={() => getProject(project.id).then(setProject).catch((err) => setSettingsMsg(errorMessage(err)))}
+        />
+      ) : null}
+      {tab === "Settings" ? (
+        <div className="card pad edit-card">
+          <div className="card-title">Project settings</div>
+          {settingsDraft === null ? (
+            <div className="btn-row">
+              <button
+                className="btn"
+                onClick={() =>
+                  setSettingsDraft({
+                    name: project.name,
+                    git_url: project.git_url,
+                    default_branch: project.default_branch,
+                    description: project.description,
+                    token: "",
+                    credId: project.git_credential_id ?? "",
+                  })
+                }
+              >
+                Edit settings
+              </button>
+              <dl className="kv">
+                <dt>Default branch</dt><dd className="mono">{project.default_branch}</dd>
+                <dt>Git account</dt>
+                <dd>
+                  {project.git_credential ? (
+                    <Link className="comp-link" to="/account">{project.git_credential.name}</Link>
+                  ) : (
+                    <span className="muted">none</span>
+                  )}
+                </dd>
+                <dt>Token</dt>
+                <dd>
+                  {/* Name the SOURCE, not just "stored". A project carrying
+                      both a credential and its own token is legal, and the
+                      credential wins — saying only "stored (encrypted)"
+                      is exactly how a stale copy hid before. */}
+                  {project.token_source === "credential"
+                    ? `from the account "${project.git_credential?.name ?? ""}"`
+                    : project.token_source === "project"
+                      ? "stored on this project (encrypted)"
+                      : "none"}
+                </dd>
+                <dt>Description</dt><dd>{project.description || <span className="muted">—</span>}</dd>
+              </dl>
+            </div>
+          ) : (
+            <>
+              <FieldGrid>
+                <Field label="Name">
+                  <input className="text" value={settingsDraft.name}
+                    onChange={(e) => setSettingsDraft({ ...settingsDraft, name: e.target.value })} />
+                </Field>
+                <Field label="Git URL">
+                  <input className="text" value={settingsDraft.git_url}
+                    onChange={(e) => setSettingsDraft({ ...settingsDraft, git_url: e.target.value })} />
+                </Field>
+                <Field label="Git account">
+                  <select
+                    className="text"
+                    value={settingsDraft.credId}
+                    onChange={(e) =>
+                      setSettingsDraft({
+                        ...settingsDraft,
+                        credId: e.target.value === "" ? "" : Number(e.target.value),
+                      })
+                    }
+                  >
+                    <option value="">none — public repo, or the token below</option>
+                    {creds.map((c) => (
+                      <option key={c.id} value={c.id}>{c.name}</option>
+                    ))}
+                  </select>
+                </Field>
+                <Field label={'Access token (blank = keep; "clear" to remove)'}>
+                  <input className="text" type="password" autoComplete="new-password"
+                    value={settingsDraft.token}
+                    onChange={(e) => setSettingsDraft({ ...settingsDraft, token: e.target.value })} />
+                </Field>
+                <Field label="Default branch">
+                  <input className="text" value={settingsDraft.default_branch}
+                    onChange={(e) => setSettingsDraft({ ...settingsDraft, default_branch: e.target.value })} />
+                </Field>
+                <Field label="Description">
+                  <input className="text" value={settingsDraft.description}
+                    onChange={(e) => setSettingsDraft({ ...settingsDraft, description: e.target.value })} />
+                </Field>
+              </FieldGrid>
+              {settingsMsg ? <div className="banner-ok">{settingsMsg}</div> : null}
               <div className="btn-row">
-                <button
-                  className="btn"
-                  onClick={() =>
-                    setSettingsDraft({
-                      name: project.name,
-                      git_url: project.git_url,
-                      default_branch: project.default_branch,
-                      description: project.description,
-                      token: "",
-                      credId: project.git_credential_id ?? "",
-                    })
-                  }
-                >
-                  Edit settings
+                <button className="btn btn-primary"
+                  onClick={() => {
+                    const body: ProjectPatchBody = {
+                      name: settingsDraft.name,
+                      git_url: settingsDraft.git_url,
+                      default_branch: settingsDraft.default_branch,
+                      description: settingsDraft.description,
+                    };
+                    // 0 unassigns; the API leaves it alone when absent.
+                    body.git_credential_id =
+                      settingsDraft.credId === "" ? 0 : settingsDraft.credId;
+                    if (settingsDraft.token === "clear") body.git_token = "";
+                    else if (settingsDraft.token) body.git_token = settingsDraft.token;
+                    updateProject(project.id, body)
+                      .then((p) => {
+                        setProject(p);
+                        setSettingsDraft(null);
+                        setSettingsMsg("Saved.");
+                      })
+                      .catch((err) => setSettingsMsg(errorMessage(err)));
+                  }}>
+                  Save
                 </button>
-                <dl className="kv">
-                  <dt>Default branch</dt><dd className="mono">{project.default_branch}</dd>
-                  <dt>Git account</dt>
-                  <dd>
-                    {project.git_credential ? (
-                      <Link className="comp-link" to="/account">{project.git_credential.name}</Link>
-                    ) : (
-                      <span className="muted">none</span>
-                    )}
-                  </dd>
-                  <dt>Token</dt>
-                  <dd>
-                    {/* Name the SOURCE, not just "stored". A project carrying
-                        both a credential and its own token is legal, and the
-                        credential wins — saying only "stored (encrypted)"
-                        is exactly how a stale copy hid before. */}
-                    {project.token_source === "credential"
-                      ? `from the account "${project.git_credential?.name ?? ""}"`
-                      : project.token_source === "project"
-                        ? "stored on this project (encrypted)"
-                        : "none"}
-                  </dd>
-                  <dt>Description</dt><dd>{project.description || <span className="muted">—</span>}</dd>
-                </dl>
+                <button className="btn" onClick={() => setSettingsDraft(null)}>Cancel</button>
               </div>
-            ) : (
-              <>
-                <FieldGrid>
-                  <Field label="Name">
-                    <input className="text" value={settingsDraft.name}
-                      onChange={(e) => setSettingsDraft({ ...settingsDraft, name: e.target.value })} />
-                  </Field>
-                  <Field label="Git URL">
-                    <input className="text" value={settingsDraft.git_url}
-                      onChange={(e) => setSettingsDraft({ ...settingsDraft, git_url: e.target.value })} />
-                  </Field>
-                  <Field label="Git account">
-                    <select
-                      className="text"
-                      value={settingsDraft.credId}
-                      onChange={(e) =>
-                        setSettingsDraft({
-                          ...settingsDraft,
-                          credId: e.target.value === "" ? "" : Number(e.target.value),
-                        })
-                      }
-                    >
-                      <option value="">none — public repo, or the token below</option>
-                      {creds.map((c) => (
-                        <option key={c.id} value={c.id}>{c.name}</option>
-                      ))}
-                    </select>
-                  </Field>
-                  <Field label={'Access token (blank = keep; "clear" to remove)'}>
-                    <input className="text" type="password" autoComplete="new-password"
-                      value={settingsDraft.token}
-                      onChange={(e) => setSettingsDraft({ ...settingsDraft, token: e.target.value })} />
-                  </Field>
-                  <Field label="Default branch">
-                    <input className="text" value={settingsDraft.default_branch}
-                      onChange={(e) => setSettingsDraft({ ...settingsDraft, default_branch: e.target.value })} />
-                  </Field>
-                  <Field label="Description">
-                    <input className="text" value={settingsDraft.description}
-                      onChange={(e) => setSettingsDraft({ ...settingsDraft, description: e.target.value })} />
-                  </Field>
-                </FieldGrid>
-                {settingsMsg ? <div className="banner-ok">{settingsMsg}</div> : null}
-                <div className="btn-row">
-                  <button className="btn btn-primary"
-                    onClick={() => {
-                      const body: ProjectPatchBody = {
-                        name: settingsDraft.name,
-                        git_url: settingsDraft.git_url,
-                        default_branch: settingsDraft.default_branch,
-                        description: settingsDraft.description,
-                      };
-                      // 0 unassigns; the API leaves it alone when absent.
-                      body.git_credential_id =
-                        settingsDraft.credId === "" ? 0 : settingsDraft.credId;
-                      if (settingsDraft.token === "clear") body.git_token = "";
-                      else if (settingsDraft.token) body.git_token = settingsDraft.token;
-                      updateProject(project.id, body)
-                        .then((p) => {
-                          setProject(p);
-                          setSettingsDraft(null);
-                          setSettingsMsg("Saved.");
-                        })
-                        .catch((err) => setSettingsMsg(errorMessage(err)));
-                    }}>
-                    Save
-                  </button>
-                  <button className="btn" onClick={() => setSettingsDraft(null)}>Cancel</button>
-                </div>
-              </>
-            )}
+            </>
+          )}
 
-            <div className="danger-card">
-              <div className="card-title">Delete project</div>
-              <p className="muted">
-                Removes the project, snapshots, runs, notes, its render cache and the git
-                mirror. The remote repository is untouched. Type the project name to confirm.
-              </p>
-              <div className="confirm-row">
-                <input className="text confirm-word" value={confirmDelete}
-                  placeholder={project.name}
-                  onChange={(e) => setConfirmDelete(e.target.value)} />
-                <button className="btn btn-danger" disabled={confirmDelete !== project.name}
-                  onClick={() =>
-                    deleteProject(project.id).then(() => {
-                      window.location.href = "/projects";
-                    })
-                  }>
-                  Delete permanently
-                </button>
-              </div>
+          <div className="danger-card">
+            <div className="card-title">Delete project</div>
+            <p className="muted">
+              Removes the project, snapshots, runs, notes, its render cache and the git
+              mirror. The remote repository is untouched. Type the project name to confirm.
+            </p>
+            <div className="confirm-row">
+              <input className="text confirm-word" value={confirmDelete}
+                placeholder={project.name}
+                onChange={(e) => setConfirmDelete(e.target.value)} />
+              <button className="btn btn-danger" disabled={confirmDelete !== project.name}
+                onClick={() =>
+                  deleteProject(project.id)
+                    .then(() => navigate("/projects"))
+                    .catch((err) => setError(errorMessage(err)))
+                }>
+                Delete permanently
+              </button>
             </div>
           </div>
-        ) : null}
-      </div>
-    </div>
+        </div>
+      ) : null}
+    </PageShell>
   );
 }

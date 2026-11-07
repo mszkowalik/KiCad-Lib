@@ -8,7 +8,6 @@ import {
   createProgrammingRun,
   errorMessage,
   getDeploymentVersion,
-  type DeploymentVersionDetail,
   type FlasherMeta,
 } from "../../api";
 import {
@@ -38,6 +37,7 @@ import SocketPicker from "./SocketPicker";
 import Field from "../Field";
 import { useModal } from "../modal";
 import { useStickyState } from "../../useStickyState";
+import { useLoad } from "../useLoad";
 
 /** The two actions a marking procedure can perform. */
 export type MarkOp = "mark_laser" | "print_label";
@@ -280,7 +280,6 @@ export default function BenchStation(props: StationSlotProps) {
   const [labelSetupOpen, setLabelSetupOpen] = useState(false);
   /** The marking procedure's own template and placeholder, so a typed mark and
    *  a run cannot disagree about which drawing a unit gets. */
-  const [markVersion, setMarkVersion] = useState<DeploymentVersionDetail | null>(null);
   const [log, setLog] = useState<LogRow[]>([]);
   const [runId, setRunId] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -342,17 +341,11 @@ export default function BenchStation(props: StationSlotProps) {
   /** The run that marks, if the selected steps include one. */
   const markSeg = props.segments.find((s) => s.markOps.length > 0) ?? null;
   const markVersionId = markSeg?.versionId ?? null;
-  useEffect(() => {
-    if (!markVersionId) {
-      setMarkVersion(null);
-      return;
-    }
-    const ac = new AbortController();
-    getDeploymentVersion(markVersionId, ac.signal)
-      .then(setMarkVersion)
-      .catch(() => setMarkVersion(null));
-    return () => ac.abort();
-  }, [markVersionId]);
+  const { data: markVersion } = useLoad(
+    (signal) => getDeploymentVersion(markVersionId as number, signal).catch(() => null),
+    [markVersionId],
+    { enabled: !!markVersionId, keep: true },
+  );
 
   const syncPort = useCallback(
     (working = false) => {

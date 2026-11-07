@@ -24,6 +24,7 @@ import { useDebounced } from "../components/useDebounced";
 import { useInfiniteScroll } from "../components/useInfiniteScroll";
 import { localWhen } from "../format";
 import { useStickyState } from "../useStickyState";
+import PageShell from "../components/PageShell";
 
 const PAGE = 100;
 const DEBOUNCE_MS = 250;
@@ -193,82 +194,80 @@ export default function Devices() {
   ];
 
   return (
-    <div className="main-solo">
-      <div className="page">
-        {deploymentVersion ? (
-          <div className="banner-ok">
-            Showing the devices a run of one procedure version touched.{" "}
-            <button type="button" className="btn btn-sm" onClick={() => setParams({}, { replace: true })}>Show every device</button>
-          </div>
-        ) : null}
-        <div className="toolbar">
-          <h1>Devices</h1>
-          <select
-            className="row-input"
-            value={projectId ?? ""}
-            onChange={(e) => setProjectId(e.target.value === "" ? null : Number(e.target.value))}
-          >
-            <option value="">all projects</option>
-            {projects.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.name}
-              </option>
-            ))}
-          </select>
-          <input
-            className="search"
-            placeholder="MAC / serial / name / IMEI / ICCID…"
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
+    <PageShell>
+      {deploymentVersion ? (
+        <div className="banner-ok">
+          Showing the devices a run of one procedure version touched.{" "}
+          <button type="button" className="btn btn-sm" onClick={() => setParams({}, { replace: true })}>Show every device</button>
+        </div>
+      ) : null}
+      <div className="toolbar">
+        <h1>Devices</h1>
+        <select
+          className="row-input"
+          value={projectId ?? ""}
+          onChange={(e) => setProjectId(e.target.value === "" ? null : Number(e.target.value))}
+        >
+          <option value="">all projects</option>
+          {projects.map((p) => (
+            <option key={p.id} value={p.id}>
+              {p.name}
+            </option>
+          ))}
+        </select>
+        <input
+          className="search"
+          placeholder="MAC / serial / name / IMEI / ICCID…"
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+        />
+        {/* Follows the PROJECT selector only: the broker needs every device of
+            a project, not the rows the result/search filters happen to show. */}
+        <a
+          className="btn btn-sm"
+          href={mosquittoExportPath(projectId)}
+          download="mosquitto_passwords.txt"
+          title="Plaintext user:password file for the MQTT broker. Hash it with mosquitto_passwd -U before you deploy it."
+        >
+          Mosquitto passwords
+        </a>
+      </div>
+      {error ? <ErrorBanner message={error} /> : null}
+      {/* The list is paged, so only the server's total is a count. A result chip
+          asks the server: it has no figure until it is on. */}
+      <div className="stat-row">
+        <StatChip n={total.toLocaleString()} title="Every device that matches the filters">devices</StatChip>
+        {rows.length < total ? <StatChip n={rows.length.toLocaleString()}>loaded</StatChip> : null}
+        <NarrowChip tone="ok" value="pass" current={status} onNarrow={setStatus}>pass</NarrowChip>
+        <NarrowChip tone="err" value="fail" current={status} onNarrow={setStatus}>fail</NarrowChip>
+        <NarrowChip tone="warn" value="aborted" current={status} onNarrow={setStatus}>aborted</NarrowChip>
+      </div>
+      <div className="card">
+        <div className="table-wrap">
+          <DataTable
+            columns={cols}
+            rows={rows}
+            rowKey={(d) => d.id}
+            serverSort
+            defaultSort={{ key: "last_seen", dir: "desc" }}
+            onSortChange={(s) => setSort(s ?? { key: "last_seen", dir: "desc" })}
+            onServerFilters={setTyped}
+            pageSize={10000} // the server page IS the chunk
+            empty={
+              busy
+                ? "Loading…"
+                : "No devices recorded yet — they appear the moment a programming run reads a MAC."
+            }
+            footer={
+              hasMore ? (
+                <div ref={sentinel} className="scroll-sentinel">
+                  <Spinner label={`${rows.length} of ${total}`} />
+                </div>
+              ) : null
+            }
           />
-          {/* Follows the PROJECT selector only: the broker needs every device of
-              a project, not the rows the result/search filters happen to show. */}
-          <a
-            className="btn btn-sm"
-            href={mosquittoExportPath(projectId)}
-            download="mosquitto_passwords.txt"
-            title="Plaintext user:password file for the MQTT broker. Hash it with mosquitto_passwd -U before you deploy it."
-          >
-            Mosquitto passwords
-          </a>
-        </div>
-        {error ? <ErrorBanner message={error} /> : null}
-        {/* The list is paged, so only the server's total is a count. A result chip
-            asks the server: it has no figure until it is on. */}
-        <div className="stat-row">
-          <StatChip n={total.toLocaleString()} title="Every device that matches the filters">devices</StatChip>
-          {rows.length < total ? <StatChip n={rows.length.toLocaleString()}>loaded</StatChip> : null}
-          <NarrowChip tone="ok" value="pass" current={status} onNarrow={setStatus}>pass</NarrowChip>
-          <NarrowChip tone="err" value="fail" current={status} onNarrow={setStatus}>fail</NarrowChip>
-          <NarrowChip tone="warn" value="aborted" current={status} onNarrow={setStatus}>aborted</NarrowChip>
-        </div>
-        <div className="card">
-          <div className="table-wrap">
-            <DataTable
-              columns={cols}
-              rows={rows}
-              rowKey={(d) => d.id}
-              serverSort
-              defaultSort={{ key: "last_seen", dir: "desc" }}
-              onSortChange={(s) => setSort(s ?? { key: "last_seen", dir: "desc" })}
-              onServerFilters={setTyped}
-              pageSize={10000} // the server page IS the chunk
-              empty={
-                busy
-                  ? "Loading…"
-                  : "No devices recorded yet — they appear the moment a programming run reads a MAC."
-              }
-              footer={
-                hasMore ? (
-                  <div ref={sentinel} className="scroll-sentinel">
-                    <Spinner label={`${rows.length} of ${total}`} />
-                  </div>
-                ) : null
-              }
-            />
-          </div>
         </div>
       </div>
-    </div>
+    </PageShell>
   );
 }

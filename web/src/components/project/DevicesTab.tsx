@@ -12,15 +12,12 @@
  *  Read-only. Nothing here commands a device: the watcher subscribes and never
  *  publishes (api/app/services/mqtt_monitor.py).
  */
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import {
-  errorMessage,
   getProjectDevices,
-  isAbortError,
   projectMosquittoPath,
   type ProjectDeviceRow,
-  type ProjectDevicesPayload,
   type ProjectInfo,
 } from "../../api";
 import { since, localWhen } from "../../format";
@@ -28,6 +25,7 @@ import DataTable, { type Column } from "../DataTable";
 import { CONDITION_WORD } from "../FinishedProductsCard";
 import { NarrowChip } from "../FoldSection";
 import { ErrorBanner, Spinner, StatusPill } from "../Ui";
+import { useLoad } from "../useLoad";
 
 interface Props {
   project: ProjectInfo;
@@ -51,8 +49,6 @@ const STATE_WORD: Record<string, string> = {
 };
 
 export default function DevicesTab({ project, runId }: Props) {
-  const [data, setData] = useState<ProjectDevicesPayload | null>(null);
-  const [error, setError] = useState<string | null>(null);
   const [presence, setPresence] = useState("");
   const navigate = useNavigate();
   // THE URL CARRIES THE NARROWING, so the view is linkable and the browser's
@@ -68,19 +64,10 @@ export default function DevicesTab({ project, runId }: Props) {
     setSearchParams(next, { replace: true });
   };
 
-  useEffect(() => {
-    const ac = new AbortController();
-    setData(null);
-    getProjectDevices(project.id, { presence, runId, state, condition }, ac.signal)
-      .then((d) => {
-        setData(d);
-        setError(null);
-      })
-      .catch((err) => {
-        if (!isAbortError(err)) setError(errorMessage(err));
-      });
-    return () => ac.abort();
-  }, [project.id, presence, runId, state, condition]);
+  const { data, error } = useLoad(
+    (signal) => getProjectDevices(project.id, { presence, runId, state, condition }, signal),
+    [project.id, presence, runId, state, condition],
+  );
 
   const rows = useMemo(() => data?.items ?? [], [data]);
 

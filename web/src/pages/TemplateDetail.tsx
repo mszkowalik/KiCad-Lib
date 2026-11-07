@@ -1,15 +1,13 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import {
   deleteFootprint,
   errorMessage,
   getTemplate,
-  isAbortError,
   footprintTemplateGlbUrl,
   renameTemplate,
   saveFootprintDisplayName,
   templatePreviewUrl,
-  type TemplateDetail as TemplateDetailT,
   type TemplateKind,
 } from "../api";
 import CommentsPanel from "../components/CommentsPanel";
@@ -22,6 +20,8 @@ import SimLinkCard from "../components/SimLinkCard";
 import { BackLink, ErrorBanner, LinkList, Spinner, VersionRows } from "../components/Ui";
 import { FootprintPreview } from "../components/GeometryPreview";
 import { plural } from "../format";
+import { useLoad } from "../components/useLoad";
+import PageShell from "../components/PageShell";
 
 function isKind(k: string | undefined): k is TemplateKind {
   return k === "symbols" || k === "footprints";
@@ -41,8 +41,18 @@ function scalarFacts(parsed: Record<string, unknown>): [string, string][] {
 export default function TemplateDetail() {
   const { kind, id: idParam } = useParams<{ kind: string; id: string }>();
   const id = Number(idParam);
-  const [data, setData] = useState<TemplateDetailT | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const validTemplate = isKind(kind) && Number.isFinite(id);
+  const { data, setData, error: loadError, setError } = useLoad((signal) => {
+    setNameNotice(null);
+    setRenameNotice(null);
+    return getTemplate(kind as TemplateKind, id, signal).then((d) => {
+      setNameDraft(d.display_name ?? "");
+      setRenameDraft(d.name);
+      setRenameWhy("");
+      return d;
+    });
+  }, [kind, id], { enabled: validTemplate });
+  const error = validTemplate ? loadError : "Unknown template.";
   const [nameDraft, setNameDraft] = useState("");
   const [savingName, setSavingName] = useState(false);
   const [nameNotice, setNameNotice] = useState<string | null>(null);
@@ -74,29 +84,6 @@ export default function TemplateDetail() {
       setRetiring(false);
     }
   };
-
-  useEffect(() => {
-    if (!isKind(kind) || !Number.isFinite(id)) {
-      setError("Unknown template.");
-      return;
-    }
-    const ctrl = new AbortController();
-    setData(null);
-    setError(null);
-    setNameNotice(null);
-    setRenameNotice(null);
-    getTemplate(kind, id, ctrl.signal)
-      .then((d) => {
-        setData(d);
-        setNameDraft(d.display_name ?? "");
-        setRenameDraft(d.name);
-        setRenameWhy("");
-      })
-      .catch((err) => {
-        if (!isAbortError(err)) setError(errorMessage(err));
-      });
-    return () => ctrl.abort();
-  }, [kind, id]);
 
   const noun = kind === "footprints" ? "footprint" : "symbol";
 
@@ -166,62 +153,95 @@ export default function TemplateDetail() {
 
   if (error) {
     return (
-      <div className="main-solo">
-        <div className="page">
-          {back}
-          <ErrorBanner message={error} />
-        </div>
-      </div>
+      <PageShell>
+        {back}
+        <ErrorBanner message={error} />
+      </PageShell>
     );
   }
 
   if (!isKind(kind) || data === null) {
     return (
-      <div className="main-solo">
-        <div className="page">
-          {back}
-          <Spinner label="Loading template" />
-        </div>
-      </div>
+      <PageShell>
+        {back}
+        <Spinner label="Loading template" />
+      </PageShell>
     );
   }
 
   const facts = scalarFacts(data.parsed);
 
   return (
-    <div className="main-solo">
-      <div className="page">
-        {back}
-        <div className="toolbar">
-          <h1 className="mono">{data.name}</h1>
-          <span className="pill neutral">{data.kind}</span>
-          {data.version_no !== null ? (
-            <span className="toolbar-total">v{data.version_no}</span>
-          ) : null}
-        </div>
+    <PageShell>
+      {back}
+      <div className="toolbar">
+        <h1 className="mono">{data.name}</h1>
+        <span className="pill neutral">{data.kind}</span>
+        {data.version_no !== null ? (
+          <span className="toolbar-total">v{data.version_no}</span>
+        ) : null}
+      </div>
 
-        <details className="card pad">
-          <summary>Rename this {noun}</summary>
-          <Field label={`New ${noun} name`}>
-            <input
-              className="text"
-              value={renameDraft}
-              maxLength={200}
-              placeholder={`Full ${noun} name, without the 7Sigma: prefix`}
-              onChange={(e) => setRenameDraft(e.target.value)}
-              spellCheck={false}
-            />
-          </Field>
+      <details className="card pad">
+        <summary>Rename this {noun}</summary>
+        <Field label={`New ${noun} name`}>
+          <input
+            className="text"
+            value={renameDraft}
+            maxLength={200}
+            placeholder={`Full ${noun} name, without the 7Sigma: prefix`}
+            onChange={(e) => setRenameDraft(e.target.value)}
+            spellCheck={false}
+          />
+        </Field>
+        <Field
+          label="Reason for the rename"
+          hint="Moves the name and every reference to it in one step: one new version carrying the new name, one republished version per component using it, and the mirror file. Verification and sign-off carry — nothing reaching a board changes. History keeps the old name. This is not a way to correct a drawing; paste a new version below for that."
+        >
+          <input
+            className="text"
+            value={renameWhy}
+            maxLength={500}
+            placeholder="Why the current name is wrong"
+            onChange={(e) => setRenameWhy(e.target.value)}
+            spellCheck={false}
+          />
+        </Field>
+        <div className="btn-row">
+          <button
+            type="button"
+            className="btn btn-primary"
+            disabled={
+              renaming || !renameDraft.trim() || renameDraft.trim() === data.name
+            }
+            onClick={() => void rename()}
+          >
+            {renaming ? "Renaming…" : `Rename ${noun}`}
+          </button>
+          {renameNotice ? <span className="muted rail-hint">{renameNotice}</span> : null}
+        </div>
+      </details>
+
+      {noun === "footprint" ? (
+        <div className="card pad">
+          <h2 className="card-title">Package name</h2>
           <Field
-            label="Reason for the rename"
-            hint="Moves the name and every reference to it in one step: one new version carrying the new name, one republished version per component using it, and the mirror file. Verification and sign-off carry — nothing reaching a board changes. History keeps the old name. This is not a way to correct a drawing; paste a new version below for that."
+            hint={
+              <>
+                What <span className="mono">{"{Footprint_Name}"}</span> resolves to in a
+                component's <span className="mono">ki_description</span>. Stored on the
+                footprint, so every component using it stays in step — saving rebuilds the
+                affected symbol libraries.
+              </>
+            }
           >
             <input
               className="text"
-              value={renameWhy}
-              maxLength={500}
-              placeholder="Why the current name is wrong"
-              onChange={(e) => setRenameWhy(e.target.value)}
+              value={nameDraft}
+              maxLength={200}
+              placeholder="Short package name, e.g. 0402 or SOT-23-6"
+              onChange={(e) => setNameDraft(e.target.value)}
+              aria-label="Footprint package name"
               spellCheck={false}
             />
           </Field>
@@ -229,138 +249,99 @@ export default function TemplateDetail() {
             <button
               type="button"
               className="btn btn-primary"
-              disabled={
-                renaming || !renameDraft.trim() || renameDraft.trim() === data.name
-              }
-              onClick={() => void rename()}
+              disabled={savingName || nameDraft === (data.display_name ?? "")}
+              onClick={() => void saveName()}
             >
-              {renaming ? "Renaming…" : `Rename ${noun}`}
+              {savingName ? "Saving…" : "Save name"}
             </button>
-            {renameNotice ? <span className="muted rail-hint">{renameNotice}</span> : null}
+            {nameNotice ? <span className="muted rail-hint">{nameNotice}</span> : null}
           </div>
-        </details>
-
-        {noun === "footprint" ? (
-          <div className="card pad">
-            <h2 className="card-title">Package name</h2>
-            <Field
-              hint={
-                <>
-                  What <span className="mono">{"{Footprint_Name}"}</span> resolves to in a
-                  component's <span className="mono">ki_description</span>. Stored on the
-                  footprint, so every component using it stays in step — saving rebuilds the
-                  affected symbol libraries.
-                </>
-              }
-            >
-              <input
-                className="text"
-                value={nameDraft}
-                maxLength={200}
-                placeholder="Short package name, e.g. 0402 or SOT-23-6"
-                onChange={(e) => setNameDraft(e.target.value)}
-                aria-label="Footprint package name"
-                spellCheck={false}
-              />
-            </Field>
-            <div className="btn-row">
-              <button
-                type="button"
-                className="btn btn-primary"
-                disabled={savingName || nameDraft === (data.display_name ?? "")}
-                onClick={() => void saveName()}
-              >
-                {savingName ? "Saving…" : "Save name"}
-              </button>
-              {nameNotice ? <span className="muted rail-hint">{nameNotice}</span> : null}
-            </div>
-          </div>
-        ) : null}
-
-        <div className="card pad">
-          <FootprintPreview
-            title={<h2 className="card-title">Preview</h2>}
-            svgUrl={
-              // A parent row with no published version: a creation filed as a
-              // draft before writes published directly, and never approved.
-              // /preview.svg 404s by design, and the shared viewer says so.
-              data.version_no === null ? null : templatePreviewUrl(kind, id, data.version_id)
-            }
-            // Footprints only: a symbol has no board to render. Same switch,
-            // same viewer and same GLB the component page uses — this one just
-            // addresses the DRAWING rather than a component version pinning it.
-            glbUrl={
-              kind === "footprints" && data.version_no !== null
-                ? footprintTemplateGlbUrl(id, data.version_no)
-                : null
-            }
-            missingText="No published version — nothing to preview. Paste the source below to publish one."
-            stickyKey="template:viewMode"
-            className="template-preview"
-          />
         </div>
+      ) : null}
 
-        <div className="card pad">
-          <h2 className="card-title">Details</h2>
-          <table className="kv">
-            <tbody>
-              <VersionRows at={data.created_at} by={data.created_by} note={data.comment} />
-              {facts.map(([label, value]) => (
-                <tr key={label}>
-                  <td>{label}</td>
-                  <td className="mono">{value}</td>
-                </tr>
-              ))}
-              {data.models && data.models.length > 0 ? (
-                <tr>
-                  <td>3D models</td>
-                  <td className="mono">{data.models.join(", ")}</td>
-                </tr>
-              ) : null}
-            </tbody>
-          </table>
-        </div>
-
-        <FoldSection title="Used by components" count={data.used_by.length} foldKey={`template:${kind}:${id}:used-by`}>
-          {data.used_by.length === 0 ? (
-            <p className="muted">Not used by any component yet.</p>
-          ) : (
-            <LinkList items={data.used_by} to={(uid) => `/library/components/${uid}`} />
-          )}
-        </FoldSection>
-
-        {data.source_text ? (
-          <details className="card pad">
-            <summary>Source ({noun === "footprint" ? ".kicad_mod" : ".kicad_sym"})</summary>
-            <pre className="code-block">{data.source_text}</pre>
-          </details>
-        ) : null}
-
-        {kind === "symbols" ? <SimLinkCard symbolId={id} /> : null}
-
-        <ReviewCard kind={noun === "footprint" ? "footprint" : "symbol"} id={id} />
-
-        <details className="card pad">
-          <summary>Propose an edit</summary>
-          <GeometryPaste kind={kind} id={id} publishedSource={data.source_text} />
-        </details>
-
-        {kind === "footprints" ? (
-          <div className="card pad danger-card">
-            <h2 className="card-title">Retire this footprint</h2>
-            <p className="muted">
-              Deletes the footprint, all its versions and its file in the mirror. The server
-              refuses while any component version — including historical ones — still pins it,
-              and names the count.
-            </p>
-            <button className="btn btn-danger" disabled={retiring} onClick={() => void retire()}>
-              {retiring ? "Retiring…" : "Retire footprint"}
-            </button>
-          </div>
-        ) : null}
-
-        <CommentsPanel kind={kind} id={id} noun={noun} />
+      <div className="card pad">
+        <FootprintPreview
+          title={<h2 className="card-title">Preview</h2>}
+          svgUrl={
+            // A parent row with no published version: a creation filed as a
+            // draft before writes published directly, and never approved.
+            // /preview.svg 404s by design, and the shared viewer says so.
+            data.version_no === null ? null : templatePreviewUrl(kind, id, data.version_id)
+          }
+          // Footprints only: a symbol has no board to render. Same switch,
+          // same viewer and same GLB the component page uses — this one just
+          // addresses the DRAWING rather than a component version pinning it.
+          glbUrl={
+            kind === "footprints" && data.version_no !== null
+              ? footprintTemplateGlbUrl(id, data.version_no)
+              : null
+          }
+          missingText="No published version — nothing to preview. Paste the source below to publish one."
+          stickyKey="template:viewMode"
+          className="template-preview"
+        />
       </div>
-    </div>
+
+      <div className="card pad">
+        <h2 className="card-title">Details</h2>
+        <table className="kv">
+          <tbody>
+            <VersionRows at={data.created_at} by={data.created_by} note={data.comment} />
+            {facts.map(([label, value]) => (
+              <tr key={label}>
+                <td>{label}</td>
+                <td className="mono">{value}</td>
+              </tr>
+            ))}
+            {data.models && data.models.length > 0 ? (
+              <tr>
+                <td>3D models</td>
+                <td className="mono">{data.models.join(", ")}</td>
+              </tr>
+            ) : null}
+          </tbody>
+        </table>
+      </div>
+
+      <FoldSection title="Used by components" count={data.used_by.length} foldKey={`template:${kind}:${id}:used-by`}>
+        {data.used_by.length === 0 ? (
+          <p className="muted">Not used by any component yet.</p>
+        ) : (
+          <LinkList items={data.used_by} to={(uid) => `/library/components/${uid}`} />
+        )}
+      </FoldSection>
+
+      {data.source_text ? (
+        <details className="card pad">
+          <summary>Source ({noun === "footprint" ? ".kicad_mod" : ".kicad_sym"})</summary>
+          <pre className="code-block">{data.source_text}</pre>
+        </details>
+      ) : null}
+
+      {kind === "symbols" ? <SimLinkCard symbolId={id} /> : null}
+
+      <ReviewCard kind={noun === "footprint" ? "footprint" : "symbol"} id={id} />
+
+      <details className="card pad">
+        <summary>Propose an edit</summary>
+        <GeometryPaste kind={kind} id={id} publishedSource={data.source_text} />
+      </details>
+
+      {kind === "footprints" ? (
+        <div className="card pad danger-card">
+          <h2 className="card-title">Retire this footprint</h2>
+          <p className="muted">
+            Deletes the footprint, all its versions and its file in the mirror. The server
+            refuses while any component version — including historical ones — still pins it,
+            and names the count.
+          </p>
+          <button className="btn btn-danger" disabled={retiring} onClick={() => void retire()}>
+            {retiring ? "Retiring…" : "Retire footprint"}
+          </button>
+        </div>
+      ) : null}
+
+      <CommentsPanel kind={kind} id={id} noun={noun} />
+    </PageShell>
   );
 }

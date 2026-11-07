@@ -181,6 +181,14 @@ component:
   If a card inside a wide page then looks stretched, cap the CARD — as
   `table.kv.settings-table` does — never the page.
 
+- **A page does not write `.main-solo` and `.page` by hand: use
+  `components/PageShell.tsx`.** `className` adds a modifier to `.page`. A page with
+  nothing to show yet returns `<PageLoading error={error} label="Loading order…" />`,
+  which draws the banner or the spinner in the same wrappers. Write the divs only when
+  the shape differs. `Invoices` and `Deployments` hold their dialogs in `.main-solo`,
+  beside `.page`. Do not add a wrapper to the shell, because `scrollRestore.ts` names
+  a scroller by its class and its index.
+
 - **Reuse the shared UI atoms** in `src/components/Ui.tsx` instead of
   re-implementing them: `<Spinner label?/>`, `<ErrorBanner message/>`,
   `<StatusPill status/>` (which already maps statuses → ok/warn/err tones — feed
@@ -390,10 +398,36 @@ a component. When you add an endpoint:
    router's shape).
 2. Add a thin function using the existing `request<T>()` / `API_URL` helpers
    (they already handle `ApiError`, abort signals, and Pydantic error parsing).
-3. Consume it from the page with the standard pattern seen across pages: an
-   `AbortController` in `useEffect`, `errorMessage(err)` for messages,
-   `isAbortError(err)` to ignore aborts, `<Spinner/>` while loading, and
-   `<ErrorBanner/>` on failure.
+3. Read it with `useLoad` (`components/useLoad.ts`), show `<Spinner/>` while it
+   loads and `<ErrorBanner/>` on failure.
+
+### A fetch on mount goes through `useLoad`
+
+A fetch that runs on mount or when a dependency changes is
+`useLoad(load, deps, opts)`. Do not write an `AbortController` in a `useEffect`
+for it. The hook aborts on a change and on unmount, ignores an abort, drops a
+stale answer and turns a failure into `errorMessage(err)`.
+
+- **Match what the screen does during a change.** The default clears the data when
+  a dependency changes. `keep: true` keeps the old rows, so a table does not jump
+  and lose its scroll. A wrong choice shows no error, only a flash or a stale row.
+- **`reload()` never clears the data.** To blank the screen first, call
+  `setData(null)`. A success clears the error, so an error that must stay through a
+  reload needs its own state (`Checklists`, `saveError`).
+- **`load` runs inside the effect, and `reload()` runs it again.** A reset that
+  belongs to a dependency change only goes in a `useEffect` of its own (`ReviewTab`).
+- **`enabled: false` clears the data, and `once: true` keeps it** and fetches only
+  until an answer is here, for a fold that opens many times.
+- **`data ?? []` is a new array on each render while the answer is not here.** When
+  it goes in the deps of another effect, use a constant (`NO_RUNS` in `Bench`).
+
+Do not use `useLoad` for these. Each keeps its own effect:
+
+- a poll, a stream, a socket or a write,
+- a server-paged list (`useInfiniteScroll`, `Devices`, `ChangesFeed`, `ActivityCard`),
+- a search behind a debounce timer that stays in the effect,
+- fetches that depend on each other, or several fetches that one `reload` ties together,
+- a `fetch` whose object URL the cleanup revokes (`PdfFrame`, `Viewer3D`, `GeometryPreview`).
 
 ### `request()` renders a structured refusal from `detail.error`
 

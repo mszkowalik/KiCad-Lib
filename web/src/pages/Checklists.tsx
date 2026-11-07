@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
+import { Fragment, useCallback, useMemo, useState } from "react";
 import {
   errorMessage,
   getAllChecklists,
@@ -7,7 +7,6 @@ import {
   getChecklistCoverage,
   getChecklistMeta,
   getChecklistVersion,
-  isAbortError,
   saveChecklist,
   saveChecklistScope,
   type CheckParamValue,
@@ -15,9 +14,7 @@ import {
   type ChecklistItem,
   type ChecklistMeta,
   type ChecklistScopeRows,
-  type ChecklistVersionDetail,
   type ReviewKind,
-  type VariantCoverage,
 } from "../api";
 import DataTable, { type Column } from "../components/DataTable";
 import { useDialog } from "../components/Dialog";
@@ -28,6 +25,8 @@ import NumberInput from "../components/NumberInput";
 import SiInput from "../components/SiInput";
 import { ErrorBanner, Spinner } from "../components/Ui";
 import { localWhen, plural } from "../format";
+import { useLoad } from "../components/useLoad";
+import PageShell, { PageLoading } from "../components/PageShell";
 
 /**
  * Every check in the platform, in ONE table.
@@ -507,18 +506,11 @@ function Coverage({
   itemKey: string;
   categoryId: number | null;
 }) {
-  const [cov, setCov] = useState<VariantCoverage | null>(null);
-
-  useEffect(() => {
-    const ctrl = new AbortController();
-    setCov(null);
-    getChecklistCoverage(kind, itemKey, categoryId, ctrl.signal)
-      .then(setCov)
-      .catch(() => {
-        /* a count is a convenience; the editor works without it */
-      });
-    return () => ctrl.abort();
-  }, [kind, itemKey, categoryId]);
+  // A count is a convenience, so its error shows nothing: the editor works without it.
+  const { data: cov } = useLoad(
+    (signal) => getChecklistCoverage(kind, itemKey, categoryId, signal),
+    [kind, itemKey, categoryId],
+  );
 
   if (kind !== "component") return null;
   if (cov === null) return <p className="rail-hint">Counting parts…</p>;
@@ -601,19 +593,12 @@ function VersionPanel({ scope, versionNo, blocked, onPutBack }: {
   onPutBack: (message: string) => Promise<void>;
 }) {
   const dialog = useDialog();
-  const [version, setVersion] = useState<ChecklistVersionDetail | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const { data: version, error, setError } = useLoad(
+    (signal) => getChecklistVersion(scope.id, versionNo, signal),
+    [scope.id, versionNo],
+    { keep: true },
+  );
   const [busy, setBusy] = useState(false);
-
-  useEffect(() => {
-    const ctrl = new AbortController();
-    getChecklistVersion(scope.id, versionNo, ctrl.signal)
-      .then(setVersion)
-      .catch((err) => {
-        if (!isAbortError(err)) setError(errorMessage(err));
-      });
-    return () => ctrl.abort();
-  }, [scope.id, versionNo]);
 
   if (version === null) return error ? <ErrorBanner message={error} /> : <Spinner label="Loading the version" />;
 
@@ -690,26 +675,17 @@ function ChecklistVersions({ scopes, blocked, onPutBack }: {
   onPutBack: () => Promise<void>;
 }) {
   const [picked, setPicked] = useState<number | null>(null);
-  const [history, setHistory] = useState<ChecklistDetail["history"] | null>(null);
-  const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const scope = scopes.find((s) => s.id === picked) ?? scopes[0];
   const scopeId = scope?.id;
   const currentNo = scope?.version_no ?? null;
 
   // `currentNo` is here so that a publish from the table above adds its row.
-  useEffect(() => {
-    if (scopeId === undefined) return;
-    const ctrl = new AbortController();
-    setHistory(null);
-    setError(null);
-    getChecklist(scopeId, ctrl.signal)
-      .then((c) => setHistory(c.history))
-      .catch((err) => {
-        if (!isAbortError(err)) setError(errorMessage(err));
-      });
-    return () => ctrl.abort();
-  }, [scopeId, currentNo]);
+  const { data: history, error } = useLoad(
+    (signal) => getChecklist(scopeId as number, signal).then((c) => c.history),
+    [scopeId, currentNo],
+    { enabled: scopeId !== undefined },
+  );
 
   if (!scope) return <p className="muted">No scope states a check yet.</p>;
   return (
@@ -760,9 +736,9 @@ function ChecklistVersions({ scopes, blocked, onPutBack }: {
 }
 
 export default function Checklists() {
-  const [data, setData] = useState<ChecklistScopeRows | null>(null);
   const [meta, setMeta] = useState<ChecklistMeta | null>(null);
-  const [cats, setCats] = useState<{ id: number; label: string }[]>([]);
+  const { data: tree } = useLoad(getCategories, []);
+  const cats = useMemo(() => flattenCats(tree ?? []), [tree]);
   /** Edited items per scope. A scope absent here is untouched. */
   const [edits, setEdits] = useState<Record<ScopeKey, Item[]>>({});
   const [draft, setDraft] = useState<{ scope: ScopeKey; key: string; text: string }>({
@@ -772,41 +748,30 @@ export default function Checklists() {
   });
   const [comment, setComment] = useState("");
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  /** A publish that fails. It stays on screen through the reload that follows it. */
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
-  const load = useCallback(
-    (signal?: AbortSignal) =>
-      Promise.all([getAllChecklists(signal), getChecklistMeta(signal)])
-        .then(([all, m]) => {
-          setData(all);
-          setMeta(m);
-          setEdits({});
-          // The labels and input shapes below are the UI's, so the list stays
-          // local — but an assertion the validator has and this file does not
-          // would be silently unselectable. Say so instead.
-          const missing = m.assertions.filter((a) => !ASSERTIONS.some((x) => x.key === a));
-          if (missing.length) {
-            console.warn(
-              `Checklists: the validator offers assertions this editor cannot render: ${missing.join(", ")}. ` +
-                "Add them to ASSERTIONS in web/src/pages/Checklists.tsx.",
-            );
-          }
-        })
-        .catch((err) => {
-          if (!isAbortError(err)) setError(errorMessage(err));
-        }),
+  const { data, error: loadError, reload: load } = useLoad(
+    (signal) =>
+      Promise.all([getAllChecklists(signal), getChecklistMeta(signal)]).then(([all, m]) => {
+        setMeta(m);
+        setEdits({});
+        // The labels and input shapes below are the UI's, so the list stays
+        // local — but an assertion the validator has and this file does not
+        // would be silently unselectable. Say so instead.
+        const missing = m.assertions.filter((a) => !ASSERTIONS.some((x) => x.key === a));
+        if (missing.length) {
+          console.warn(
+            `Checklists: the validator offers assertions this editor cannot render: ${missing.join(", ")}. ` +
+              "Add them to ASSERTIONS in web/src/pages/Checklists.tsx.",
+          );
+        }
+        return all;
+      }),
     [],
   );
-
-  useEffect(() => {
-    const ctrl = new AbortController();
-    void load(ctrl.signal);
-    getCategories(ctrl.signal)
-      .then((tree) => setCats(flattenCats(tree)))
-      .catch(() => setCats([]));
-    return () => ctrl.abort();
-  }, [load]);
+  const error = saveError ?? loadError;
 
   /** Every scope that exists, plus every category that could state something —
    *  the second kind is what "add a check to Relays" needs before Relays has a
@@ -954,7 +919,7 @@ export default function Checklists() {
   const publish = async () => {
     if (problems.length > 0 || dirtyScopes.length === 0) return;
     setBusy(true);
-    setError(null);
+    setSaveError(null);
     const done: string[] = [];
     try {
       for (const key of dirtyScopes) {
@@ -972,7 +937,7 @@ export default function Checklists() {
       await load();
       setNotice(`Published: ${done.join(", ")}.`);
     } catch (err) {
-      setError(
+      setSaveError(
         `${errorMessage(err)}${done.length ? ` — already published: ${done.join(", ")}` : ""}`,
       );
       await load();
@@ -1247,16 +1212,10 @@ export default function Checklists() {
     );
   };
 
-  if (error !== null && data === null) {
-    return <div className="main-solo"><div className="page"><ErrorBanner message={error} /></div></div>;
-  }
-  if (data === null || meta === null) {
-    return <div className="main-solo"><div className="page"><Spinner label="Loading checks" /></div></div>;
-  }
+  if (data === null || meta === null) return <PageLoading error={error} label="Loading checks" />;
 
   return (
-    <div className="main-solo">
-    <div className="page">
+    <PageShell>
       <h1>Checks</h1>
       <p className="muted">
         Every check in the platform, in one table. A category states only what it CHANGES, so a
@@ -1345,7 +1304,6 @@ export default function Checklists() {
           onPutBack={() => load()}
         />
       </FoldSection>
-    </div>
-    </div>
+    </PageShell>
   );
 }

@@ -10,9 +10,7 @@ import {
   isAbortError,
   saveSkill,
   saveSkillDescription,
-  type SkillDetail,
   type SkillListItem,
-  type SkillVersionDetail,
 } from "../api";
 import { useDialog } from "../components/Dialog";
 import Field from "../components/Field";
@@ -20,6 +18,7 @@ import { fmtBytes } from "../components/flasher/common";
 import { ErrorBanner, Spinner } from "../components/Ui";
 import { localDate, localWhen } from "../format";
 import { useStickyState } from "../useStickyState";
+import { useLoad } from "../components/useLoad";
 
 /** Draft state for a not-yet-created skill (via "New skill"). */
 interface NewSkillDraft {
@@ -48,14 +47,14 @@ export default function Skills() {
     [navigate, selectedId, setStickyId],
   );
 
-  const [detail, setDetail] = useState<SkillDetail | null>(null);
-  const [detailError, setDetailError] = useState<string | null>(null);
-  const [detailLoading, setDetailLoading] = useState(false);
-
   /** null = current version (editable); a number = viewing an old version. */
   const [viewNo, setViewNo] = useState<number | null>(null);
-  const [viewVersion, setViewVersion] = useState<SkillVersionDetail | null>(null);
-  const [viewLoading, setViewLoading] = useState(false);
+  // An old version's content, while it is on screen.
+  const { data: viewVersion, loading: viewLoading, error: viewError } = useLoad(
+    (signal) => getSkillVersion(selectedId as number, viewNo as number, signal),
+    [selectedId, viewNo],
+    { enabled: selectedId !== null && viewNo !== null },
+  );
 
   const [editorText, setEditorText] = useState("");
   /** Unversioned when-to-use line — saved separately from the editor text. */
@@ -65,6 +64,17 @@ export default function Skills() {
   const [savedBanner, setSavedBanner] = useState<string | null>(null);
 
   const [newDraft, setNewDraft] = useState<NewSkillDraft | null>(null);
+  // Load skill detail when the selection changes (not in new-draft mode).
+  const { data: detail, setData: setDetail, error: detailError, loading: detailLoading } = useLoad((signal) => {
+    setViewNo(null);
+    setSaveError(null);
+    setSavedBanner(null);
+    return getSkill(selectedId as number, signal).then((d) => {
+      setEditorText(d.content);
+      setDescText(d.description);
+      return d;
+    });
+  }, [selectedId, newDraft], { enabled: selectedId !== null && newDraft === null });
   const dialog = useDialog();
 
   // Content and description are saved through different endpoints (the
@@ -94,54 +104,6 @@ export default function Skills() {
     loadList(ctrl.signal, true);
     return () => ctrl.abort();
   }, []);
-
-  // Load skill detail when the selection changes (not in new-draft mode).
-  useEffect(() => {
-    if (selectedId === null || newDraft !== null) return;
-    const ctrl = new AbortController();
-    setDetail(null);
-    setDetailError(null);
-    setDetailLoading(true);
-    setViewNo(null);
-    setViewVersion(null);
-    setSaveError(null);
-    setSavedBanner(null);
-    getSkill(selectedId, ctrl.signal)
-      .then((d) => {
-        setDetail(d);
-        setEditorText(d.content);
-        setDescText(d.description);
-        setDetailLoading(false);
-      })
-      .catch((err) => {
-        if (isAbortError(err)) return;
-        setDetailError(errorMessage(err));
-        setDetailLoading(false);
-      });
-    return () => ctrl.abort();
-  }, [selectedId, newDraft]);
-
-  // Load an old version's content when viewing it.
-  useEffect(() => {
-    if (selectedId === null || viewNo === null) {
-      setViewVersion(null);
-      return;
-    }
-    const ctrl = new AbortController();
-    setViewVersion(null);
-    setViewLoading(true);
-    getSkillVersion(selectedId, viewNo, ctrl.signal)
-      .then((v) => {
-        setViewVersion(v);
-        setViewLoading(false);
-      })
-      .catch((err) => {
-        if (isAbortError(err)) return;
-        setSaveError(errorMessage(err));
-        setViewLoading(false);
-      });
-    return () => ctrl.abort();
-  }, [selectedId, viewNo]);
 
   const confirmDiscard = async (): Promise<boolean> =>
     !dirty ||
@@ -186,9 +148,7 @@ export default function Skills() {
     }
     setNewDraft({ name: trimmed });
     setDetail(null);
-    setDetailError(null);
     setViewNo(null);
-    setViewVersion(null);
     setEditorText("");
     setDescText("");
     setSaveError(null);
@@ -348,7 +308,7 @@ export default function Skills() {
 
       <main className="skill-editor">
         {detailError ? <ErrorBanner message={`Skill failed to load: ${detailError}`} /> : null}
-        {saveError ? <ErrorBanner message={saveError} /> : null}
+        <ErrorBanner message={saveError ?? viewError} />
         {savedBanner ? (
           <div className="banner-ok" role="status">
             {savedBanner}

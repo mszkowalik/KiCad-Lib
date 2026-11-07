@@ -53,6 +53,7 @@ import AccountantMark from "../components/AccountantMark";
 import { ErrorBanner, Spinner, StatusPill } from "../components/Ui";
 import { pl, today } from "../format";
 import { absoluteFileUrl, fileHref } from "../viewkind";
+import PageShell from "../components/PageShell";
 
 const KIND_TEXT: Record<string, string> = {
   vat: "VAT", proforma: "proforma", correction: "correction", advance: "advance", settlement: "settlement",
@@ -486,62 +487,60 @@ export default function SalesInvoices() {
   }, [rows]);
 
   return (
-    <div className="main-solo">
-      <div className="page">
-        <div className="toolbar">
-          <h1>Sales invoices</h1>
-          {rows ? (
-            <span className="toolbar-total">
-              {rows.length} documents · {totals.drafts} draft(s) · {pl(totals.open)} PLN unpaid on the platform
-            </span>
-          ) : null}
-          {isAdmin ? (
-            <>
-              <button type="button" className="btn btn-sm" onClick={() => setWriting("history")}
-                title="A document a company issued before the platform or KSeF wrote its invoices">
-                Record issued elsewhere…
-              </button>
-              <button type="button" className="btn btn-sm" onClick={() => setWriting("import")}
-                title="The files of the old invoicing script">
-                Import register…
-              </button>
-            </>
-          ) : null}
-        </div>
-        <ErrorBanner message={error} />
-        {writing === "history" ? (
-          <RecordHistoryDialog customers={customers}
-            onClose={(c) => { setWriting(null); if (c) load(); }} />
+    <PageShell>
+      <div className="toolbar">
+        <h1>Sales invoices</h1>
+        {rows ? (
+          <span className="toolbar-total">
+            {rows.length} documents · {totals.drafts} draft(s) · {pl(totals.open)} PLN unpaid on the platform
+          </span>
         ) : null}
-        {writing === "import" ? (
-          <ImportRegisterDialog onClose={(c) => { setWriting(null); if (c) load(); }} />
+        {isAdmin ? (
+          <>
+            <button type="button" className="btn btn-sm" onClick={() => setWriting("history")}
+              title="A document a company issued before the platform or KSeF wrote its invoices">
+              Record issued elsewhere…
+            </button>
+            <button type="button" className="btn btn-sm" onClick={() => setWriting("import")}
+              title="The files of the old invoicing script">
+              Import register…
+            </button>
+          </>
         ) : null}
-        <NewInvoiceCard customers={customers} products={products} onDone={() => load()} version={version} />
-        <RecurringCard templates={templates} customers={customers} products={products} onDone={() => load()} />
-        <div className="card pad">
-          <h2 className="card-title">Register</h2>
-          {rows === null ? (
-            <Spinner label="Loading invoices…" />
-          ) : (
-            <>
-              <div className="stat-row">
-                {([["overdue", "err"], ["unpaid", "warn"], ["draft", "warn"], ["paid", "ok"]] as const).map(([word, tone]) => (
-                  <NarrowChip key={word} n={rows.filter((r) => stateOf(r) === word).length}
-                    tone={tone} value={word} current={narrow} onNarrow={setNarrow}>{word}</NarrowChip>
-                ))}
-              </div>
-              <DataTable
-                rows={narrow ? rows.filter((r) => stateOf(r) === narrow) : rows}
-                rowKey={(r) => r.id}
-                columns={COLUMNS}
-                empty={narrow ? "No invoice in this state." : "No invoices."}
-                defaultSort={{ key: "date", dir: "desc" }}
-                expand={(r) => <InvoicePanel id={r.id} onChanged={() => load()} />}
-              />
-            </>
-          )}
-        </div>
       </div>
-    </div>
+      <ErrorBanner message={error} />
+      {writing === "history" ? (
+        <RecordHistoryDialog customers={customers}
+          onClose={(c) => { setWriting(null); if (c) load(); }} />
+      ) : null}
+      {writing === "import" ? (
+        <ImportRegisterDialog onClose={(c) => { setWriting(null); if (c) load(); }} />
+      ) : null}
+      <NewInvoiceCard customers={customers} products={products} onDone={() => load()} version={version} />
+      <RecurringCard templates={templates} customers={customers} products={products} onDone={() => load()} />
+      <div className="card pad">
+        <h2 className="card-title">Register</h2>
+        {rows === null ? (
+          <Spinner label="Loading invoices…" />
+        ) : (
+          <>
+            <div className="stat-row">
+              {([["overdue", "err"], ["unpaid", "warn"], ["draft", "warn"], ["paid", "ok"]] as const).map(([word, tone]) => (
+                <NarrowChip key={word} n={rows.filter((r) => stateOf(r) === word).length}
+                  tone={tone} value={word} current={narrow} onNarrow={setNarrow}>{word}</NarrowChip>
+              ))}
+            </div>
+            <DataTable
+              rows={narrow ? rows.filter((r) => stateOf(r) === narrow) : rows}
+              rowKey={(r) => r.id}
+              columns={COLUMNS}
+              empty={narrow ? "No invoice in this state." : "No invoices."}
+              defaultSort={{ key: "date", dir: "desc" }}
+              expand={(r) => <InvoicePanel id={r.id} onChanged={() => load()} />}
+            />
+          </>
+        )}
+      </div>
+    </PageShell>
   );
 }

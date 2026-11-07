@@ -5,18 +5,16 @@
  *  whose content is a set of devices. Its status is derived from shipments
  *  and never set by hand. What the shelf holds is on Stock → Finished devices.
  */
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   createOrder,
   errorMessage,
   getDemand,
-  isAbortError,
   listCustomers,
   listOrders,
   getProjects,
   type CustomerRow,
-  type DemandRow,
   type OrderLineIn,
   type OrderRow,
   type ProjectInfo,
@@ -29,38 +27,21 @@ import { NarrowChip } from "../components/FoldSection";
 import { ErrorBanner, Spinner, StatusPill } from "../components/Ui";
 import { useAuth } from "../auth";
 import { amount, plain, today, plural } from "../format";
+import { useLoad } from "../components/useLoad";
+import PageShell from "../components/PageShell";
+
+/** One identity, because the new-order form has `projects` in its deps. */
+const NO_PROJECTS: ProjectInfo[] = [];
 
 export default function Orders() {
-  const [orders, setOrders] = useState<OrderRow[] | null>(null);
-  const [demand, setDemand] = useState<DemandRow[] | null>(null);
-  const [customers, setCustomers] = useState<CustomerRow[]>([]);
-  const [projects, setProjects] = useState<ProjectInfo[]>([]);
-  const [error, setError] = useState<string | null>(null);
+  const { data: orders, error: ordersError } = useLoad(listOrders, []);
+  const { data: demand, error: demandError } = useLoad((signal) => getDemand(undefined, signal), []);
+  const error = ordersError ?? demandError;
+  const customers = useLoad(listCustomers, []).data ?? [];
+  const projects = useLoad(getProjects, []).data ?? NO_PROJECTS;
   const [creating, setCreating] = useState(false);
   const [narrow, setNarrow] = useState<"" | "open" | "partial" | "fulfilled" | "unpaid">("");
   const navigate = useNavigate();
-
-  const reload = useCallback(() => {
-    const ac = new AbortController();
-    listOrders(ac.signal)
-      .then((rows) => {
-        setOrders(rows);
-        setError(null);
-      })
-      .catch((err) => {
-        if (!isAbortError(err)) setError(errorMessage(err));
-      });
-    getDemand(undefined, ac.signal)
-      .then(setDemand)
-      .catch((err) => {
-        if (!isAbortError(err)) setError(errorMessage(err));
-      });
-    listCustomers(ac.signal).then(setCustomers).catch(() => setCustomers([]));
-    getProjects(ac.signal).then(setProjects).catch(() => setProjects([]));
-    return () => ac.abort();
-  }, []);
-
-  useEffect(() => reload(), [reload]);
 
   const { companyName } = useAuth();
   const columns = useMemo<Column<OrderRow>[]>(
@@ -133,61 +114,59 @@ export default function Orders() {
   );
 
   return (
-    <div className="main-solo">
-      <div className="page">
-        <div className="toolbar">
-          <h1>Orders</h1>
-          <span className="toolbar-total">
-            {orders ? `${plural(orders.length, "order")}` : ""}
-          </span>
-          <button type="button" className="btn btn-primary btn-sm" onClick={() => setCreating((v) => !v)}>
-            {creating ? "Close" : "New order"}
-          </button>
-        </div>
-        {error ? <ErrorBanner message={error} /> : null}
-
-        {creating ? (
-          <NewOrderCard
-            customers={customers}
-            projects={projects}
-            onCreated={(o) => {
-              setCreating(false);
-              navigate(`/sales/orders/${o.id}`);
-            }}
-          />
-        ) : null}
-
-        <DemandCard rows={demand} />
-
-        <div className="card pad">
-          <h2 className="card-title">Customer orders</h2>
-          <p className="muted dim">
-            Status follows the shipments: open, partial, fulfilled. Click a row for its lines,
-            invoices and shipments.
-          </p>
-          {orders === null ? (
-            <Spinner label="Loading orders…" />
-          ) : (
-            <>
-            <div className="stat-row">
-              <NarrowChip n={orders.filter((o) => o.status === "open").length} tone="acc" value="open" current={narrow} onNarrow={setNarrow}>open</NarrowChip>
-              <NarrowChip n={orders.filter((o) => o.status === "partial").length} tone="warn" value="partial" current={narrow} onNarrow={setNarrow}>partly shipped</NarrowChip>
-              <NarrowChip n={orders.filter((o) => o.status === "fulfilled").length} tone="ok" value="fulfilled" current={narrow} onNarrow={setNarrow}>fulfilled</NarrowChip>
-              <NarrowChip n={orders.filter((o) => o.unpaid_count > 0).length} tone={orders.some((o) => o.unpaid_count > 0) ? "warn" : undefined} value="unpaid" current={narrow} onNarrow={setNarrow}>with unpaid invoices</NarrowChip>
-            </div>
-            <DataTable
-              rows={orders.filter((o) => !narrow || (narrow === "unpaid" ? o.unpaid_count > 0 : o.status === narrow))}
-              columns={columns}
-              rowKey={(o) => o.id}
-              defaultSort={{ key: "order_date", dir: "desc" }}
-              onRowClick={(o) => navigate(`/sales/orders/${o.id}`)}
-              persistKey="orders"
-            />
-            </>
-          )}
-        </div>
+    <PageShell>
+      <div className="toolbar">
+        <h1>Orders</h1>
+        <span className="toolbar-total">
+          {orders ? `${plural(orders.length, "order")}` : ""}
+        </span>
+        <button type="button" className="btn btn-primary btn-sm" onClick={() => setCreating((v) => !v)}>
+          {creating ? "Close" : "New order"}
+        </button>
       </div>
-    </div>
+      {error ? <ErrorBanner message={error} /> : null}
+
+      {creating ? (
+        <NewOrderCard
+          customers={customers}
+          projects={projects}
+          onCreated={(o) => {
+            setCreating(false);
+            navigate(`/sales/orders/${o.id}`);
+          }}
+        />
+      ) : null}
+
+      <DemandCard rows={demand} />
+
+      <div className="card pad">
+        <h2 className="card-title">Customer orders</h2>
+        <p className="muted dim">
+          Status follows the shipments: open, partial, fulfilled. Click a row for its lines,
+          invoices and shipments.
+        </p>
+        {orders === null ? (
+          <Spinner label="Loading orders…" />
+        ) : (
+          <>
+          <div className="stat-row">
+            <NarrowChip n={orders.filter((o) => o.status === "open").length} tone="acc" value="open" current={narrow} onNarrow={setNarrow}>open</NarrowChip>
+            <NarrowChip n={orders.filter((o) => o.status === "partial").length} tone="warn" value="partial" current={narrow} onNarrow={setNarrow}>partly shipped</NarrowChip>
+            <NarrowChip n={orders.filter((o) => o.status === "fulfilled").length} tone="ok" value="fulfilled" current={narrow} onNarrow={setNarrow}>fulfilled</NarrowChip>
+            <NarrowChip n={orders.filter((o) => o.unpaid_count > 0).length} tone={orders.some((o) => o.unpaid_count > 0) ? "warn" : undefined} value="unpaid" current={narrow} onNarrow={setNarrow}>with unpaid invoices</NarrowChip>
+          </div>
+          <DataTable
+            rows={orders.filter((o) => !narrow || (narrow === "unpaid" ? o.unpaid_count > 0 : o.status === narrow))}
+            columns={columns}
+            rowKey={(o) => o.id}
+            defaultSort={{ key: "order_date", dir: "desc" }}
+            onRowClick={(o) => navigate(`/sales/orders/${o.id}`)}
+            persistKey="orders"
+          />
+          </>
+        )}
+      </div>
+    </PageShell>
   );
 }
 

@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-11-07 (one way to load a screen)
+
+- **A screen clears an old error when you change a filter, a tab or a row.** Before, some cards kept the
+  message of the previous selection until the next answer arrived.
+- **A deleted project takes you back to the project list** with no full page reload. A failed delete
+  shows its message on the page.
+- **The transcribe dialog no longer shows "signal is aborted without reason"** when it opens.
+- Inside: 141 fetches go through `components/useLoad.ts`, and 63 page wrappers go through
+  `components/PageShell.tsx`. Nothing else on screen changed. The rules are in `web/CLAUDE.md`.
+
 ## 2026-11-07 (the office organizers are loaded, and the skipped invoices are in stock)
 
 - **Stock → Organizers holds the sheet "Stany Magazynowe".** 196 boxes, 126 filled, 113 parts, 4091

@@ -1,18 +1,17 @@
-import { useCallback, useEffect, useState } from "react";
+import { useState } from "react";
 import {
   checkJlcSession,
   clearJlcSession,
   errorMessage,
   getJlcSession,
-  isAbortError,
   putJlcSession,
-  type JlcSessionState,
 } from "../../api";
 import { localWhen, today, plural } from "../../format";
 import AutoTextarea from "../AutoTextarea";
 import Field from "../Field";
 import { ErrorBanner } from "../Ui";
 import { useDialog } from "../Dialog";
+import { useLoad } from "../useLoad";
 
 /** An account page: logged out, the site sends the tab to its login page. A page
  *  of ours cannot read the cookies it sets, so a person copies them back. */
@@ -32,30 +31,12 @@ const JLC_LOGIN_URL = "https://jlcpcb.com/user-center/orders/";
  */
 export default function JlcSessionStrip({ onChange }: { onChange?: () => void }) {
   const dialog = useDialog();
-  const [state, setState] = useState<JlcSessionState | null>(null);
-  const [error, setError] = useState("");
+  const { data: state, error, setError, reload: load } = useLoad(getJlcSession, []);
   const [busy, setBusy] = useState("");
   const [paste, setPaste] = useState(false);
   const [cookies, setCookies] = useState("");
   const [live, setLive] = useState<"unknown" | "ok" | "dead">("unknown");
   const [detail, setDetail] = useState("");
-
-  const load = useCallback((signal?: AbortSignal) => {
-    getJlcSession(signal)
-      .then((s) => {
-        setState(s);
-        setError("");
-      })
-      .catch((err) => {
-        if (!isAbortError(err)) setError(errorMessage(err));
-      });
-  }, []);
-
-  useEffect(() => {
-    const ac = new AbortController();
-    load(ac.signal);
-    return () => ac.abort();
-  }, [load]);
 
   async function check() {
     setBusy("check");

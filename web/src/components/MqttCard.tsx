@@ -10,18 +10,14 @@
  *  clearing a credential needs its own button: a blank input cannot mean both
  *  "unchanged" and "delete".
  */
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import {
   errorMessage,
   getMqttStatus,
   getMacMismatches,
   getMqttUnlinked,
-  isAbortError,
   linkMqttDevices,
   saveMqttConfig,
-  type MacMismatchRow,
-  type MqttStatusPayload,
-  type MqttUnlinkedRow,
 } from "../api";
 import DataTable from "./DataTable";
 import { useDialog } from "./Dialog";
@@ -30,13 +26,12 @@ import FoldSection, { StatChip } from "./FoldSection";
 import NumberInput from "./NumberInput";
 import { ErrorBanner, Spinner, StatusPill } from "./Ui";
 import { localWhen } from "../format";
+import { useLoad } from "./useLoad";
 
 export default function MqttCard() {
   const dialog = useDialog();
-  const [status, setStatus] = useState<MqttStatusPayload | null>(null);
   /** a relink changes who is unlinked: an open list reads it again */
   const [listTick, setListTick] = useState(0);
-  const [error, setError] = useState("");
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -49,28 +44,19 @@ export default function MqttCard() {
   const [password, setPassword] = useState("");
   const [flushS, setFlushS] = useState(15);
 
-  const load = useCallback((signal?: AbortSignal) => {
-    getMqttStatus(signal)
-      .then((s) => {
-        setStatus(s);
+  const { data: status, error, setError, reload: load } = useLoad(
+    (signal) =>
+      getMqttStatus(signal).then((s) => {
         setEnabled(s.configured.enabled);
         setHost(s.configured.host);
         setPort(s.configured.port);
         setTls(s.configured.tls);
         setUsername(s.configured.username);
         setFlushS(s.configured.flush_s);
-        setError("");
-      })
-      .catch((err) => {
-        if (!isAbortError(err)) setError(errorMessage(err));
-      });
-  }, []);
-
-  useEffect(() => {
-    const ac = new AbortController();
-    load(ac.signal);
-    return () => ac.abort();
-  }, [load]);
+        return s;
+      }),
+    [],
+  );
 
   const save = async () => {
     setBusy(true);
@@ -346,15 +332,15 @@ export default function MqttCard() {
 /** The children of a fold render only while it is open, so these two lists are
  *  read then, and a closed one costs no request. */
 function MacMismatches({ tick, onError }: { tick: number; onError: (message: string) => void }) {
-  const [mismatches, setMismatches] = useState<MacMismatchRow[] | null>(null);
+  const { data: mismatches, error } = useLoad(
+    (signal) => getMacMismatches(signal).then((r) => r.items),
+    [tick],
+    { keep: true },
+  );
   useEffect(() => {
-    const ac = new AbortController();
-    getMacMismatches(ac.signal)
-      .then((r) => setMismatches(r.items))
-      .catch((err) => { if (!isAbortError(err)) onError(errorMessage(err)); });
-    return () => ac.abort();
+    if (error) onError(error);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tick]);
+  }, [error]);
   if (!mismatches) return <Spinner label="Reading the disagreements…" />;
   return (
     <>
@@ -384,15 +370,15 @@ function MacMismatches({ tick, onError }: { tick: number; onError: (message: str
 }
 
 function UnlinkedTopics({ total, tick, onError }: { total: number; tick: number; onError: (message: string) => void }) {
-  const [unlinked, setUnlinked] = useState<MqttUnlinkedRow[] | null>(null);
+  const { data: unlinked, error } = useLoad(
+    (signal) => getMqttUnlinked(signal).then((r) => r.items),
+    [tick],
+    { keep: true },
+  );
   useEffect(() => {
-    const ac = new AbortController();
-    getMqttUnlinked(ac.signal)
-      .then((r) => setUnlinked(r.items))
-      .catch((err) => { if (!isAbortError(err)) onError(errorMessage(err)); });
-    return () => ac.abort();
+    if (error) onError(error);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tick]);
+  }, [error]);
   if (!unlinked) return <Spinner label="Reading the topics…" />;
   return (
     <div className="table-wrap">

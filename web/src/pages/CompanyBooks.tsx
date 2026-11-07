@@ -17,7 +17,6 @@ import {
   accountantFilesUrl,
   getAccountantToSend,
   markAccountant,
-  isAbortError,
   listTaxEntryFiles,
   putTaxEntry,
   putTaxPeriod,
@@ -26,12 +25,10 @@ import {
   taxEntryFilePath,
   uploadTaxEntryFile,
   type AccountantRow,
-  type AccountantToSend,
   type BooksMonth,
   type TaxPeriod,
   type CompanyBooks as Books,
   type OverheadCategory,
-  type OverheadCategoryDocument,
 } from "../api";
 import { useAuth } from "../auth";
 import { askNotSentReason } from "../components/AccountantMark";
@@ -45,6 +42,8 @@ import { useDialog } from "../components/Dialog";
 import Field, { FieldRow } from "../components/Field";
 import { ErrorBanner, Spinner } from "../components/Ui";
 import { pl, today } from "../format";
+import { useLoad } from "../components/useLoad";
+import PageShell from "../components/PageShell";
 
 const BUCKET_TEXT: Record<string, string> = {
   stock: "Stock bought", batches: "Batch costs", projects: "Project costs", prepared: "Prepared parts",
@@ -238,19 +237,13 @@ function TaxPeriodsCard({ companyId, periods, incomeTax, onSaved }: {
  *  gives their files as one ZIP: the ticked rows, or the whole list. */
 function AccountantCard({ companyId }: { companyId: number }) {
   const dialog = useDialog();
-  const [data, setData] = useState<AccountantToSend | null>(null);
   const [picked, setPicked] = useState<Set<string>>(new Set());
-  const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
-  const load = useCallback((signal?: AbortSignal) => {
-    getAccountantToSend(companyId, signal).then((d) => { setData(d); setErr(""); setPicked(new Set()); })
-      .catch((e) => { if (!isAbortError(e)) setErr(errorMessage(e)); });
-  }, [companyId]);
-  useEffect(() => {
-    const ac = new AbortController();
-    load(ac.signal);
-    return () => ac.abort();
-  }, [load]);
+  const { data, error: err, setError: setErr, reload: load } = useLoad(
+    (signal) => getAccountantToSend(companyId, signal).then((d) => { setPicked(new Set()); return d; }),
+    [companyId],
+    { keep: true },
+  );
   const keyOf = (r: AccountantRow) => `${r.kind}:${r.id}`;
   const toggle = (r: AccountantRow) => setPicked((p) => {
     const n = new Set(p);
@@ -350,14 +343,11 @@ function AccountantCard({ companyId }: { companyId: number }) {
 /** The documents whose live positions name one category, so they can be moved
  *  before the category is removed. Each opens on the Invoices page. */
 function CategoryDocuments({ categoryKey }: { categoryKey: string }) {
-  const [docs, setDocs] = useState<OverheadCategoryDocument[] | null>(null);
-  const [err, setErr] = useState("");
-  useEffect(() => {
-    const ac = new AbortController();
-    overheadCategoryDocuments(categoryKey, ac.signal).then(setDocs)
-      .catch((e) => { if (!isAbortError(e)) setErr(errorMessage(e)); });
-    return () => ac.abort();
-  }, [categoryKey]);
+  const { data: docs, error: err } = useLoad(
+    (signal) => overheadCategoryDocuments(categoryKey, signal),
+    [categoryKey],
+    { keep: true },
+  );
   if (err) return <ErrorBanner message={err} />;
   if (docs === null) return <Spinner label="Loading documents" />;
   return (
@@ -388,20 +378,10 @@ function CategoryDocuments({ categoryKey }: { categoryKey: string }) {
 function OverheadTab({ books }: { books: Books | null }) {
   const { isAdmin } = useAuth();
   const dialog = useDialog();
-  const [rows, setRows] = useState<OverheadCategory[] | null>(null);
-  const [err, setErr] = useState("");
+  const { data: rows, error: err, setError: setErr, reload: load } = useLoad(listOverheadCategories, []);
   const [busy, setBusy] = useState(false);
   const [label, setLabel] = useState("");
   const [key, setKey] = useState("");
-  const load = useCallback((signal?: AbortSignal) => {
-    listOverheadCategories(signal).then((r) => { setRows(r); setErr(""); })
-      .catch((e) => { if (!isAbortError(e)) setErr(errorMessage(e)); });
-  }, []);
-  useEffect(() => {
-    const ac = new AbortController();
-    load(ac.signal);
-    return () => ac.abort();
-  }, [load]);
   const act = async (fn: () => Promise<unknown>) => {
     setBusy(true);
     setErr("");
@@ -496,24 +476,17 @@ export default function CompanyBooks() {
   const { companies, scope } = useAuth();
   const [companyId, setCompanyId] = useState<number>(scope !== "all" ? Number(scope) : companies[0]?.id ?? 0);
   const [year, setYear] = useState(new Date().getFullYear());
-  const [books, setBooks] = useState<Books | null>(null);
-  const [error, setError] = useState("");
   // Two tabs, so the books stay one screen (user request 2026-10-15). The
   // tab is in the URL, as on every tabbed page.
   const [searchParams, setSearchParams] = useSearchParams();
   const tab = searchParams.get("tab") === "overhead" ? "overhead" : "books";
   const setTab = (t: string) => setSearchParams(t === "books" ? {} : { tab: t }, { replace: true });
 
-  const load = useCallback((signal?: AbortSignal) => {
-    if (!companyId) return;
-    getCompanyBooks(companyId, year, signal).then((b) => { setBooks(b); setError(""); })
-      .catch((e) => { if (!isAbortError(e)) setError(errorMessage(e)); });
-  }, [companyId, year]);
-  useEffect(() => {
-    const ac = new AbortController();
-    load(ac.signal);
-    return () => ac.abort();
-  }, [load]);
+  const { data: books, error, reload: load } = useLoad(
+    (signal) => getCompanyBooks(companyId, year, signal),
+    [companyId, year],
+    { enabled: !!companyId, keep: true },
+  );
 
   const taxLabel = books?.income_tax ?? (books?.tax_form?.startsWith("cit") ? "cit" : "pit");
   // A company pays ZUS only as an employer (its sole shareholder pays his own,
@@ -539,60 +512,58 @@ export default function CompanyBooks() {
   ], [taxLabel, showZus]);
 
   return (
-    <div className="main-solo">
-      <div className="page">
-        <div className="toolbar">
-          <h1>Company books</h1>
-          {books ? (
-            <span className="toolbar-total">
-              {books.year}: revenue {pl(books.totals.revenue_net)} · costs {pl(books.totals.costs_net)} · income {pl(books.totals.income)} PLN
-              {Number(books.totals.interest) ? <> · interest paid {pl(books.totals.interest)} PLN</> : null}
-            </span>
-          ) : null}
-        </div>
-        <p className="muted dim">
-          The platform's estimate from the sales invoices and the supplier documents billed to the company, beside the
-          accountant's figures. Open a month to enter them.{" "}
-          {books && !books.tax_form && !books.tax_periods?.length ? <>No income tax is estimated until the tax form is set on <Link className="comp-link" to="/admin?tab=companies">Admin → Companies</Link>.</> : null}
-        </p>
-        <FieldRow>
-          {companies.length > 1 ? (
-            <Field label="Company">
-              <select className="text" value={companyId} onChange={(e) => setCompanyId(Number(e.target.value))}>
-                {companies.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-              </select>
-            </Field>
-          ) : null}
-          <Field label="Year">
-            <select className="text" value={year} onChange={(e) => setYear(Number(e.target.value))}>
-              {[0, 1, 2, 3, 4, 5].map((d) => new Date().getFullYear() - d).map((y) => <option key={y} value={y}>{y}</option>)}
+    <PageShell>
+      <div className="toolbar">
+        <h1>Company books</h1>
+        {books ? (
+          <span className="toolbar-total">
+            {books.year}: revenue {pl(books.totals.revenue_net)} · costs {pl(books.totals.costs_net)} · income {pl(books.totals.income)} PLN
+            {Number(books.totals.interest) ? <> · interest paid {pl(books.totals.interest)} PLN</> : null}
+          </span>
+        ) : null}
+      </div>
+      <p className="muted dim">
+        The platform's estimate from the sales invoices and the supplier documents billed to the company, beside the
+        accountant's figures. Open a month to enter them.{" "}
+        {books && !books.tax_form && !books.tax_periods?.length ? <>No income tax is estimated until the tax form is set on <Link className="comp-link" to="/admin?tab=companies">Admin → Companies</Link>.</> : null}
+      </p>
+      <FieldRow>
+        {companies.length > 1 ? (
+          <Field label="Company">
+            <select className="text" value={companyId} onChange={(e) => setCompanyId(Number(e.target.value))}>
+              {companies.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
             </select>
           </Field>
-        </FieldRow>
-        <ErrorBanner message={error} />
-        <TabStrip
-          tabs={[{ id: "books", label: "Books" }, { id: "overhead", label: "Overhead" }]}
-          value={tab}
-          onChange={setTab}
-          label="Company books section"
-        />
-        {tab === "books" ? (
-          <>
-            <div className="card pad">
-              <h2 className="card-title">Months</h2>
-              {books === null ? <Spinner label="Computing…" /> : (
-                <DataTable rows={books.months} rowKey={(m) => m.month} columns={cols} empty="—"
-                  expand={(m) => <MonthPanel companyId={companyId} m={m} incomeTax={taxLabel} onSaved={() => load()} />} />
-              )}
-            </div>
-            {companyId ? <AccountantCard companyId={companyId} /> : null}
-            {books ? <TaxPeriodsCard key={`${companyId}-${books.income_tax}`} companyId={companyId} periods={books.tax_periods ?? []}
-              incomeTax={books.income_tax} onSaved={() => load()} /> : null}
-          </>
-        ) : (
-          <OverheadTab books={books} />
-        )}
-      </div>
-    </div>
+        ) : null}
+        <Field label="Year">
+          <select className="text" value={year} onChange={(e) => setYear(Number(e.target.value))}>
+            {[0, 1, 2, 3, 4, 5].map((d) => new Date().getFullYear() - d).map((y) => <option key={y} value={y}>{y}</option>)}
+          </select>
+        </Field>
+      </FieldRow>
+      <ErrorBanner message={error} />
+      <TabStrip
+        tabs={[{ id: "books", label: "Books" }, { id: "overhead", label: "Overhead" }]}
+        value={tab}
+        onChange={setTab}
+        label="Company books section"
+      />
+      {tab === "books" ? (
+        <>
+          <div className="card pad">
+            <h2 className="card-title">Months</h2>
+            {books === null ? <Spinner label="Computing…" /> : (
+              <DataTable rows={books.months} rowKey={(m) => m.month} columns={cols} empty="—"
+                expand={(m) => <MonthPanel companyId={companyId} m={m} incomeTax={taxLabel} onSaved={() => load()} />} />
+            )}
+          </div>
+          {companyId ? <AccountantCard companyId={companyId} /> : null}
+          {books ? <TaxPeriodsCard key={`${companyId}-${books.income_tax}`} companyId={companyId} periods={books.tax_periods ?? []}
+            incomeTax={books.income_tax} onSaved={() => load()} /> : null}
+        </>
+      ) : (
+        <OverheadTab books={books} />
+      )}
+    </PageShell>
   );
 }

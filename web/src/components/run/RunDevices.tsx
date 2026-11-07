@@ -6,12 +6,10 @@
  *  steps on. This is the main list of the tab, so it does not fold: its chips sit
  *  above the filter row, and a click on one narrows the list.
  */
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import {
-  errorMessage,
   getProjectDevices,
-  isAbortError,
   type CraftDevice,
   type ProjectDeviceRow,
   type RunInfo,
@@ -23,6 +21,7 @@ import { ErrorBanner, Spinner, StatusPill } from "../Ui";
 import { stepLabelOf, type CraftModal } from "./craftDialogs";
 import type { ScanGroupState } from "./ScanGroup";
 import type { Craft } from "./useCraft";
+import { useLoad } from "../useLoad";
 
 interface Row {
   id: number;
@@ -43,19 +42,15 @@ export default function RunDevices({ run, craft, group, onModal }: {
   onModal: (m: CraftModal) => void;
 }) {
   const { view } = craft;
-  const [recs, setRecs] = useState<ProjectDeviceRow[] | null>(null);
-  const [truncated, setTruncated] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const { data: page, error } = useLoad(
+    (signal) => getProjectDevices(run.project_id, { runId: run.id, limit: 2000 }, signal),
+    [run.id, run.project_id, view],
+    { keep: true },
+  );
+  const recs = page?.items ?? null;
+  const truncated = page?.truncated ?? false;
   const [narrow, setNarrow] = useState<Narrow>("");
   const [shown, setShown] = useState<Row[]>([]);
-
-  useEffect(() => {
-    const ac = new AbortController();
-    getProjectDevices(run.project_id, { runId: run.id, limit: 2000 }, ac.signal)
-      .then((p) => { setRecs(p.items); setTruncated(p.truncated); })
-      .catch((err) => { if (!isAbortError(err)) setError(errorMessage(err)); });
-    return () => ac.abort();
-  }, [run.id, run.project_id, view]);
 
   const rows: Row[] = useMemo(() => {
     const twins = new Map((view?.devices ?? []).map((d) => [d.device_id, d]));

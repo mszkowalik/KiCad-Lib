@@ -1,11 +1,10 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Link } from "react-router-dom";
 import {
   addSignoff,
   recordReviewCheck,
   errorMessage,
   getSignoff,
-  isAbortError,
   revokeSignoff,
   type SignoffDetail,
   type SignoffRow,
@@ -14,6 +13,7 @@ import { useDialog } from "./Dialog";
 import FoldSection, { StatChip } from "./FoldSection";
 import { ErrorBanner, SignoffPill, Spinner } from "./Ui";
 import { localWhen } from "../format";
+import { useLoad } from "./useLoad";
 
 /** Production sign-off for one component.
  *
@@ -37,24 +37,14 @@ export default function SignoffCard({
   /** Fired after a successful sign or revoke, so the page can refresh its badge. */
   onChange?: (state: SignoffDetail) => void;
 }) {
-  const [detail, setDetail] = useState<SignoffDetail | null>(null);
-  const [loadError, setLoadError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState("");
   const dialog = useDialog();
 
-  useEffect(() => {
-    const ctrl = new AbortController();
-    setDetail(null);
-    setLoadError(null);
+  const { data: detail, setData: setDetail, error: loadError } = useLoad((signal) => {
     setActionError(null);
-    getSignoff(componentId, ctrl.signal)
-      .then(setDetail)
-      .catch((err) => {
-        if (!isAbortError(err)) setLoadError(errorMessage(err));
-      });
-    return () => ctrl.abort();
+    return getSignoff(componentId, signal);
   }, [componentId]);
 
   const apply = (next: SignoffDetail) => {

@@ -11,14 +11,12 @@
  *     re-check, the autofetch threads). Those say so, and saving one reports
  *     that a restart is needed rather than implying it already applies.
  */
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import {
   errorMessage,
   getSettings,
-  isAbortError,
   revertSetting,
   setSetting,
-  type SettingGroup,
   type SettingItem,
 } from "../api";
 import { CheckField } from "./Field";
@@ -26,6 +24,7 @@ import { useDialog } from "./Dialog";
 import FoldSection, { StatChip } from "./FoldSection";
 import InfoTip from "./InfoTip";
 import { ErrorBanner, Spinner } from "./Ui";
+import { useLoad } from "./useLoad";
 
 /** The value as it should appear in a text input. */
 function asText(it: SettingItem): string {
@@ -36,28 +35,15 @@ function asText(it: SettingItem): string {
 
 export default function SettingsCard() {
   const dialog = useDialog();
-  const [groups, setGroups] = useState<SettingGroup[] | null>(null);
-  const [error, setError] = useState("");
   /** Per-key pending edit. Absent = not touched. */
   const [edits, setEdits] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState<string | null>(null);
   const [restartKeys, setRestartKeys] = useState<string[]>([]);
 
-  const load = (signal?: AbortSignal) =>
-    getSettings(signal)
-      .then((d) => {
-        setGroups(d.groups);
-        setEdits({});
-      })
-      .catch((err) => {
-        if (!isAbortError(err)) setError(errorMessage(err));
-      });
-
-  useEffect(() => {
-    const ac = new AbortController();
-    load(ac.signal);
-    return () => ac.abort();
-  }, []);
+  const { data: groups, error, setError, reload: load } = useLoad(
+    (signal) => getSettings(signal).then((d) => { setEdits({}); return d.groups; }),
+    [],
+  );
 
   async function save(it: SettingItem) {
     const value = edits[it.key] ?? asText(it);

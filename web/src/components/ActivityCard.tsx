@@ -19,7 +19,6 @@ import {
   listActivity,
   type ActivityKind,
   type ActivityRow,
-  type ActivityWriteBatch,
 } from "../api";
 import { KeyValueDiff } from "./ChangeDetail";
 import { KindChips, when } from "./ChangesFeed";
@@ -29,6 +28,7 @@ import { ErrorBanner, Spinner } from "./Ui";
 import { useDebounced } from "./useDebounced";
 import { useInfiniteScroll } from "./useInfiniteScroll";
 import { localWhen, localTime, plural } from "../format";
+import { useLoad } from "./useLoad";
 
 const PAGE = 100;
 const DEBOUNCE_MS = 300;
@@ -114,23 +114,13 @@ function DetailsTable({ row }: { row: ActivityRow }) {
 
 /** Everything the row's request wrote, fetched only while the row is open. */
 function RequestDetail({ row }: { row: ActivityRow }) {
-  const [entries, setEntries] = useState<ActivityRow[] | null>(null);
-  const [batches, setBatches] = useState<ActivityWriteBatch[]>([]);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!row.request_id) return;
-    const ctrl = new AbortController();
-    getActivityRequest(row.request_id, ctrl.signal)
-      .then((d) => {
-        setEntries(d.rows);
-        setBatches(d.write_batches);
-      })
-      .catch((err) => {
-        if (!isAbortError(err)) setError(errorMessage(err));
-      });
-    return () => ctrl.abort();
-  }, [row.request_id]);
+  const { data, error } = useLoad(
+    (signal) => getActivityRequest(row.request_id as string, signal),
+    [row.request_id],
+    { enabled: !!row.request_id, keep: true },
+  );
+  const entries = data?.rows ?? null;
+  const batches = data?.write_batches ?? [];
 
   // Written outside a request (a background job): only its own details exist.
   if (!row.request_id) {

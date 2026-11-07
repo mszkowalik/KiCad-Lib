@@ -5,7 +5,7 @@
  *  Left: the version timeline, each row saying what changed.
  *  Right: the composed view of the selected version.
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import {
   createDeployment,
@@ -14,7 +14,6 @@ import {
   getDeploymentVersion,
   getFlasherMeta,
   getProjects,
-  isAbortError,
   listDeployments,
   composeVersion,
   listParamSets,
@@ -22,10 +21,7 @@ import {
   rejectDeploymentVersion,
   updateDeployment,
   type DeploymentRow,
-  type ParamSetRow,
   type DeploymentVersionRow,
-  type FlasherMeta,
-  type ProjectInfo,
 } from "../api";
 import FoldSection, { StatChip } from "../components/FoldSection";
 import AutoTextarea from "../components/AutoTextarea";
@@ -37,6 +33,7 @@ import DiffView from "../components/flasher/DiffView";
 import VersionView from "../components/flasher/VersionView";
 import { localWhen, plural } from "../format";
 import { useStickyState } from "../useStickyState";
+import { useLoad } from "../components/useLoad";
 
 /** The three procedure kinds the API accepts (`DEPLOYMENT_KINDS` in
  *  routers/flasher.py). The bench reads `kind`, never the name. Bare words, no
@@ -47,17 +44,17 @@ const KINDS = ["flash", "test", "mark"];
 
 export default function Deployments() {
   const dialog = useDialog();
-  const [projects, setProjects] = useState<ProjectInfo[]>([]);
-  const [meta, setMeta] = useState<FlasherMeta | null>(null);
-  const [deployments, setDeployments] = useState<DeploymentRow[] | null>(null);
-  /** The project's parameter sets, for the assignment field on the head card.
-   *  A deployment names a set; each version pins one at creation. */
-  const [paramSets, setParamSets] = useState<ParamSetRow[]>([]);
+  // The page's other reads and writes report through this error too.
+  const { data: boot, error, setError } = useLoad(
+    (signal) => Promise.all([getProjects(signal), getFlasherMeta(signal)]),
+    [],
+  );
+  const projects = boot?.[0] ?? [];
+  const meta = boot?.[1] ?? null;
   /** Set when + created a deployment, so the name box takes the caret and the
    *  placeholder is selected — the first thing to do is rename it. */
   const [focusName, setFocusName] = useState(false);
   const nameRef = useRef<HTMLInputElement | null>(null);
-  const [error, setError] = useState<string | null>(null);
   const [projectId, setProjectId] = useStickyState<number | null>("depl.project", null);
   const [selectedId, setSelectedId] = useStickyState<number | null>("depl.selected", null);
   // A link from a process step (decision 0060) names the project and the
@@ -73,19 +70,16 @@ export default function Deployments() {
   const [versionId, setVersionId] = useState<number | null>(null);
   // A link from a file set names one version: open its deployment, in its project.
   const linkVersion = Number(params.get("version")) || null;
-  useEffect(() => {
-    if (!linkVersion) return;
-    const ac = new AbortController();
-    getDeploymentVersion(linkVersion, ac.signal)
-      .then((v) => {
+  const { error: linkError } = useLoad(
+    (signal) =>
+      getDeploymentVersion(linkVersion as number, signal).then((v) => {
         setProjectId(v.deployment.project_id);
         setSelectedId(v.deployment.id);
         setVersionId(v.id);
-      })
-      .catch((err) => { if (!isAbortError(err)) setError(errorMessage(err)); });
-    return () => ac.abort();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [linkVersion]);
+      }),
+    [linkVersion],
+    { enabled: !!linkVersion },
+  );
   /** True while the POST that mints a draft is in flight. There is no modal
    *  any more: `New version` creates the draft, selects it, and the right-hand
    *  column IS the editor (user request 2026-09-17). */
@@ -95,49 +89,20 @@ export default function Deployments() {
   /** The draft this page just minted, which `VersionView` opens editing. */
   const [autoEditId, setAutoEditId] = useState<number | null>(null);
 
-  useEffect(() => {
-    const ac = new AbortController();
-    Promise.all([getProjects(ac.signal), getFlasherMeta(ac.signal)])
-      .then(([p, m]) => {
-        setProjects(p);
-        setMeta(m);
-      })
-      .catch((err) => {
-        if (!isAbortError(err)) setError(errorMessage(err));
-      });
-    return () => ac.abort();
-  }, []);
-
   const validProject = projects.some((p) => p.id === projectId) ? projectId : projects[0]?.id ?? null;
 
-  /** Re-read the project and RESOLVE when it has landed. `reload` below wraps
-   *  it for the mount effect, which wants a cleanup rather than a promise — a
-   *  caller that selects a row it just created needs to wait for the row to
-   *  exist, or the "default to the live version" effect resets its selection. */
-  const refetch = useCallback(async (signal?: AbortSignal) => {
-    if (!validProject) return;
-    try {
-      const [d, ps] = await Promise.all([
-        listDeployments(validProject, signal), listParamSets(validProject, signal),
-      ]);
-      setDeployments(d);
-      setParamSets(ps);
-    } catch (err) {
-      if (!isAbortError(err)) setError(errorMessage(err));
-    }
-  }, [validProject]);
-
-  const reload = useCallback(() => {
-    if (!validProject) return;
-    const ac = new AbortController();
-    void refetch(ac.signal);
-    return () => ac.abort();
-  }, [validProject, refetch]);
-
-  useEffect(() => {
-    setDeployments(null);
-    return reload();
-  }, [reload]);
+  /** A caller that selects a row it just created awaits `reload`: the row has to
+   *  exist first, or the "default to the live version" effect resets its selection. */
+  const { data: lists, error: listError, reload } = useLoad(
+    (signal) =>
+      Promise.all([listDeployments(validProject as number, signal), listParamSets(validProject as number, signal)]),
+    [validProject],
+    { enabled: !!validProject },
+  );
+  const deployments = lists?.[0] ?? null;
+  /** The project's parameter sets, for the assignment field on the head card.
+   *  A deployment names a set; each version pins one at creation. */
+  const paramSets = lists?.[1] ?? [];
 
   const selected = useMemo(
     () => deployments?.find((d) => d.id === selectedId) ?? deployments?.[0] ?? null,
@@ -194,7 +159,7 @@ export default function Deployments() {
       // The row must EXIST before it is selected, or the effect that defaults
       // the pane to the live version sees an id that is not in the list yet
       // and resets it.
-      await refetch();
+      await reload();
       setAutoEditId(made.id);
       setVersionId(made.id);
       setReloadKey((k) => k + 1);
@@ -346,7 +311,7 @@ export default function Deployments() {
             ))}
           </select>
         </div>
-        {error ? <ErrorBanner message={error} /> : null}
+        <ErrorBanner message={error ?? linkError ?? listError} />
 
         {deployments === null ? (
           <Spinner label="Loading procedures…" />
@@ -699,10 +664,10 @@ export default function Deployments() {
                     autoEdit={versionId === autoEditId}
                     onEditAsNew={() => void newVersion()}
                     meta={meta}
-                    onChanged={() => void refetch()}
+                    onChanged={reload}
                     onGone={() => {
                       setVersionId(selected?.current_version_id ?? null);
-                      void refetch();
+                      void reload();
                     }}
                   />
                 ) : (

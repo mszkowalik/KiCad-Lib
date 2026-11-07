@@ -1,18 +1,15 @@
 /** Priced BOM at a chosen production volume: schematic lines (variant-aware),
  *  manual extra items, cost items, totals, cost-vs-volume curve, LCSC stock
  *  check and BOM diff against another snapshot. */
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import {
   errorMessage,
   getBom,
   getBomCurve,
   getBomDiff,
-  isAbortError,
   runStockCheck,
-  type BomDiff,
   type BomLine,
-  type CurvePoint,
   type PricedBom,
   type ProjectInfo,
   type SnapshotInfo,
@@ -27,6 +24,7 @@ import CostCurve from "./CostCurve";
 import { localDate, price as money } from "../../format";
 import CountTile from "../CountTile";
 import Field from "../Field";
+import { useLoad } from "../useLoad";
 
 interface Props {
   project: ProjectInfo;
@@ -40,40 +38,28 @@ export default function BomTab({ project, snapshot, snapshots, board, variant }:
   // BOM settings — remembered per project across navigation.
   const [volume, setVolume] = useStickyState(`project:${project.id}:bom:volume`, 100);
   const [volumeInput, setVolumeInput] = useState(() => String(volume));
-  const [bom, setBom] = useState<PricedBom | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
+  const { data: bom, error, setError, loading } = useLoad((signal) => {
+    setStock(null);
+    return getBom(snapshot.id, board, variant, volume, undefined, signal);
+  }, [snapshot.id, board, variant, volume], { keep: true });
 
-  const [curve, setCurve] = useState<CurvePoint[] | null>(null);
+  const { data: curve } = useLoad(
+    (signal) => getBomCurve(snapshot.id, board, variant, [1, 10, 100, 1000], undefined, signal).catch(() => null),
+    [snapshot.id, board, variant, volume],
+    { keep: true },
+  );
   const [stock, setStock] = useState<StockCheck | null>(null);
   const [stockRunning, setStockRunning] = useState(false);
   const [diffAgainst, setDiffAgainst] = useStickyState<number | "">(
     `project:${project.id}:bom:diffAgainst`,
     "",
   );
-  const [diff, setDiff] = useState<BomDiff | null>(null);
+  const { data: diff, error: diffError } = useLoad(
+    (signal) => getBomDiff(project.id, diffAgainst as number, snapshot.id, board, variant, signal),
+    [diffAgainst, snapshot.id, board, variant, project.id],
+    { enabled: diffAgainst !== "", keep: true },
+  );
   const [showExcluded, setShowExcluded] = useStickyState(`project:${project.id}:bom:showExcluded`, true);
-
-  useEffect(() => {
-    const ctrl = new AbortController();
-    setLoading(true);
-    setError(null);
-    setStock(null);
-    getBom(snapshot.id, board, variant, volume, undefined, ctrl.signal)
-      .then((b) => {
-        setBom(b);
-        setLoading(false);
-      })
-      .catch((err) => {
-        if (isAbortError(err)) return;
-        setError(errorMessage(err));
-        setLoading(false);
-      });
-    getBomCurve(snapshot.id, board, variant, [1, 10, 100, 1000], undefined, ctrl.signal)
-      .then(setCurve)
-      .catch(() => setCurve(null));
-    return () => ctrl.abort();
-  }, [snapshot.id, board, variant, volume]);
 
   const stockByKey = useMemo(() => {
     const map = new Map<string, StockCheck["lines"][number]>();
@@ -93,20 +79,6 @@ export default function BomTab({ project, snapshot, snapshots, board, variant }:
         setStockRunning(false);
       });
   };
-
-  useEffect(() => {
-    if (diffAgainst === "") {
-      setDiff(null);
-      return;
-    }
-    const ctrl = new AbortController();
-    getBomDiff(project.id, diffAgainst as number, snapshot.id, board, variant, ctrl.signal)
-      .then(setDiff)
-      .catch((err) => {
-        if (!isAbortError(err)) setError(errorMessage(err));
-      });
-    return () => ctrl.abort();
-  }, [diffAgainst, snapshot.id, board, variant, project.id]);
 
   const lines = bom?.lines.filter((li) => showExcluded || !li.excluded) ?? [];
   const cur = bom?.currency ?? "PLN";
@@ -219,7 +191,7 @@ export default function BomTab({ project, snapshot, snapshots, board, variant }:
         </Field>
       </div>
 
-      {error ? <ErrorBanner message={error} /> : null}
+      <ErrorBanner message={error ?? diffError} />
       {loading && !bom ? <Spinner label="Pricing BOM" /> : null}
 
       {bom ? (

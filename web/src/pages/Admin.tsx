@@ -1,9 +1,7 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo } from "react";
 import { Link, Navigate, useSearchParams } from "react-router-dom";
 import {
-  errorMessage,
   getSchemaHealth,
-  isAbortError,
 } from "../api";
 import { useAuth } from "../auth";
 import SettingsCard from "../components/SettingsCard";
@@ -13,6 +11,8 @@ import MqttCard from "../components/MqttCard";
 import CompaniesCard, { StockSplitCard } from "../components/CompaniesCard";
 import { CompanyBackfillCard, MaterialLedgerCard, RecomputeChecksCard } from "../components/DataJobCards";
 import { ErrorBanner, Spinner } from "../components/Ui";
+import { useLoad } from "../components/useLoad";
+import PageShell from "../components/PageShell";
 
 type Tab = "config" | "users" | "companies" | "fleet" | "jobs" | "system";
 
@@ -106,39 +106,37 @@ export default function Admin() {
   }
 
   return (
-    <div className="main-solo">
-      <div className="page admin-page">
-        <div className="toolbar">
-          <h1>Admin</h1>
-          <span className="toolbar-total">
-            {tabs.find((t) => t.id === tab)?.blurb}
-          </span>
-        </div>
-
-        <TabStrip tabs={tabs} value={tab} onChange={setTab} label="Administration section" />
-
-        {tab === "config" ? <SettingsCard /> : null}
-        {tab === "users" ? <UsersCard /> : null}
-        {tab === "companies" ? <CompaniesCard /> : null}
-        {tab === "fleet" ? <MqttCard /> : null}
-        {tab === "jobs" ? <DataJobs /> : null}
-        {tab === "system" ? (
-          <>
-            <HealthCard />
-            <div className="card pad">
-              <h2 className="card-title">KiCad clients and your API token</h2>
-              <p className="muted">
-                The install links, the .kicad_httplib download, the MCP settings and the
-                effective URLs are on your{" "}
-                <Link className="comp-link" to="/account">Account</Link> page. They carry YOUR
-                token, so they differ per person — this page is the deployment's shared
-                configuration.
-              </p>
-            </div>
-          </>
-        ) : null}
+    <PageShell className="admin-page">
+      <div className="toolbar">
+        <h1>Admin</h1>
+        <span className="toolbar-total">
+          {tabs.find((t) => t.id === tab)?.blurb}
+        </span>
       </div>
-    </div>
+
+      <TabStrip tabs={tabs} value={tab} onChange={setTab} label="Administration section" />
+
+      {tab === "config" ? <SettingsCard /> : null}
+      {tab === "users" ? <UsersCard /> : null}
+      {tab === "companies" ? <CompaniesCard /> : null}
+      {tab === "fleet" ? <MqttCard /> : null}
+      {tab === "jobs" ? <DataJobs /> : null}
+      {tab === "system" ? (
+        <>
+          <HealthCard />
+          <div className="card pad">
+            <h2 className="card-title">KiCad clients and your API token</h2>
+            <p className="muted">
+              The install links, the .kicad_httplib download, the MCP settings and the
+              effective URLs are on your{" "}
+              <Link className="comp-link" to="/account">Account</Link> page. They carry YOUR
+              token, so they differ per person — this page is the deployment's shared
+              configuration.
+            </p>
+          </div>
+        </>
+      ) : null}
+    </PageShell>
   );
 }
 
@@ -155,18 +153,7 @@ function DataJobs() {
 }
 
 function HealthCard() {
-  const [health, setHealth] = useState<Awaited<ReturnType<typeof getSchemaHealth>> | null>(null);
-  const [error, setError] = useState("");
-
-  useEffect(() => {
-    const ac = new AbortController();
-    getSchemaHealth(ac.signal)
-      .then(setHealth)
-      .catch((err) => {
-        if (!isAbortError(err)) setError(errorMessage(err));
-      });
-    return () => ac.abort();
-  }, []);
+  const { data: health, error } = useLoad(getSchemaHealth, []);
 
   const failedCount = health ? Object.keys(health.failed).length : 0;
 

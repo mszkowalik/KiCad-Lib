@@ -6,12 +6,12 @@
  *  was chosen: a scan or a bench read is an observation, a pick from a list is
  *  a person's statement, and a found unit entered at zero value says so.
  */
-import { useEffect, useState } from "react";
-import { errorMessage, getDeviceTwin, isAbortError, type TwinFitted, type TwinInfo, type TwinStepRow } from "../api";
+import { getDeviceTwin, type TwinFitted, type TwinStepRow } from "../api";
 import { localDate, pln } from "../format";
 import DataTable from "./DataTable";
 import FoldSection, { StatChip } from "./FoldSection";
 import { ErrorBanner, StatusPill } from "./Ui";
+import { useLoad } from "./useLoad";
 
 /** How the unit was chosen, in one word — the cell is narrow; the sentence is
  *  on the hover. */
@@ -36,15 +36,8 @@ const SOURCE: Record<string, string> = {
 const round = (q: number) => Math.round(q * 1000) / 1000;
 
 export default function TwinCard({ deviceId }: { deviceId: number }) {
-  const [twin, setTwin] = useState<TwinInfo | null | undefined>(undefined);
-  const [error, setError] = useState<string | null>(null);
-  useEffect(() => {
-    const ac = new AbortController();
-    getDeviceTwin(deviceId, ac.signal)
-      .then((r) => setTwin(r.twin))
-      .catch((err) => { if (!isAbortError(err)) setError(errorMessage(err)); });
-    return () => ac.abort();
-  }, [deviceId]);
+  const { data, error } = useLoad((signal) => getDeviceTwin(deviceId, signal), [deviceId], { keep: true });
+  const twin = data?.twin;
   if (error) return <ErrorBanner message={error} />;
   if (!twin) return null;
   const money = (v: number | null | undefined) => pln(v, twin.pln_per_usd);

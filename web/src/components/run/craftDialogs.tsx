@@ -25,7 +25,7 @@
  *    linked to the step click it paid for; what no step claims stays in the
  *    origin batch cost.
  */
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import {
   ApiError,
   craftCosts,
@@ -76,6 +76,7 @@ import { DryRunDialog } from "../process/StageDialogs";
 import { RebuildPlanView, RebuildUndoView, rebuildSummary } from "./RebuildPlan";
 import { SerialsField } from "../ScanList";
 import { ErrorBanner, Spinner } from "../Ui";
+import { useLoad } from "../useLoad";
 
 export type Target = { kind: "stack"; stack: CraftStack } | { kind: "devices"; ids: number[]; chosen: "scanned" | "list" };
 
@@ -504,15 +505,13 @@ function FoundDialog({ run, view, runs, onClose }: {
  *  0074): a version published with an error, or the one that really describes
  *  how its devices were made. The clicks keep the version they ran under. */
 function RepinDialog({ run, view, onClose }: { run: RunInfo; view: CraftView; onClose: (c: boolean) => void }) {
-  const [versions, setVersions] = useState<ProcessVersionRow[]>([]);
+  const versions = useLoad(
+    (signal) => getProjectProcess(run.project_id, null, signal)
+      .then((d) => d.versions.filter((v) => v.status === "published" && v.id !== view.process_version_id)),
+    [run.project_id, view.process_version_id],
+    { keep: true },
+  ).data ?? [];
   const [target, setTarget] = useState<number | null>(null);
-  useEffect(() => {
-    const ac = new AbortController();
-    getProjectProcess(run.project_id, null, ac.signal)
-      .then((d) => setVersions(d.versions.filter((v) => v.status === "published" && v.id !== view.process_version_id)))
-      .catch(() => undefined);
-    return () => ac.abort();
-  }, [run.project_id, view.process_version_id]);
   return (
     <DryRunDialog<RepinPlan>
       title="Change process version"
@@ -705,12 +704,7 @@ export function LinkProducedDialog({ run, onClose }: { run: RunInfo; onClose: (c
 export function RebatchDialog({ run, onClose }: { run: RunInfo; onClose: (c: boolean) => void }) {
   const [text, setText] = useState("");
   const [note, setNote] = useState("");
-  const [runs, setRuns] = useState<RunInfo[]>([]);
-  useEffect(() => {
-    const ac = new AbortController();
-    getRuns(run.project_id, ac.signal).then(setRuns).catch(() => undefined);
-    return () => ac.abort();
-  }, [run.project_id]);
+  const runs = useLoad((signal) => getRuns(run.project_id, signal), [run.project_id], { keep: true }).data ?? [];
   const serials = parseScanSheet(text);
   const batchName = (id: number | null) => runs.find((r) => r.id === id)?.label ?? (id ? `batch ${id}` : "no batch");
   return (
@@ -786,21 +780,21 @@ function parseAdvanced(text: string): { value: Record<string, unknown>; error: s
  *  written before the dry run was read: it is the review. */
 export function RebuildDialog({ run, onClose }: { run: RunInfo; onClose: (c: boolean) => void }) {
   const pinned = run.process_version_id ?? null;
-  const [versions, setVersions] = useState<ProcessVersionRow[] | null>(null);
   const [versionId, setVersionId] = useState<number | null>(pinned);
   const [append, setAppend] = useState(pinned !== null);
   const [advanced, setAdvanced] = useState("");
-  useEffect(() => {
-    const ac = new AbortController();
-    getProjectProcess(run.project_id, null, ac.signal)
-      .then((d) => {
-        const published = d.versions.filter((v) => v.status === "published");
-        setVersions(published);
-        setVersionId((was) => was ?? d.current_version_id ?? published[0]?.id ?? null);
-      })
-      .catch(() => setVersions([]));
-    return () => ac.abort();
-  }, [run.project_id]);
+  const { data: versions } = useLoad<ProcessVersionRow[]>(
+    (signal) =>
+      getProjectProcess(run.project_id, null, signal)
+        .then((d) => {
+          const published = d.versions.filter((v) => v.status === "published");
+          setVersionId((was) => was ?? d.current_version_id ?? published[0]?.id ?? null);
+          return published;
+        })
+        .catch(() => []),
+    [run.project_id],
+    { keep: true },
+  );
   const parsed = parseAdvanced(advanced);
   return (
     <DryRunDialog<RebuildPlan>

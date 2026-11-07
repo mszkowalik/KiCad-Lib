@@ -58,6 +58,7 @@ import { listPrinters, type AgentRoll } from "../../flasher/benchAgent";
 import StepEditor, { type ArtworkChoice } from "./StepEditor";
 import { fmtBytes, shortSha } from "./common";
 import { localWhen } from "../../format";
+import { useLoad } from "../useLoad";
 
 /** One word for the files card, from what the version pins. */
 const FILES_TITLE: Record<string, string> = {
@@ -98,8 +99,10 @@ export default function VersionView({
   const dialog = useDialog();
   /** The param-set editor, open on this set's id. */
   const [editingParams, setEditingParams] = useState<number | null>(null);
-  const [v, setV] = useState<DeploymentVersionDetail | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const { data: v, setData: setV, error, setError } = useLoad(
+    (signal) => getDeploymentVersion(versionId, signal),
+    [versionId, reloadKey],
+  );
   // The BUNDLE is what you see; the file list is detail behind a toggle
   // (user feedback 2026-07-30: "I still see the files listed instead of the bundle").
 
@@ -124,19 +127,6 @@ export default function VersionView({
   const [editing, setEditing] = useState(false);
   const stepsTimer = useRef<number | null>(null);
   const pendingSteps = useRef<Record<string, unknown>[] | null>(null);
-
-  const load = useCallback(() => {
-    const ac = new AbortController();
-    setV(null);
-    getDeploymentVersion(versionId, ac.signal)
-      .then(setV)
-      .catch((err) => {
-        if (!isAbortError(err)) setError(errorMessage(err));
-      });
-    return () => ac.abort();
-  }, [versionId, reloadKey]);
-
-  useEffect(() => load(), [load]);
 
   // One ask, only when a step prints: the agent is a loopback call that
   // fails fast off the bench, and a procedure with no label has no use for it.

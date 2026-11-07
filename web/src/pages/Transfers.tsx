@@ -6,11 +6,10 @@
  *  figures together stay what they were. It changes only as a whole: a wrong
  *  one is reversed and written again.
  */
-import { useCallback, useEffect, useState } from "react";
+import { useState } from "react";
 import {
   createTransfer,
   errorMessage,
-  isAbortError,
   listTransfers,
   reverseTransfer,
   type TransferLineIn,
@@ -25,6 +24,8 @@ import NumberInput from "../components/NumberInput";
 import { ErrorBanner, Spinner, StatusPill } from "../components/Ui";
 import { plain, pln, today } from "../format";
 import { useTodayRate } from "../useTodayRate";
+import { useLoad } from "../components/useLoad";
+import PageShell from "../components/PageShell";
 
 const transferColumns = (rate: number | null): Column<TransferRow>[] => [
   { key: "date", label: "Date", width: 11, className: "mono", get: (t) => t.date },
@@ -197,50 +198,37 @@ function NewTransferCard({ onDone }: { onDone: () => void }) {
 
 export default function Transfers() {
   const rate = useTodayRate();
-  const [rows, setRows] = useState<TransferRow[] | null>(null);
-  const [error, setError] = useState("");
-  const load = useCallback((signal?: AbortSignal) => {
-    listTransfers(signal)
-      .then((r) => { setRows(r); setError(""); })
-      .catch((e) => { if (!isAbortError(e)) setError(errorMessage(e)); });
-  }, []);
-  useEffect(() => {
-    const ac = new AbortController();
-    load(ac.signal);
-    return () => ac.abort();
-  }, [load]);
+  const { data: rows, error, reload: load } = useLoad(listTransfers, []);
 
   return (
-    <div className="main-solo">
-      <div className="page">
-        <div className="toolbar">
-          <h1>Transfers</h1>
-          {rows ? (
-            <span className="toolbar-total">{rows.filter((t) => !t.reversed).length} in force</span>
-          ) : null}
-        </div>
-        <p className="muted dim">
-          Stock moved between our two companies. Each company's batches draw only from its own stock
-          once stock is kept per company (Admin → Configuration).
-        </p>
-        <ErrorBanner message={error} />
-        <NewTransferCard onDone={() => load()} />
-        <div className="card pad">
-          <h2 className="card-title">Transfers</h2>
-          {rows === null ? (
-            <Spinner label="Loading transfers…" />
-          ) : (
-            <DataTable
-              rows={rows}
-              rowKey={(t) => t.id}
-              columns={transferColumns(rate)}
-              empty="No transfers yet."
-              defaultSort={{ key: "date", dir: "desc" }}
-              expand={(t) => <TransferDetail t={t} onChanged={() => load()} />}
-            />
-          )}
-        </div>
+    <PageShell>
+      <div className="toolbar">
+        <h1>Transfers</h1>
+        {rows ? (
+          <span className="toolbar-total">{rows.filter((t) => !t.reversed).length} in force</span>
+        ) : null}
       </div>
-    </div>
+      <p className="muted dim">
+        Stock moved between our two companies. Each company's batches draw only from its own stock
+        once stock is kept per company (Admin → Configuration).
+      </p>
+      <ErrorBanner message={error} />
+      <NewTransferCard onDone={() => load()} />
+      <div className="card pad">
+        <h2 className="card-title">Transfers</h2>
+        {rows === null ? (
+          <Spinner label="Loading transfers…" />
+        ) : (
+          <DataTable
+            rows={rows}
+            rowKey={(t) => t.id}
+            columns={transferColumns(rate)}
+            empty="No transfers yet."
+            defaultSort={{ key: "date", dir: "desc" }}
+            expand={(t) => <TransferDetail t={t} onChanged={() => load()} />}
+          />
+        )}
+      </div>
+    </PageShell>
   );
 }

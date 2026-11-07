@@ -40,6 +40,7 @@ import {
   OPS, OP_BY_NAME, PHASES, getField, setField, varsBefore,
   type Field as FieldSpec, type OpSpec,
 } from "./stepSchema";
+import { useLoad } from "../useLoad";
 
 type Step = Record<string, unknown>;
 
@@ -781,16 +782,11 @@ function BundlePicker({ fileSets, fileSetId, onFileSetChange }: FieldEditorProps
 /** The LightBurn thumbnail of a pinned artwork, fetched on demand: the file
  *  is 150 kB of XML and only the picker and the preview want the picture. */
 function useArtworkThumb(setId: number | null, filename: string): string | null {
-  const [thumb, setThumb] = useState<string | null>(null);
-  useEffect(() => {
-    setThumb(null);
-    if (!setId || !filename) return;
-    const ac = new AbortController();
-    getFileSetEntry(setId, filename, ac.signal)
-      .then((e) => setThumb(e.binary ? null : lbrnThumbnail(e.content)))
-      .catch(() => setThumb(null));
-    return () => ac.abort();
-  }, [setId, filename]);
+  const { data: thumb } = useLoad(
+    (signal) => getFileSetEntry(setId as number, filename, signal).then((e) => (e.binary ? null : lbrnThumbnail(e.content))),
+    [setId, filename],
+    { enabled: !!setId && !!filename },
+  );
   return thumb;
 }
 

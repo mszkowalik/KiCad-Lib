@@ -30,6 +30,7 @@ import FoldSection, { StatChip } from "../FoldSection";
 import TabStrip from "../TabStrip";
 import { ErrorBanner, Spinner, StatusPill } from "../Ui";
 import JlcInvoicePdfDialog from "./JlcInvoicePdfDialog";
+import { useLoad } from "../useLoad";
 
 type Source = "assembly" | "parts";
 
@@ -92,28 +93,19 @@ type RawTab = "row" | "invoice";
  *  fetch is a call to JLC. */
 function RawPanel({ source, id, row }: { source: Source; id: string; row: unknown }) {
   const [tab, setTab] = useState<RawTab>("row");
-  const [data, setData] = useState<unknown>(undefined);
-  const [error, setError] = useState("");
-
-  useEffect(() => {
-    setData(undefined);
-    setError("");
-    // A parts order has no detail route: its list row is the whole answer.
-    if (tab === "row" && source === "parts") {
-      setData(row);
-      return undefined;
-    }
-    const ac = new AbortController();
-    const read = tab === "invoice"
-      ? (source === "assembly" ? getJlcWebOrderInvoice : getJlcWebPartsInvoice)
-      : getJlcWebOrderDetail;
-    read(id, ac.signal)
-      .then(setData)
-      .catch((err) => {
-        if (!isAbortError(err)) setError(errorMessage(err));
-      });
-    return () => ac.abort();
-  }, [tab, source, id, row]);
+  // A parts order has no detail route: its list row is the whole answer.
+  const listRowOnly = tab === "row" && source === "parts";
+  const { data: read, error, loading } = useLoad<unknown>(
+    (signal) => {
+      const fetchIt = tab === "invoice"
+        ? (source === "assembly" ? getJlcWebOrderInvoice : getJlcWebPartsInvoice)
+        : getJlcWebOrderDetail;
+      return fetchIt(id, signal);
+    },
+    [tab, source, id, row],
+    { enabled: !listRowOnly },
+  );
+  const data = listRowOnly ? row : loading || error ? undefined : read;
 
   return (
     <div onClick={(e) => e.stopPropagation()}>

@@ -7,7 +7,7 @@
  *  guess (decisions 0032, 0049). Returns, repairs and disposals live on the
  *  device page, because they are events in a device's history.
  */
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import {
   addOrderInvoice,
@@ -22,13 +22,11 @@ import {
   deleteShipment,
   errorMessage,
   getOrder,
-  isAbortError,
   getProjects,
   listCustomers,
   updateOrder,
   updateOrderInvoice,
   updateOrderLine,
-  type CustomerRow,
   type InvoiceIn,
   type OrderInvoiceRow,
   type OrderLineRow,
@@ -49,33 +47,25 @@ import { useAuth } from "../auth";
 import { amount, plain, plnAmount, today, plural } from "../format";
 import { parseScanSheet } from "../scanSheet";
 import { SerialsField } from "../components/ScanList";
+import { useLoad } from "../components/useLoad";
+import PageShell, { PageLoading } from "../components/PageShell";
 
 const INVOICE_KINDS: OrderInvoiceRow["kind"][] = ["advance", "final", "proforma", "correction"];
+
+/** One identity, because the lines card has `projects` in its deps. */
+const NO_PROJECTS: ProjectInfo[] = [];
 
 export default function OrderDetail() {
   const { id } = useParams();
   const orderId = Number(id);
-  const [order, setOrder] = useState<OrderRow | null>(null);
-  const [projects, setProjects] = useState<ProjectInfo[]>([]);
-  const [error, setError] = useState<string | null>(null);
+  const { data: order, setData: setOrder, error, setError } = useLoad(
+    (signal) => getOrder(orderId, signal),
+    [orderId],
+    { keep: true },
+  );
+  const projects = useLoad(getProjects, [orderId], { keep: true }).data ?? NO_PROJECTS;
   const dialog = useDialog();
   const navigate = useNavigate();
-
-  const reload = useCallback(() => {
-    const ac = new AbortController();
-    getOrder(orderId, ac.signal)
-      .then((o) => {
-        setOrder(o);
-        setError(null);
-      })
-      .catch((err) => {
-        if (!isAbortError(err)) setError(errorMessage(err));
-      });
-    getProjects(ac.signal).then(setProjects).catch(() => setProjects([]));
-    return () => ac.abort();
-  }, [orderId]);
-
-  useEffect(() => reload(), [reload]);
 
   const apply = async (work: () => Promise<OrderRow>) => {
     try {
@@ -86,115 +76,104 @@ export default function OrderDetail() {
     }
   };
 
-  if (error && !order) {
-    return (
-      <div className="main-solo"><div className="page"><ErrorBanner message={error} /></div></div>
-    );
-  }
-  if (!order) {
-    return (
-      <div className="main-solo"><div className="page"><Spinner label="Loading order…" /></div></div>
-    );
-  }
+  if (!order) return <PageLoading error={error} label="Loading order…" />;
   const cur = order.currency;
   const eco = order.economics;
 
   return (
-    <div className="main-solo">
-      <div className="page">
-        <div className="toolbar">
-          <BackLink to="/sales/orders">← Orders</BackLink>
-          <h1>
-            {order.customer}
-            {order.order_ref ? <span className="mono"> · {order.order_ref}</span> : null}
-          </h1>
-          <StatusPill status={order.status} />
-          <span className="toolbar-total">
-            {order.order_date || "no date"} · {order.qty_shipped.toLocaleString()} of{" "}
-            {order.qty_ordered.toLocaleString()} shipped · {amount(order.total_net, cur)} net
-          </span>
-          <button
-            type="button"
-            className="btn btn-sm"
-            disabled={order.cancelled}
-            title="Open a shipment for this order and scan devices into it as they are packed"
-            onClick={async () => {
-              try {
-                const sh = await openShipment({ order_id: order.id });
-                navigate(`/sales/shipments/${sh.id}`);
-              } catch (err) {
-                setError(errorMessage(err));
-              }
-            }}
-          >
-            Pack…
-          </button>
-        </div>
-        {error ? <ErrorBanner message={error} /> : null}
+    <PageShell>
+      <div className="toolbar">
+        <BackLink to="/sales/orders">← Orders</BackLink>
+        <h1>
+          {order.customer}
+          {order.order_ref ? <span className="mono"> · {order.order_ref}</span> : null}
+        </h1>
+        <StatusPill status={order.status} />
+        <span className="toolbar-total">
+          {order.order_date || "no date"} · {order.qty_shipped.toLocaleString()} of{" "}
+          {order.qty_ordered.toLocaleString()} shipped · {amount(order.total_net, cur)} net
+        </span>
+        <button
+          type="button"
+          className="btn btn-sm"
+          disabled={order.cancelled}
+          title="Open a shipment for this order and scan devices into it as they are packed"
+          onClick={async () => {
+            try {
+              const sh = await openShipment({ order_id: order.id });
+              navigate(`/sales/shipments/${sh.id}`);
+            } catch (err) {
+              setError(errorMessage(err));
+            }
+          }}
+        >
+          Pack…
+        </button>
+      </div>
+      {error ? <ErrorBanner message={error} /> : null}
 
-        <div className="detail-page order-page">
-          <div className="detail-left">
-            <LinesCard order={order} projects={projects} apply={apply} />
-            <InvoicesCard order={order} apply={apply} />
-            <ShipmentsCard order={order} apply={apply} />
-            <RowChangesCard table="sales_orders" id={order.id} />
+      <div className="detail-page order-page">
+        <div className="detail-left">
+          <LinesCard order={order} projects={projects} apply={apply} />
+          <InvoicesCard order={order} apply={apply} />
+          <ShipmentsCard order={order} apply={apply} />
+          <RowChangesCard table="sales_orders" id={order.id} />
+        </div>
+        <div className="detail-right">
+          <div className="card pad">
+            <h2 className="card-title">Did this order make money?</h2>
+            {eco ? (
+              <dl className="kv">
+                <dt>Revenue (net)</dt>
+                <dd title={eco.revenue_basis === "invoices" ? "sum of advance, final and correction invoices" : "no money invoice yet — the order's line totals"}>
+                  {amount(eco.revenue_net, eco.currency)}
+                  {eco.currency !== "PLN" ? <span className="muted"> · {plnAmount(eco.revenue_pln, 0)}</span> : null}
+                  {eco.revenue_basis === "order" ? <span className="muted"> (not invoiced yet)</span> : null}
+                </dd>
+                <dt>Devices shipped</dt>
+                <dd>
+                  {eco.shipped_devices.toLocaleString()}
+                  {eco.replacements ? <span className="muted"> · {plural(eco.replacements, "replacement")}</span> : null}
+                </dd>
+                <dt>Cost of devices</dt>
+                <dd>{plnAmount(eco.devices_cost_pln, 0)}</dd>
+                <dt>Repairs</dt>
+                <dd>{plnAmount(eco.repair_cost_pln, 0)}</dd>
+                <dt>Margin</dt>
+                <dd className={(eco.margin_pln ?? 0) < 0 ? "err-text" : undefined}>
+                  {plnAmount(eco.margin_pln, 0)}
+                  {eco.margin_pct != null ? <span className="muted"> · {eco.margin_pct.toFixed(1)}%</span> : null}
+                </dd>
+              </dl>
+            ) : (
+              <Spinner />
+            )}
+            {eco && eco.uncosted_units ? (
+              <div className="banner-warn">
+                {plural(eco.uncosted_units, "shipped unit")} carry no batch cost
+                yet — their batch has no priced actuals.
+              </div>
+            ) : null}
+            {eco && eco.unknown_currencies.length ? (
+              <div className="banner-warn">
+                No exchange rate stored for {eco.unknown_currencies.join(", ")}; those amounts are
+                not converted. Add it under <Link to="/finance/rates">Finance → Exchange rates</Link>.
+              </div>
+            ) : null}
+            <p className="muted">
+              Every shipped device carries the actual per-device cost of the batch it came from,
+              replacements included. Revenue converts per invoice at the invoice date.
+            </p>
           </div>
-          <div className="detail-right">
-            <div className="card pad">
-              <h2 className="card-title">Did this order make money?</h2>
-              {eco ? (
-                <dl className="kv">
-                  <dt>Revenue (net)</dt>
-                  <dd title={eco.revenue_basis === "invoices" ? "sum of advance, final and correction invoices" : "no money invoice yet — the order's line totals"}>
-                    {amount(eco.revenue_net, eco.currency)}
-                    {eco.currency !== "PLN" ? <span className="muted"> · {plnAmount(eco.revenue_pln, 0)}</span> : null}
-                    {eco.revenue_basis === "order" ? <span className="muted"> (not invoiced yet)</span> : null}
-                  </dd>
-                  <dt>Devices shipped</dt>
-                  <dd>
-                    {eco.shipped_devices.toLocaleString()}
-                    {eco.replacements ? <span className="muted"> · {plural(eco.replacements, "replacement")}</span> : null}
-                  </dd>
-                  <dt>Cost of devices</dt>
-                  <dd>{plnAmount(eco.devices_cost_pln, 0)}</dd>
-                  <dt>Repairs</dt>
-                  <dd>{plnAmount(eco.repair_cost_pln, 0)}</dd>
-                  <dt>Margin</dt>
-                  <dd className={(eco.margin_pln ?? 0) < 0 ? "err-text" : undefined}>
-                    {plnAmount(eco.margin_pln, 0)}
-                    {eco.margin_pct != null ? <span className="muted"> · {eco.margin_pct.toFixed(1)}%</span> : null}
-                  </dd>
-                </dl>
-              ) : (
-                <Spinner />
-              )}
-              {eco && eco.uncosted_units ? (
-                <div className="banner-warn">
-                  {plural(eco.uncosted_units, "shipped unit")} carry no batch cost
-                  yet — their batch has no priced actuals.
-                </div>
-              ) : null}
-              {eco && eco.unknown_currencies.length ? (
-                <div className="banner-warn">
-                  No exchange rate stored for {eco.unknown_currencies.join(", ")}; those amounts are
-                  not converted. Add it under <Link to="/finance/rates">Finance → Exchange rates</Link>.
-                </div>
-              ) : null}
-              <p className="muted">
-                Every shipped device carries the actual per-device cost of the batch it came from,
-                replacements included. Revenue converts per invoice at the invoice date.
-              </p>
-            </div>
-            <HeaderCard order={order} apply={apply} />
-          </div>
+          <HeaderCard order={order} apply={apply} />
         </div>
       </div>
-    </div>
+    </PageShell>
   );
 }
 
 function HeaderCard({ order, apply }: { order: OrderRow; apply: (w: () => Promise<OrderRow>) => Promise<void> }) {
-  const [customers, setCustomers] = useState<CustomerRow[]>([]);
+  const customers = useLoad(listCustomers, []).data ?? [];
   const [customer, setCustomer] = useState(order.customer);
   const [ref, setRef] = useState(order.order_ref);
   const [date, setDate] = useState(order.order_date);
@@ -205,11 +184,6 @@ function HeaderCard({ order, apply }: { order: OrderRow; apply: (w: () => Promis
   const navigate = useNavigate();
   const [companyId, setCompanyId] = useState(order.company_id);
   const dialog = useDialog();
-  useEffect(() => {
-    const ac = new AbortController();
-    listCustomers(ac.signal).then(setCustomers).catch(() => setCustomers([]));
-    return () => ac.abort();
-  }, []);
   useEffect(() => {
     setCustomer(order.customer);
     setRef(order.order_ref);

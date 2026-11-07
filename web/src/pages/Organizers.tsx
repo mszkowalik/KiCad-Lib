@@ -39,7 +39,6 @@ import {
   type OrganizerPart,
   type OrganizerPartRef,
   type OrganizerResearchRow,
-  type RunInfo,
 } from "../api";
 import { useAuth } from "../auth";
 import AutoTextarea from "../components/AutoTextarea";
@@ -54,6 +53,8 @@ import { ErrorBanner, Spinner } from "../components/Ui";
 import { useModal } from "../components/modal";
 import { plural, pln, today } from "../format";
 import { useTodayRate } from "../useTodayRate";
+import { useLoad } from "../components/useLoad";
+import PageShell from "../components/PageShell";
 
 /** One line of the table: a part in a box, or an empty box. */
 interface Row {
@@ -266,130 +267,128 @@ export default function Organizers() {
   ];
 
   return (
-    <div className="main-solo">
-      <div className="page">
-        <div className="toolbar">
-          <h1>Organizers</h1>
-          {data ? (
-            <span className="toolbar-total">
-              {data.totals.parts} parts, {pcs(data.totals.pieces).toLocaleString()} pieces in{" "}
-              {data.totals.filled} of {data.totals.boxes} boxes
-            </span>
-          ) : null}
-          <button type="button" className="btn" onClick={() => setDlg({ kind: "import" })}>
-            Load a list…
-          </button>
-          <button type="button" className="btn btn-primary" onClick={() => setDlg({ kind: "add" })}>
-            Add organizer
-          </button>
-        </div>
-        {error ? <ErrorBanner message={error} /> : null}
-        {notice ? <div className="banner-ok">{notice}</div> : null}
-
-        {!data ? (
-          <div className="card pad"><Spinner label="Loading the boxes…" /></div>
-        ) : data.totals.boxes === 0 ? (
-          <div className="card pad">
-            <p className="muted dim">No organizer yet. Add one and give it its boxes, or load a list.</p>
-          </div>
-        ) : (
-          <>
-            <div className="stat-row">
-              {data.organizers
-                .filter((o) => boxesShown(o) > 0 || organizer === o.name)
-                .map((o) => (
-                  <NarrowChip key={o.name} n={boxesShown(o).toLocaleString()} value={o.name} current={organizer} onNarrow={setOrganizer}
-                    title={`${o.filled} of ${o.boxes} boxes hold something, ${pcs(o.pieces).toLocaleString()} pieces`}>
-                    {o.name}
-                  </NarrowChip>
-                ))}
-              {emptyCount > 0 || showEmpty ? (
-                <StatChip n={emptyCount.toLocaleString()} on={showEmpty} onClick={() => setShowEmpty(!showEmpty)}>
-                  empty boxes
-                </StatChip>
-              ) : null}
-            </div>
-
-            <div className="toolbar">
-              <input className="text search" value={search} placeholder="Find a part or a box"
-                onChange={(e) => setSearch(e.target.value)} />
-              {organizer ? (
-                <button type="button" className="btn btn-sm" onClick={rename}>Rename {organizer}</button>
-              ) : null}
-              <span className="toolbar-total">{rows.length} / {allRows.length}</span>
-              {organizer || showEmpty || search ? (
-                <button type="button" className="row-del clear-filters"
-                  onClick={() => { setOrganizer(""); setShowEmpty(false); setSearch(""); }}
-                  title="Clear filters" aria-label="Clear filters">
-                  &#x2715;
-                </button>
-              ) : null}
-            </div>
-
-            <div className="card table-wrap">
-              <DataTable
-                columns={cols}
-                rows={rows}
-                rowKey={(r) => r.key}
-                persistKey="organizers"
-                defaultSort={{ key: "box", dir: "asc" }}
-                expand={(r) => (
-                  <RowPanel row={r} rate={rate} revision={revision} onOpen={setDlg} onDelete={deleteBox} onSaved={done} />
-                )}
-                empty={showEmpty ? "No empty box here." : "Nothing here matches."}
-              />
-            </div>
-          </>
-        )}
-
-        <FoldSection
-          title="Used for R&D"
-          count={research.length}
-          foldKey="organizers:research"
-          chips={research.length ? <StatChip n={pln(researchUsd, rate)}>at cost</StatChip> : undefined}
-          actions={(
-            <button type="button" className="btn btn-sm" onClick={() => setDlg({ kind: "use" })}>
-              Pieces in no box…
-            </button>
-          )}
-        >
-          <p className="muted dim">
-            Charged to no batch. A part with no purchase in the records costs 0 here. A row with no box was used
-            before its invoice reached the stock records.
-            The company&apos;s books counted stock as a cost when it was bought, so these figures add nothing
-            there.
-          </p>
-          <DataTable columns={researchCols} rows={research} rowKey={(m) => m.id} persistKey="organizers:research"
-            empty="Nothing has been taken for R&D." />
-        </FoldSection>
-
-        {dlg?.kind === "take" ? <TakeDialog row={dlg.row} rate={rate} onClose={() => setDlg(null)} onDone={done} /> : null}
-        {dlg?.kind === "move" && data ? (
-          <MoveDialog row={dlg.row} boxes={data.boxes} onClose={() => setDlg(null)} onDone={done} />
+    <PageShell>
+      <div className="toolbar">
+        <h1>Organizers</h1>
+        {data ? (
+          <span className="toolbar-total">
+            {data.totals.parts} parts, {pcs(data.totals.pieces).toLocaleString()} pieces in{" "}
+            {data.totals.filled} of {data.totals.boxes} boxes
+          </span>
         ) : null}
-        {dlg?.kind === "count" && dlg.row.part ? (
-          <CountDialog box={dlg.row.box} part={dlg.row.part} onClose={() => setDlg(null)} onDone={done} />
-        ) : null}
-        {dlg?.kind === "put" ? (
-          <CountDialog box={dlg.box} newPart={dlg.part} onClose={() => setDlg(null)} onDone={done} />
-        ) : null}
-        {dlg?.kind === "pick" ? (
-          <ComponentPickDialog
-            line={{ kind: `Box ${dlg.box.code}` }}
-            title={`What goes in box ${dlg.box.code}?`}
-            confirmLabel="Choose"
-            allowFreeText
-            onClose={() => setDlg((d) => (d?.kind === "pick" ? null : d))}
-            onPick={(componentId, mpn) => setDlg({
-              kind: "put", box: dlg.box, part: { component_id: componentId, mpn, name: mpn || `component ${componentId}` },
-            })}
-          />
-        ) : null}
-        {dlg?.kind === "add" ? <AddOrganizerDialog onClose={() => setDlg(null)} onDone={done} /> : null}
-        {dlg?.kind === "use" ? <NoBoxDialog rate={rate} onClose={() => setDlg(null)} onDone={done} /> : null}
-        {dlg?.kind === "import" ? <ImportDialog onClose={() => setDlg(null)} onDone={done} /> : null}
+        <button type="button" className="btn" onClick={() => setDlg({ kind: "import" })}>
+          Load a list…
+        </button>
+        <button type="button" className="btn btn-primary" onClick={() => setDlg({ kind: "add" })}>
+          Add organizer
+        </button>
       </div>
-    </div>
+      {error ? <ErrorBanner message={error} /> : null}
+      {notice ? <div className="banner-ok">{notice}</div> : null}
+
+      {!data ? (
+        <div className="card pad"><Spinner label="Loading the boxes…" /></div>
+      ) : data.totals.boxes === 0 ? (
+        <div className="card pad">
+          <p className="muted dim">No organizer yet. Add one and give it its boxes, or load a list.</p>
+        </div>
+      ) : (
+        <>
+          <div className="stat-row">
+            {data.organizers
+              .filter((o) => boxesShown(o) > 0 || organizer === o.name)
+              .map((o) => (
+                <NarrowChip key={o.name} n={boxesShown(o).toLocaleString()} value={o.name} current={organizer} onNarrow={setOrganizer}
+                  title={`${o.filled} of ${o.boxes} boxes hold something, ${pcs(o.pieces).toLocaleString()} pieces`}>
+                  {o.name}
+                </NarrowChip>
+              ))}
+            {emptyCount > 0 || showEmpty ? (
+              <StatChip n={emptyCount.toLocaleString()} on={showEmpty} onClick={() => setShowEmpty(!showEmpty)}>
+                empty boxes
+              </StatChip>
+            ) : null}
+          </div>
+
+          <div className="toolbar">
+            <input className="text search" value={search} placeholder="Find a part or a box"
+              onChange={(e) => setSearch(e.target.value)} />
+            {organizer ? (
+              <button type="button" className="btn btn-sm" onClick={rename}>Rename {organizer}</button>
+            ) : null}
+            <span className="toolbar-total">{rows.length} / {allRows.length}</span>
+            {organizer || showEmpty || search ? (
+              <button type="button" className="row-del clear-filters"
+                onClick={() => { setOrganizer(""); setShowEmpty(false); setSearch(""); }}
+                title="Clear filters" aria-label="Clear filters">
+                &#x2715;
+              </button>
+            ) : null}
+          </div>
+
+          <div className="card table-wrap">
+            <DataTable
+              columns={cols}
+              rows={rows}
+              rowKey={(r) => r.key}
+              persistKey="organizers"
+              defaultSort={{ key: "box", dir: "asc" }}
+              expand={(r) => (
+                <RowPanel row={r} rate={rate} revision={revision} onOpen={setDlg} onDelete={deleteBox} onSaved={done} />
+              )}
+              empty={showEmpty ? "No empty box here." : "Nothing here matches."}
+            />
+          </div>
+        </>
+      )}
+
+      <FoldSection
+        title="Used for R&D"
+        count={research.length}
+        foldKey="organizers:research"
+        chips={research.length ? <StatChip n={pln(researchUsd, rate)}>at cost</StatChip> : undefined}
+        actions={(
+          <button type="button" className="btn btn-sm" onClick={() => setDlg({ kind: "use" })}>
+            Pieces in no box…
+          </button>
+        )}
+      >
+        <p className="muted dim">
+          Charged to no batch. A part with no purchase in the records costs 0 here. A row with no box was used
+          before its invoice reached the stock records.
+          The company&apos;s books counted stock as a cost when it was bought, so these figures add nothing
+          there.
+        </p>
+        <DataTable columns={researchCols} rows={research} rowKey={(m) => m.id} persistKey="organizers:research"
+          empty="Nothing has been taken for R&D." />
+      </FoldSection>
+
+      {dlg?.kind === "take" ? <TakeDialog row={dlg.row} rate={rate} onClose={() => setDlg(null)} onDone={done} /> : null}
+      {dlg?.kind === "move" && data ? (
+        <MoveDialog row={dlg.row} boxes={data.boxes} onClose={() => setDlg(null)} onDone={done} />
+      ) : null}
+      {dlg?.kind === "count" && dlg.row.part ? (
+        <CountDialog box={dlg.row.box} part={dlg.row.part} onClose={() => setDlg(null)} onDone={done} />
+      ) : null}
+      {dlg?.kind === "put" ? (
+        <CountDialog box={dlg.box} newPart={dlg.part} onClose={() => setDlg(null)} onDone={done} />
+      ) : null}
+      {dlg?.kind === "pick" ? (
+        <ComponentPickDialog
+          line={{ kind: `Box ${dlg.box.code}` }}
+          title={`What goes in box ${dlg.box.code}?`}
+          confirmLabel="Choose"
+          allowFreeText
+          onClose={() => setDlg((d) => (d?.kind === "pick" ? null : d))}
+          onPick={(componentId, mpn) => setDlg({
+            kind: "put", box: dlg.box, part: { component_id: componentId, mpn, name: mpn || `component ${componentId}` },
+          })}
+        />
+      ) : null}
+      {dlg?.kind === "add" ? <AddOrganizerDialog onClose={() => setDlg(null)} onDone={done} /> : null}
+      {dlg?.kind === "use" ? <NoBoxDialog rate={rate} onClose={() => setDlg(null)} onDone={done} /> : null}
+      {dlg?.kind === "import" ? <ImportDialog onClose={() => setDlg(null)} onDone={done} /> : null}
+    </PageShell>
   );
 }
 
@@ -475,17 +474,12 @@ function RowPanel({ row, rate, revision, onOpen, onDelete, onSaved }: {
   onDelete: (box: OrganizerBoxRow) => void;
   onSaved: (message: string) => void;
 }) {
-  const [moves, setMoves] = useState<OrganizerMoveRow[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
   const itemId = row.part?.item_id;
-
-  useEffect(() => {
-    const ctrl = new AbortController();
-    getOrganizerMoves({ box_id: row.box.id, item_id: itemId, limit: 1000 }, ctrl.signal)
-      .then(setMoves)
-      .catch((err) => { if (!isAbortError(err)) setError(errorMessage(err)); });
-    return () => ctrl.abort();
-  }, [row.box.id, itemId, revision]);
+  const { data: moves, error } = useLoad(
+    (signal) => getOrganizerMoves({ box_id: row.box.id, item_id: itemId, limit: 1000 }, signal),
+    [row.box.id, itemId, revision],
+    { keep: true },
+  );
 
   const cost = (m: OrganizerMoveRow) => (m.value_usd == null ? "" : pln(m.value_usd, rate));
   const columns: Column<OrganizerMoveRow>[] = [
@@ -592,21 +586,11 @@ function TakeDialog({ row, rate, onClose, onDone }: {
   const [qty, setQty] = useState<number | null>(null);
   const [company, setCompany] = useState<number | null>(part.companies.length === 1 ? part.companies[0].id : null);
   const [purpose, setPurpose] = useState<"research" | "batch">("research");
-  const [runs, setRuns] = useState<RunInfo[] | null>(null);
   const [runId, setRunId] = useState<number | null>(null);
   const [note, setNote] = useState("");
   const [at, setAt] = useState(today());
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (purpose !== "batch" || runs) return;
-    const ctrl = new AbortController();
-    getAllRuns(ctrl.signal).then(setRuns).catch((err) => {
-      if (!isAbortError(err)) setError(errorMessage(err));
-    });
-    return () => ctrl.abort();
-  }, [purpose, runs]);
+  const { data: runs, error, setError } = useLoad(getAllRuns, [], { enabled: purpose === "batch", once: true });
 
   const held = company != null ? part.companies.find((c) => c.id === company)?.qty ?? 0 : part.qty;
   const batches = (runs ?? []).filter((r) => company == null || !r.company_id || r.company_id === company);

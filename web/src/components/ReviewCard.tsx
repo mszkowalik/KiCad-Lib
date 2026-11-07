@@ -1,8 +1,7 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import {
   errorMessage,
   getReviewDetail,
-  isAbortError,
   recordReviewCheck,
   grantReviewException,
   revokeReviewCheck,
@@ -15,6 +14,7 @@ import {
 } from "../api";
 import { useDialog } from "./Dialog";
 import InfoTip from "./InfoTip";
+import { useLoad } from "./useLoad";
 /** Mirror of `review.TEXT_LIMITS` and `exceptions.TEXT_LIMITS` in the backend,
  *  in characters. The server REFUSES an over-long explanation, so these stop
  *  the typing rather than the save — change one and change the other, because a
@@ -53,8 +53,6 @@ export default function ReviewCard({
   label?: string;
   onChange?: (detail: ReviewDetail) => void;
 }) {
-  const [detail, setDetail] = useState<ReviewDetail | null>(null);
-  const [loadError, setLoadError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [answers, setAnswers] = useState<Record<string, ReviewCheckAnswer>>({});
@@ -65,18 +63,10 @@ export default function ReviewCard({
   const [customText, setCustomText] = useState("");
   const dialog = useDialog();
 
-  useEffect(() => {
-    const ctrl = new AbortController();
-    setDetail(null);
-    setLoadError(null);
+  const { data: detail, setData: setDetail, error: loadError } = useLoad((signal) => {
     setActionError(null);
     setAnswers({});
-    getReviewDetail(kind, id, ctrl.signal)
-      .then((d) => setDetail(d))
-      .catch((err) => {
-        if (!isAbortError(err)) setLoadError(errorMessage(err));
-      });
-    return () => ctrl.abort();
+    return getReviewDetail(kind, id, signal);
   }, [kind, id]);
 
   const apply = (next: ReviewDetail) => {

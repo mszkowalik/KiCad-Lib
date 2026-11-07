@@ -8,12 +8,11 @@
  *  stay with the page. It moves no money: the net, the positions, the currency and
  *  the date of the document never change. So there is no dry run to read first.
  */
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import {
   errorMessage,
   getDocumentAttachments,
   putPrintedInvoice,
-  type DocumentAttachment,
   type RunCostDocumentRow,
 } from "../../api";
 import AutoTextarea from "../AutoTextarea";
@@ -21,6 +20,7 @@ import Field, { FieldGrid } from "../Field";
 import InfoTip from "../InfoTip";
 import { useModal } from "../modal";
 import { ErrorBanner, Spinner } from "../Ui";
+import { useLoad } from "../useLoad";
 
 const PARTY = { name: "", nip: "", address_l1: "", address_l2: "", country: "" };
 
@@ -48,7 +48,6 @@ export default function TranscribeDialog({ doc, onClose }: {
   onClose: (changed: boolean) => void;
 }) {
   const modal = useModal(() => onClose(false));
-  const [files, setFiles] = useState<DocumentAttachment[] | null>(null);
   const [fileId, setFileId] = useState<number | null>(null);
   const [number, setNumber] = useState(doc.doc_number ?? "");
   const [issue, setIssue] = useState(doc.doc_date ?? "");
@@ -57,19 +56,17 @@ export default function TranscribeDialog({ doc, onClose }: {
   const [page, setPage] = useState(() => initialPage(doc));
   const [reason, setReason] = useState("");
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    const ac = new AbortController();
-    getDocumentAttachments(doc.id, ac.signal)
-      .then((f) => {
-        setFiles(f);
+  const { data: fileRows, error, setError } = useLoad(
+    (signal) =>
+      getDocumentAttachments(doc.id, signal).then((f) => {
         const read = doc.body?.source?.kind === "file" ? doc.body.source.attachment_id : null;
         setFileId(f.find((x) => x.id === read)?.id ?? f[0]?.id ?? null);
-      })
-      .catch((err) => { setFiles([]); setError(errorMessage(err)); });
-    return () => ac.abort();
-  }, [doc]);
+        return f;
+      }),
+    [doc],
+    { keep: true },
+  );
+  const files = fileRows ?? (error ? [] : null);
 
   let parsed: unknown = null;
   let pageError = "";

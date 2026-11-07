@@ -1,7 +1,7 @@
 /** Git history: commits + tags from the local mirror, snapshot status per
  *  commit, ingest-on-demand, and snapshot selection for the other tabs. A row
  *  opens to the files at that commit. */
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import {
   ApiError,
   errorMessage,
@@ -9,11 +9,9 @@ import {
   getProjectFiles,
   getProjectHistory,
   ingestSnapshot,
-  isAbortError,
   projectFilePath,
   type HistoryCommit,
   type ProjectFileRow,
-  type ProjectHistory,
   type ProjectInfo,
   type SnapshotInfo,
 } from "../../api";
@@ -26,6 +24,7 @@ import { useStickyState } from "../../useStickyState";
 import { fileHref } from "../../viewkind";
 import { localDate } from "../../format";
 import Field from "../Field";
+import { useLoad } from "../useLoad";
 
 interface Props {
   project: ProjectInfo;
@@ -40,20 +39,17 @@ interface Props {
  *  the whole repository, after the page loaded: the server says which in a sentence,
  *  and that is a state of the project and not a fault. */
 function CommitFiles({ projectId, sha }: { projectId: number; sha: string }) {
-  const [files, setFiles] = useState<ProjectFileRow[] | null>(null);
   const [gone, setGone] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  useEffect(() => {
-    const ac = new AbortController();
-    getProjectFiles(projectId, sha, ac.signal)
-      .then(setFiles)
-      .catch((err) => {
-        if (isAbortError(err)) return;
-        if (err instanceof ApiError && (err.status === 404 || err.status === 409)) setGone(err.message);
-        else setError(errorMessage(err));
-      });
-    return () => ac.abort();
-  }, [projectId, sha]);
+  const { data: files, error } = useLoad(
+    (signal) =>
+      getProjectFiles(projectId, sha, signal).catch((err) => {
+        if (!(err instanceof ApiError && (err.status === 404 || err.status === 409))) throw err;
+        setGone(err.message);
+        return null;
+      }),
+    [projectId, sha],
+    { keep: true },
+  );
   if (error) return <ErrorBanner message={error} />;
   if (gone) return <p className="muted">The files of this commit cannot be read: {gone}</p>;
   if (!files) return <Spinner label="Reading the files of this commit" />;
@@ -77,9 +73,12 @@ export default function HistoryTab({
   onSelectSnapshot,
   onIngested,
 }: Props) {
-  const [history, setHistory] = useState<ProjectHistory | null>(null);
   const [ref, setRef] = useStickyState(`project:${project.id}:history:branch`, "");
-  const [error, setError] = useState<string | null>(null);
+  const { data: history, error, setError } = useLoad(
+    (signal) => getProjectHistory(project.id, ref || undefined, signal),
+    [project.id, ref, snapshots.length],
+    { keep: true },
+  );
   const [ingesting, setIngesting] = useState<string | null>(null);
   const dialog = useDialog();
   const removeSnapshot = async (id: number, sha: string) => {
@@ -96,18 +95,6 @@ export default function HistoryTab({
       await dialog.alert(errorMessage(err), { title: "Could not delete the snapshot" });
     }
   };
-
-  useEffect(() => {
-    const ctrl = new AbortController();
-    setError(null);
-    getProjectHistory(project.id, ref || undefined, ctrl.signal)
-      .then(setHistory)
-      .catch((err) => {
-        if (!isAbortError(err)) setError(errorMessage(err));
-      });
-    return () => ctrl.abort();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [project.id, ref, snapshots.length]);
 
   const snapBySha = new Map(snapshots.map((s) => [s.sha, s]));
   const snapshotCount = (status: string) =>

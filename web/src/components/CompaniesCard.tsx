@@ -14,7 +14,6 @@ import {
   setKsefToken,
   type KsefStatus,
   errorMessage,
-  isAbortError,
   listCompanies,
   setDrawCompany,
   stockBackfill,
@@ -36,6 +35,7 @@ import FoldSection, { StatChip } from "./FoldSection";
 import NumberInput from "./NumberInput";
 import { DryRunDialog } from "./process/StageDialogs";
 import { ErrorBanner, Spinner } from "./Ui";
+import { useLoad } from "./useLoad";
 
 /** The text fields an admin may change, in the order the form draws them. */
 const TEXT_FIELDS: { key: keyof CompanyDetail; label: string; wide?: boolean }[] = [
@@ -447,20 +447,8 @@ export function StockSplitCard() {
 }
 
 export default function CompaniesCard() {
-  const [rows, setRows] = useState<CompanyDetail[] | null>(null);
-  const [error, setError] = useState("");
-
-  useEffect(() => {
-    const ac = new AbortController();
-    listCompanies(ac.signal)
-      .then(setRows)
-      .catch((err) => {
-        if (isAbortError(err)) return;
-        setRows([]);
-        setError(errorMessage(err));
-      });
-    return () => ac.abort();
-  }, []);
+  const { data, setData: setRows, error } = useLoad(listCompanies, []);
+  const rows = data ?? (error ? [] : null);
 
   if (rows === null) return <Spinner label="Loading companies…" />;
   return (

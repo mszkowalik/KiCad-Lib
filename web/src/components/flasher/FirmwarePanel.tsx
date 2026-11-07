@@ -10,14 +10,13 @@
  *  names them too, from the same route, and still sends the DELETE: the server's
  *  refusal is the guard, and the confirm only says it first.
  */
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import {
   deleteFirmware,
   errorMessage,
   firmwareBinPath,
   getFirmwareUsage,
-  isAbortError,
   listFirmware,
   patchFirmware,
   uploadFirmware,
@@ -33,6 +32,7 @@ import { ErrorBanner, Spinner } from "../Ui";
 import { fmtBytes, shortSha } from "./common";
 import { localWhen, plural } from "../../format";
 import { useModal } from "../modal";
+import { useLoad } from "../useLoad";
 
 const FALLBACK_CHIPS = ["esp32", "esp32c6"];
 const FALLBACK_KINDS = ["factory", "app", "filesystem", "safeboot"];
@@ -45,17 +45,11 @@ const versionName = (u: FirmwareUsageRow) =>
 
 /** The procedure versions that use one image, under its row. */
 function FirmwareUsage({ assetId }: { assetId: number }) {
-  const [versions, setVersions] = useState<FirmwareUsageRow[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  useEffect(() => {
-    const ac = new AbortController();
-    getFirmwareUsage(assetId, ac.signal)
-      .then((u) => setVersions(u.versions))
-      .catch((err) => {
-        if (!isAbortError(err)) setError(errorMessage(err));
-      });
-    return () => ac.abort();
-  }, [assetId]);
+  const { data: versions, error } = useLoad(
+    (signal) => getFirmwareUsage(assetId, signal).then((u) => u.versions),
+    [assetId],
+    { keep: true },
+  );
   if (error) return <ErrorBanner message={error} />;
   if (!versions) return <Spinner label="Reading which versions use it…" />;
   if (!versions.length) return <p className="muted">No procedure version uses this image.</p>;
@@ -82,8 +76,7 @@ export default function FirmwarePanel({
   meta: FlasherMeta | null;
 }) {
   const dialog = useDialog();
-  const [rows, setRows] = useState<FirmwareAssetRow[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const { data: rows, error, setError, reload } = useLoad((signal) => listFirmware(projectId, signal), [projectId]);
   const [note, setNote] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [kind, setKind] = useState("factory");
@@ -99,21 +92,9 @@ export default function FirmwarePanel({
   const kinds = meta?.firmware_kinds ?? FALLBACK_KINDS;
   const offsetFor = (c: string, k: string) => meta?.default_offsets?.[c]?.[k] ?? "";
 
-  const reload = useCallback(() => {
-    const ac = new AbortController();
-    listFirmware(projectId, ac.signal)
-      .then(setRows)
-      .catch((err) => {
-        if (!isAbortError(err)) setError(errorMessage(err));
-      });
-    return () => ac.abort();
-  }, [projectId]);
-
   useEffect(() => {
-    setRows(null);
     setNote(null);
-    return reload();
-  }, [reload]);
+  }, [projectId]);
 
   const upload = async () => {
     if (!picked) {

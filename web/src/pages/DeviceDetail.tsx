@@ -1,11 +1,10 @@
 /** One physical device: full identity (ESP + LTE module + SIM), the config
  *  values applied to it, and every programming attempt ever made. */
-import { useCallback, useEffect, useState } from "react";
+import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import {
   errorMessage,
   getDevice,
-  isAbortError,
   patchDevice,
   type DeviceDetailPayload,
 } from "../api";
@@ -13,13 +12,15 @@ import DataTable, { type Column } from "../components/DataTable";
 import AutoTextarea from "../components/AutoTextarea";
 import Field, { CheckField } from "../components/Field";
 import FoldSection, { StatChip } from "../components/FoldSection";
-import { BackLink, ErrorBanner, Spinner, StatusPill } from "../components/Ui";
+import { BackLink, StatusPill } from "../components/Ui";
 import DeviceHistoryCard from "../components/DeviceHistoryCard";
 import TwinCard from "../components/TwinCard";
 import DevicePresenceCard from "../components/DevicePresenceCard";
 import CheckGrid from "../components/flasher/CheckGrid";
 import { fmtDuration } from "../components/flasher/common";
 import { localWhen } from "../format";
+import { useLoad } from "../components/useLoad";
+import PageShell, { PageLoading } from "../components/PageShell";
 
 const ACT_WORD: Record<string, string> = {
   flash: "programming run", test: "test", mark: "marking job", erase: "erase",
@@ -111,27 +112,20 @@ const RUN_COLS: Column<DeviceDetailPayload["runs"][number]>[] = [
 export default function DeviceDetail() {
   const { id } = useParams();
   const deviceId = Number(id);
-  const [device, setDevice] = useState<DeviceDetailPayload | null>(null);
-  const [error, setError] = useState<string | null>(null);
   const [reveal, setReveal] = useState(false);
   const [notes, setNotes] = useState("");
   const [notesDirty, setNotesDirty] = useState(false);
 
-  const reload = useCallback(() => {
-    const ac = new AbortController();
-    getDevice(deviceId, reveal, ac.signal)
-      .then((d) => {
-        setDevice(d);
+  const { data: device, error, setError } = useLoad(
+    (signal) =>
+      getDevice(deviceId, reveal, signal).then((d) => {
         setNotes(d.notes);
         setNotesDirty(false);
-      })
-      .catch((err) => {
-        if (!isAbortError(err)) setError(errorMessage(err));
-      });
-    return () => ac.abort();
-  }, [deviceId, reveal]);
-
-  useEffect(() => reload(), [reload]);
+        return d;
+      }),
+    [deviceId, reveal],
+    { keep: true },
+  );
 
   const saveNotes = async () => {
     try {
@@ -142,16 +136,7 @@ export default function DeviceDetail() {
     }
   };
 
-  if (error) {
-    return (
-      <div className="main-solo"><div className="page"><ErrorBanner message={error} /></div></div>
-    );
-  }
-  if (!device) {
-    return (
-      <div className="main-solo"><div className="page"><Spinner label="Loading device…" /></div></div>
-    );
-  }
+  if (error || !device) return <PageLoading error={error} label="Loading device…" />;
 
   // Is it programmed: the server decides (`checks.verdict`) — the config run,
   // then an ACTIVE test after it, then no erase since. The page only prints it,
@@ -165,169 +150,167 @@ export default function DeviceDetail() {
   );
 
   return (
-    <div className="main-solo">
-      <div className="page">
-        <div className="toolbar">
-          <BackLink to="/production/devices">← Devices</BackLink>
-          <h1 className="mono">{device.serial || device.mac}</h1>
-          {device.last_status ? <StatusPill status={device.last_status} /> : null}
-          <span className="toolbar-total">
-            {device.project.name} · first seen {localWhen(device.first_seen)} · last seen {localWhen(device.last_seen)}
-          </span>
+    <PageShell>
+      <div className="toolbar">
+        <BackLink to="/production/devices">← Devices</BackLink>
+        <h1 className="mono">{device.serial || device.mac}</h1>
+        {device.last_status ? <StatusPill status={device.last_status} /> : null}
+        <span className="toolbar-total">
+          {device.project.name} · first seen {localWhen(device.first_seen)} · last seen {localWhen(device.last_seen)}
+        </span>
+      </div>
+
+      <div className="detail-page">
+        <div className="detail-left">
+          <div className="card pad">
+            <h2 className="card-title">What this device is proven to do</h2>
+            {/* The verdict is a sentence the server wrote, plus the runs it
+                rests on. Marking never appears here: it changes nothing. */}
+            <p>
+              <StatusPill status={v.programmed ? "programmed" : "not programmed"} />{" "}
+              {v.reason}
+              {v.requires_test ? " — this project's test must pass after every programming run." : ""}
+            </p>
+            <p className="muted dim">
+              {v.config_run ? (
+                <>
+                  config {runLink(v.config_run)} ({v.config_run.status}) {localWhen(v.config_run.at)}
+                </>
+              ) : (
+                <>no programming run</>
+              )}
+              {v.test_run ? (
+                <> · test {runLink(v.test_run)} ({v.test_run.status}) {localWhen(v.test_run.at)}</>
+              ) : null}
+              {v.erased_after ? (
+                <> · erased {runLink(v.erased_after)} {localWhen(v.erased_after.at)}</>
+              ) : null}
+            </p>
+            {device.checks_run ? (
+              <p className="muted dim">
+                Checks below are from the newest run that measured anything —{" "}
+                {ACT_WORD[device.checks_run.act] ?? device.checks_run.act}{" "}
+                <Link className="val-link" to={`/production/flash-runs/${device.checks_run.id}`}>
+                  #{device.checks_run.id}
+                </Link>{" "}
+                ({device.checks_run.status}). Hover a cell for what earlier runs measured.
+              </p>
+            ) : null}
+            <CheckGrid checks={device.checks} showRun />
+          </div>
+
+          <div className="card pad">
+            <h2 className="card-title">Identity</h2>
+            <table className="data data-fixed identity-table">
+              <tbody>
+                {/* Whatever the server sent, in its order. Which rows a
+                    product has is a server decision, not a page's. */}
+                {device.identity.map((row) => (
+                  <tr key={row.key}>
+                    <td className="muted">{row.label}</td>
+                    <td className="mono" title={row.value}>{row.value || "—"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          <FoldSection
+            title="Configuration"
+            count={device.configs.length}
+            foldKey={`device:${deviceId}:config`}
+            chips={device.config_superseded > 0 ? <StatChip n={device.config_superseded}>earlier values</StatChip> : undefined}
+            actions={
+              <CheckField checked={reveal} onChange={setReveal}>reveal secrets</CheckField>
+            }
+          >
+            {device.config_run_id ? (
+              <p className="muted dim">
+                What is on the device now — written by run{" "}
+                <Link className="val-link" to={`/production/flash-runs/${device.config_run_id}`}>
+                  #{device.config_run_id}
+                </Link>
+                {device.config_superseded > 0
+                  ? `, the last one to configure it. ${device.config_superseded} earlier value(s) are kept but not shown.`
+                  : "."}
+              </p>
+            ) : null}
+            {device.configs.length === 0 ? (
+              <p className="muted">Nothing applied yet.</p>
+            ) : (
+              <div className="table-wrap">
+                <DataTable
+                  rows={device.configs}
+                  rowKey={(c) => `${c.key}:${c.set_by_run_id ?? ""}:${c.set_at ?? ""}`}
+                  rowClass={(c) => (c.current ? "" : "dim")}
+                  columns={CONFIG_COLS}
+                />
+              </div>
+            )}
+          </FoldSection>
+
+          <div className="card pad">
+            <h2 className="card-title">Notes</h2>
+            <Field>
+              <AutoTextarea
+                className="text"
+                value={notes}
+                onChange={(e) => {
+                  setNotes(e.target.value);
+                  setNotesDirty(true);
+                }}
+              />
+            </Field>
+            {notesDirty ? (
+              <div className="btn-row">
+                <button type="button" className="btn btn-primary btn-sm" onClick={saveNotes}>
+                  Save notes
+                </button>
+              </div>
+            ) : null}
+          </div>
         </div>
 
-        <div className="detail-page">
-          <div className="detail-left">
-            <div className="card pad">
-              <h2 className="card-title">What this device is proven to do</h2>
-              {/* The verdict is a sentence the server wrote, plus the runs it
-                  rests on. Marking never appears here: it changes nothing. */}
-              <p>
-                <StatusPill status={v.programmed ? "programmed" : "not programmed"} />{" "}
-                {v.reason}
-                {v.requires_test ? " — this project's test must pass after every programming run." : ""}
-              </p>
-              <p className="muted dim">
-                {v.config_run ? (
-                  <>
-                    config {runLink(v.config_run)} ({v.config_run.status}) {localWhen(v.config_run.at)}
-                  </>
-                ) : (
-                  <>no programming run</>
-                )}
-                {v.test_run ? (
-                  <> · test {runLink(v.test_run)} ({v.test_run.status}) {localWhen(v.test_run.at)}</>
-                ) : null}
-                {v.erased_after ? (
-                  <> · erased {runLink(v.erased_after)} {localWhen(v.erased_after.at)}</>
-                ) : null}
-              </p>
-              {device.checks_run ? (
-                <p className="muted dim">
-                  Checks below are from the newest run that measured anything —{" "}
-                  {ACT_WORD[device.checks_run.act] ?? device.checks_run.act}{" "}
-                  <Link className="val-link" to={`/production/flash-runs/${device.checks_run.id}`}>
-                    #{device.checks_run.id}
-                  </Link>{" "}
-                  ({device.checks_run.status}). Hover a cell for what earlier runs measured.
-                </p>
-              ) : null}
-              <CheckGrid checks={device.checks} showRun />
-            </div>
-
-            <div className="card pad">
-              <h2 className="card-title">Identity</h2>
-              <table className="data data-fixed identity-table">
-                <tbody>
-                  {/* Whatever the server sent, in its order. Which rows a
-                      product has is a server decision, not a page's. */}
-                  {device.identity.map((row) => (
-                    <tr key={row.key}>
-                      <td className="muted">{row.label}</td>
-                      <td className="mono" title={row.value}>{row.value || "—"}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-
-            <FoldSection
-              title="Configuration"
-              count={device.configs.length}
-              foldKey={`device:${deviceId}:config`}
-              chips={device.config_superseded > 0 ? <StatChip n={device.config_superseded}>earlier values</StatChip> : undefined}
-              actions={
-                <CheckField checked={reveal} onChange={setReveal}>reveal secrets</CheckField>
-              }
-            >
-              {device.config_run_id ? (
-                <p className="muted dim">
-                  What is on the device now — written by run{" "}
-                  <Link className="val-link" to={`/production/flash-runs/${device.config_run_id}`}>
-                    #{device.config_run_id}
-                  </Link>
-                  {device.config_superseded > 0
-                    ? `, the last one to configure it. ${device.config_superseded} earlier value(s) are kept but not shown.`
-                    : "."}
-                </p>
-              ) : null}
-              {device.configs.length === 0 ? (
-                <p className="muted">Nothing applied yet.</p>
-              ) : (
-                <div className="table-wrap">
-                  <DataTable
-                    rows={device.configs}
-                    rowKey={(c) => `${c.key}:${c.set_by_run_id ?? ""}:${c.set_at ?? ""}`}
-                    rowClass={(c) => (c.current ? "" : "dim")}
-                    columns={CONFIG_COLS}
-                  />
-                </div>
-              )}
-            </FoldSection>
-
-            <div className="card pad">
-              <h2 className="card-title">Notes</h2>
-              <Field>
-                <AutoTextarea
-                  className="text"
-                  value={notes}
-                  onChange={(e) => {
-                    setNotes(e.target.value);
-                    setNotesDirty(true);
-                  }}
+        {/* `-fit`: the history card is short, so it sizes to its content and
+            the programming history gets the rest of the column. */}
+        <div className="detail-right detail-right-fit">
+          <DeviceHistoryCard deviceId={deviceId} serial={device.serial || device.mac} />
+          <TwinCard deviceId={deviceId} />
+          {/* The broker's live view. Deliberately NOT merged into the check
+              grid or the identity table: those are what the bench proved and
+              they never change, this is a cache that can be stale or absent. */}
+          <DevicePresenceCard presence={device.presence} mac={device.mac} />
+          <FoldSection
+            title="Programming history"
+            count={device.runs.length}
+            foldKey={`device:${deviceId}:runs`}
+            chips={
+              <>
+                {device.runs.some((r) => r.status === "fail") ? <StatChip n={device.runs.filter((r) => r.status === "fail").length} tone="err">fail</StatChip> : null}
+                {device.runs.some((r) => r.status === "aborted") ? <StatChip n={device.runs.filter((r) => r.status === "aborted").length} tone="warn">aborted</StatChip> : null}
+                <StatChip n={device.runs.filter((r) => r.status === "pass").length} tone="ok">pass</StatChip>
+              </>
+            }
+          >
+            <p className="muted dim">
+              Every attempt, pass or fail — click through for the step timeline and the full
+              serial log.
+            </p>
+            {device.runs.length === 0 ? (
+              <p className="muted">No runs.</p>
+            ) : (
+              <div className="table-wrap">
+                <DataTable
+                  rows={device.runs}
+                  rowKey={(r) => r.id}
+                  columns={RUN_COLS}
+                  defaultSort={{ key: "started", dir: "desc" }}
                 />
-              </Field>
-              {notesDirty ? (
-                <div className="btn-row">
-                  <button type="button" className="btn btn-primary btn-sm" onClick={saveNotes}>
-                    Save notes
-                  </button>
-                </div>
-              ) : null}
-            </div>
-          </div>
-
-          {/* `-fit`: the history card is short, so it sizes to its content and
-              the programming history gets the rest of the column. */}
-          <div className="detail-right detail-right-fit">
-            <DeviceHistoryCard deviceId={deviceId} serial={device.serial || device.mac} />
-            <TwinCard deviceId={deviceId} />
-            {/* The broker's live view. Deliberately NOT merged into the check
-                grid or the identity table: those are what the bench proved and
-                they never change, this is a cache that can be stale or absent. */}
-            <DevicePresenceCard presence={device.presence} mac={device.mac} />
-            <FoldSection
-              title="Programming history"
-              count={device.runs.length}
-              foldKey={`device:${deviceId}:runs`}
-              chips={
-                <>
-                  {device.runs.some((r) => r.status === "fail") ? <StatChip n={device.runs.filter((r) => r.status === "fail").length} tone="err">fail</StatChip> : null}
-                  {device.runs.some((r) => r.status === "aborted") ? <StatChip n={device.runs.filter((r) => r.status === "aborted").length} tone="warn">aborted</StatChip> : null}
-                  <StatChip n={device.runs.filter((r) => r.status === "pass").length} tone="ok">pass</StatChip>
-                </>
-              }
-            >
-              <p className="muted dim">
-                Every attempt, pass or fail — click through for the step timeline and the full
-                serial log.
-              </p>
-              {device.runs.length === 0 ? (
-                <p className="muted">No runs.</p>
-              ) : (
-                <div className="table-wrap">
-                  <DataTable
-                    rows={device.runs}
-                    rowKey={(r) => r.id}
-                    columns={RUN_COLS}
-                    defaultSort={{ key: "started", dir: "desc" }}
-                  />
-                </div>
-              )}
-            </FoldSection>
-          </div>
+              </div>
+            )}
+          </FoldSection>
         </div>
       </div>
-    </div>
+    </PageShell>
   );
 }

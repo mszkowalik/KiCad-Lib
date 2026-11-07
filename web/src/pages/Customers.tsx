@@ -2,11 +2,10 @@
  *  customer when the name is new, and this page says the rest: what an invoice
  *  prints for the buyer (decision 0066) and the payment terms.
  */
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import {
   createCustomer,
   errorMessage,
-  isAbortError,
   listCustomers,
   updateCustomer,
   type CustomerRow,
@@ -16,6 +15,8 @@ import DataTable from "../components/DataTable";
 import Field, { FieldGrid } from "../components/Field";
 import NumberInput from "../components/NumberInput";
 import { ErrorBanner, Spinner } from "../components/Ui";
+import { useLoad } from "../components/useLoad";
+import PageShell from "../components/PageShell";
 
 type Draft = Omit<CustomerRow, "id" | "created_at">;
 
@@ -78,66 +79,55 @@ function CustomerForm({ start, saveLabel, onSave, onCancel }: {
 }
 
 export default function Customers() {
-  const [rows, setRows] = useState<CustomerRow[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const { data: rows, setData: setRows, error } = useLoad(listCustomers, []);
   const [adding, setAdding] = useState(false);
 
-  useEffect(() => {
-    const ac = new AbortController();
-    listCustomers(ac.signal)
-      .then(setRows)
-      .catch((err) => { if (!isAbortError(err)) setError(errorMessage(err)); });
-    return () => ac.abort();
-  }, []);
-
   return (
-    <div className="main-solo">
-      <div className="page">
-        <div className="toolbar">
-          <h1>Customers</h1>
-          <span className="toolbar-total">{rows ? `${rows.length} customers` : ""}</span>
-          <button type="button" className="btn btn-primary btn-sm" onClick={() => setAdding(!adding)}>
-            {adding ? "Close" : "New customer"}
-          </button>
-        </div>
-        {error ? <ErrorBanner message={error} /> : null}
-        {adding ? (
-          <div className="card pad">
-            <h2 className="card-title">New customer</h2>
-            <CustomerForm start={EMPTY} saveLabel="Create customer" onCancel={() => setAdding(false)}
-              onSave={async (d) => {
-                const made = await createCustomer(d);
-                setRows((r) => [...(r ?? []), made]);
-                setAdding(false);
-              }} />
-          </div>
-        ) : null}
-        <div className="card pad">
-          {!rows ? <Spinner /> : (
-            <DataTable
-              rows={rows}
-              rowKey={(c) => c.id}
-              persistKey="customers"
-              empty="No customer yet. An order creates its customer."
-              defaultSort={{ key: "name", dir: "asc" }}
-              columns={[
-                { key: "name", label: "Name", width: 28, get: (c) => c.name },
-                { key: "nip", label: "NIP", width: 14, className: "mono", get: (c) => c.tax_id },
-                { key: "legal", label: "Legal name", width: 28, get: (c) => c.legal_name ?? "" },
-                { key: "country", label: "Country", width: 8, get: (c) => c.country ?? "" },
-                { key: "days", label: "Payment days", width: 10, numeric: true, get: (c) => c.payment_terms_days },
-                { key: "notes", label: "Notes", width: 12, get: (c) => c.notes },
-              ]}
-              expand={(c) => (
-                <CustomerForm start={c} saveLabel="Save" onSave={async (d) => {
-                  const saved = await updateCustomer(c.id, d);
-                  setRows((r) => (r ?? []).map((x) => (x.id === c.id ? saved : x)));
-                }} />
-              )}
-            />
-          )}
-        </div>
+    <PageShell>
+      <div className="toolbar">
+        <h1>Customers</h1>
+        <span className="toolbar-total">{rows ? `${rows.length} customers` : ""}</span>
+        <button type="button" className="btn btn-primary btn-sm" onClick={() => setAdding(!adding)}>
+          {adding ? "Close" : "New customer"}
+        </button>
       </div>
-    </div>
+      {error ? <ErrorBanner message={error} /> : null}
+      {adding ? (
+        <div className="card pad">
+          <h2 className="card-title">New customer</h2>
+          <CustomerForm start={EMPTY} saveLabel="Create customer" onCancel={() => setAdding(false)}
+            onSave={async (d) => {
+              const made = await createCustomer(d);
+              setRows((r) => [...(r ?? []), made]);
+              setAdding(false);
+            }} />
+        </div>
+      ) : null}
+      <div className="card pad">
+        {!rows ? <Spinner /> : (
+          <DataTable
+            rows={rows}
+            rowKey={(c) => c.id}
+            persistKey="customers"
+            empty="No customer yet. An order creates its customer."
+            defaultSort={{ key: "name", dir: "asc" }}
+            columns={[
+              { key: "name", label: "Name", width: 28, get: (c) => c.name },
+              { key: "nip", label: "NIP", width: 14, className: "mono", get: (c) => c.tax_id },
+              { key: "legal", label: "Legal name", width: 28, get: (c) => c.legal_name ?? "" },
+              { key: "country", label: "Country", width: 8, get: (c) => c.country ?? "" },
+              { key: "days", label: "Payment days", width: 10, numeric: true, get: (c) => c.payment_terms_days },
+              { key: "notes", label: "Notes", width: 12, get: (c) => c.notes },
+            ]}
+            expand={(c) => (
+              <CustomerForm start={c} saveLabel="Save" onSave={async (d) => {
+                const saved = await updateCustomer(c.id, d);
+                setRows((r) => (r ?? []).map((x) => (x.id === c.id ? saved : x)));
+              }} />
+            )}
+          />
+        )}
+      </div>
+    </PageShell>
   );
 }

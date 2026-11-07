@@ -10,13 +10,11 @@
  *  It does not create batches: a batch belongs to a project, so the New button
  *  stays on the project's tab where the snapshot and board are already chosen.
  */
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 
 import {
-  errorMessage,
   getAllRuns,
-  isAbortError,
   type RunInfo,
 } from "../api";
 import DataTable, { type Column } from "../components/DataTable";
@@ -25,27 +23,15 @@ import { MiniBoard, nextUp } from "../components/process/ProcessBoard";
 import { ErrorBanner, Spinner, StatusPill } from "../components/Ui";
 import { useAuth } from "../auth";
 import { localDate, plural } from "../format";
+import { useLoad } from "../components/useLoad";
+import PageShell from "../components/PageShell";
 
 const isPlanned = (r: RunInfo) => (r.status || "").trim().toLowerCase() === "planned";
 
 export default function Runs() {
-  const [runs, setRuns] = useState<RunInfo[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const { data: runs, error } = useLoad(getAllRuns, []);
   const [narrow, setNarrow] = useState<"" | "work" | "planned" | "open" | "closed">("");
   const navigate = useNavigate();
-
-  useEffect(() => {
-    const ctrl = new AbortController();
-    getAllRuns(ctrl.signal)
-      .then((rows) => {
-        setRuns(rows);
-        setError(null);
-      })
-      .catch((err) => {
-        if (!isAbortError(err)) setError(errorMessage(err));
-      });
-    return () => ctrl.abort();
-  }, []);
 
   const totals = useMemo(() => {
     const rows = runs ?? [];
@@ -124,64 +110,62 @@ export default function Runs() {
   ];
 
   return (
-    <div className="main-solo">
-      <div className="page">
-        <div className="toolbar">
-          <h1>Batches</h1>
-          {runs ? (
-            <span className="toolbar-total">
-              {plural(totals.batches, "batch", "batches")}
-              {totals.planned ? ` · ${totals.planned} planned` : ""}
-              {` · ${totals.devices.toLocaleString()} devices recorded`}
-            </span>
-          ) : null}
-        </div>
-
-        {error ? <ErrorBanner message={error} /> : null}
-
-        <div className="card pad">
-          <p className="card-subtitle">Every batch, across every project</p>
-          <p className="muted dim">
-            Qty is what was ordered or assembled; Devices is what the batch is recorded to
-            have made, which is the denominator of its per-device cost. What each batch COST
-            is on <Link to="/finance">Finance → Cost overview</Link>, and everything about one batch —
-            economics, materials, files, serials — is on its own page. A batch is created
-            from its project, where the snapshot and board are already chosen.
-          </p>
-          {!runs ? (
-            <Spinner label="Loading batches…" />
-          ) : (
-            <div className="table-wrap">
-              <div className="stat-row">
-                <NarrowChip n={runs.filter((r) => r.process_board).length} tone="acc" value="work" current={narrow} onNarrow={setNarrow}>in work</NarrowChip>
-                <NarrowChip n={totals.planned} value="planned" current={narrow} onNarrow={setNarrow}>planned</NarrowChip>
-                <NarrowChip n={runs.filter((r) => !r.closed_at).length} value="open" current={narrow} onNarrow={setNarrow}>books open</NarrowChip>
-                <NarrowChip n={runs.filter((r) => r.closed_at).length} tone="ok" value="closed" current={narrow} onNarrow={setNarrow}>books closed</NarrowChip>
-              </div>
-              <DataTable
-                columns={cols}
-                rows={runs.filter((r) =>
-                  narrow === "work" ? r.process_board
-                    : narrow === "planned" ? isPlanned(r)
-                      : narrow === "open" ? !r.closed_at
-                        : narrow === "closed" ? r.closed_at
-                          : true)}
-                rowKey={(r) => r.id}
-                // The server already returns newest first, but a table has to
-                // SAY so: without a default the header shows no arrow, and a
-                // sort the reader set once is remembered under `persistKey` and
-                // silently outlives the visit that set it.
-                defaultSort={{ key: "date", dir: "desc" }}
-                persistKey="all-runs"
-                onRowClick={(r) => navigate(`/production/batches/${r.id}`)}
-                // A batch in work comes first, whatever the sort.
-                group={(r) => (r.process_board ? 0 : 1)}
-                empty="No production batch exists yet."
-              />
-            </div>
-          )}
-        </div>
+    <PageShell>
+      <div className="toolbar">
+        <h1>Batches</h1>
+        {runs ? (
+          <span className="toolbar-total">
+            {plural(totals.batches, "batch", "batches")}
+            {totals.planned ? ` · ${totals.planned} planned` : ""}
+            {` · ${totals.devices.toLocaleString()} devices recorded`}
+          </span>
+        ) : null}
       </div>
-    </div>
+
+      {error ? <ErrorBanner message={error} /> : null}
+
+      <div className="card pad">
+        <p className="card-subtitle">Every batch, across every project</p>
+        <p className="muted dim">
+          Qty is what was ordered or assembled; Devices is what the batch is recorded to
+          have made, which is the denominator of its per-device cost. What each batch COST
+          is on <Link to="/finance">Finance → Cost overview</Link>, and everything about one batch —
+          economics, materials, files, serials — is on its own page. A batch is created
+          from its project, where the snapshot and board are already chosen.
+        </p>
+        {!runs ? (
+          <Spinner label="Loading batches…" />
+        ) : (
+          <div className="table-wrap">
+            <div className="stat-row">
+              <NarrowChip n={runs.filter((r) => r.process_board).length} tone="acc" value="work" current={narrow} onNarrow={setNarrow}>in work</NarrowChip>
+              <NarrowChip n={totals.planned} value="planned" current={narrow} onNarrow={setNarrow}>planned</NarrowChip>
+              <NarrowChip n={runs.filter((r) => !r.closed_at).length} value="open" current={narrow} onNarrow={setNarrow}>books open</NarrowChip>
+              <NarrowChip n={runs.filter((r) => r.closed_at).length} tone="ok" value="closed" current={narrow} onNarrow={setNarrow}>books closed</NarrowChip>
+            </div>
+            <DataTable
+              columns={cols}
+              rows={runs.filter((r) =>
+                narrow === "work" ? r.process_board
+                  : narrow === "planned" ? isPlanned(r)
+                    : narrow === "open" ? !r.closed_at
+                      : narrow === "closed" ? r.closed_at
+                        : true)}
+              rowKey={(r) => r.id}
+              // The server already returns newest first, but a table has to
+              // SAY so: without a default the header shows no arrow, and a
+              // sort the reader set once is remembered under `persistKey` and
+              // silently outlives the visit that set it.
+              defaultSort={{ key: "date", dir: "desc" }}
+              persistKey="all-runs"
+              onRowClick={(r) => navigate(`/production/batches/${r.id}`)}
+              // A batch in work comes first, whatever the sort.
+              group={(r) => (r.process_board ? 0 : 1)}
+              empty="No production batch exists yet."
+            />
+          </div>
+        )}
+      </div>
+    </PageShell>
   );
 }

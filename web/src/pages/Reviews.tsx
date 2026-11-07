@@ -17,7 +17,6 @@ import {
   revokeReviewException,
   type ReviewExceptionRow,
   getFailingSubjects,
-  type FailingSubjects,
 } from "../api";
 import DataTable, { type Column } from "../components/DataTable";
 import { useDialog } from "../components/Dialog";
@@ -38,6 +37,8 @@ import {
   StatusPill,
 } from "../components/Ui";
 import { localWhen } from "../format";
+import { useLoad } from "../components/useLoad";
+import PageShell from "../components/PageShell";
 
 /** The review queue: what still needs verification, ranked by LEVERAGE — a
  * failed symbol pinning 30 components outranks a failed one pinning none —
@@ -137,91 +138,89 @@ export default function Reviews() {
   };
 
   return (
-    <div className="main-solo">
-      <div className="page">
-        {queue?.scope ? (
-          <div className="banner-warn" role="status">
-            Scoped to <strong>{queue.scope.project}</strong> @{" "}
-            <span className="mono">{queue.scope.sha}</span> — {queue.scope.components}{" "}
-            component(s) on this BOM, and only the drawings they pin.{" "}
-            <Link to="/reviews">Show the whole library</Link>
-          </div>
-        ) : null}
-        <div className="toolbar">
-          <h1>Review queue</h1>
-          <span className="toolbar-total">What still needs verification, by what checking it unblocks.</span>
-          <button
-            type="button"
-            className="btn btn-sm"
-            onClick={() => {
-              setNotice(null);
-              load();
-            }}
-            title="Refetch the queue — the page also refreshes whenever you come back to this window"
-          >
-            Refresh
-          </button>
-          <button
-            type="button"
-            className="btn btn-sm"
-            disabled={busy}
-            onClick={() => void confirmAgent()}
-            title="One human confirmation over every fully agent-checked subject"
-          >
-            Confirm agent checks
-          </button>
+    <PageShell>
+      {queue?.scope ? (
+        <div className="banner-warn" role="status">
+          Scoped to <strong>{queue.scope.project}</strong> @{" "}
+          <span className="mono">{queue.scope.sha}</span> — {queue.scope.components}{" "}
+          component(s) on this BOM, and only the drawings they pin.{" "}
+          <Link to="/reviews">Show the whole library</Link>
         </div>
-
-        <TabStrip
-          label="Review sections"
-          value={tab}
-          onChange={setTab}
-          tabs={TABS.map((t) => ({
-            id: t,
-            label: (
-              <>
-                {TAB_LABEL[t]}
-                {queue && (t === "components" || t === "symbols" || t === "footprints") ? (
-                  <span className="badge">{needsAttention(queue, t)}</span>
-                ) : health && t === "flagged" ? (
-                  <span className="badge">{health.flagged.length}</span>
-                ) : null}
-              </>
-            ),
-          }))}
-        />
-
-        {error ? <ErrorBanner message={error} /> : null}
-        {notice ? (
-          <div className="banner-ok" role="status">
-            {notice}
-          </div>
-        ) : null}
-        {tab === "components" || tab === "symbols" || tab === "footprints" ? <ReviewRequestsCard /> : null}
-        {tab === "changes" ? (
-          // Its own data, its own paging — it must not wait on the queue.
-          <ChangesFeed />
-        ) : tab === "exceptions" ? (
-          // Same: standing decisions are their own list and the queue says
-          // nothing about them.
-          <ExceptionsTab />
-        ) : !queue ? (
-          <Spinner label="Loading review states" />
-        ) : tab === "components" ? (
-          <ComponentsTab rows={queue.components} onChanged={() => load()} />
-        ) : tab === "symbols" ? (
-          <TemplatesTab rows={queue.symbols} kind="symbols" onChanged={() => load()} />
-        ) : tab === "footprints" ? (
-          <TemplatesTab rows={queue.footprints} kind="footprints" onChanged={() => load()} />
-        ) : tab === "flagged" && health ? (
-          <FlaggedTab health={health} />
-        ) : health ? (
-          <HealthTab health={health} />
-        ) : (
-          <Spinner label="Loading health" />
-        )}
+      ) : null}
+      <div className="toolbar">
+        <h1>Review queue</h1>
+        <span className="toolbar-total">What still needs verification, by what checking it unblocks.</span>
+        <button
+          type="button"
+          className="btn btn-sm"
+          onClick={() => {
+            setNotice(null);
+            load();
+          }}
+          title="Refetch the queue — the page also refreshes whenever you come back to this window"
+        >
+          Refresh
+        </button>
+        <button
+          type="button"
+          className="btn btn-sm"
+          disabled={busy}
+          onClick={() => void confirmAgent()}
+          title="One human confirmation over every fully agent-checked subject"
+        >
+          Confirm agent checks
+        </button>
       </div>
-    </div>
+
+      <TabStrip
+        label="Review sections"
+        value={tab}
+        onChange={setTab}
+        tabs={TABS.map((t) => ({
+          id: t,
+          label: (
+            <>
+              {TAB_LABEL[t]}
+              {queue && (t === "components" || t === "symbols" || t === "footprints") ? (
+                <span className="badge">{needsAttention(queue, t)}</span>
+              ) : health && t === "flagged" ? (
+                <span className="badge">{health.flagged.length}</span>
+              ) : null}
+            </>
+          ),
+        }))}
+      />
+
+      {error ? <ErrorBanner message={error} /> : null}
+      {notice ? (
+        <div className="banner-ok" role="status">
+          {notice}
+        </div>
+      ) : null}
+      {tab === "components" || tab === "symbols" || tab === "footprints" ? <ReviewRequestsCard /> : null}
+      {tab === "changes" ? (
+        // Its own data, its own paging — it must not wait on the queue.
+        <ChangesFeed />
+      ) : tab === "exceptions" ? (
+        // Same: standing decisions are their own list and the queue says
+        // nothing about them.
+        <ExceptionsTab />
+      ) : !queue ? (
+        <Spinner label="Loading review states" />
+      ) : tab === "components" ? (
+        <ComponentsTab rows={queue.components} onChanged={() => load()} />
+      ) : tab === "symbols" ? (
+        <TemplatesTab rows={queue.symbols} kind="symbols" onChanged={() => load()} />
+      ) : tab === "footprints" ? (
+        <TemplatesTab rows={queue.footprints} kind="footprints" onChanged={() => load()} />
+      ) : tab === "flagged" && health ? (
+        <FlaggedTab health={health} />
+      ) : health ? (
+        <HealthTab health={health} />
+      ) : (
+        <Spinner label="Loading health" />
+      )}
+    </PageShell>
   );
 }
 
@@ -718,27 +717,14 @@ const LINK_FOR: Record<string, (id: number) => string> = {
  *  used to excuse is failing again somewhere nobody is looking.
  */
 function ExceptionsTab() {
-  const [rows, setRows] = useState<ReviewExceptionRow[] | null>(null);
   const [showRevoked, setShowRevoked] = useState(false);
   const [onlyStale, setOnlyStale] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const { data: rows, error, setError, reload: load } = useLoad(
+    (signal) => listAllReviewExceptions(showRevoked, signal),
+    [showRevoked],
+  );
   const [busy, setBusy] = useState(false);
   const dialog = useDialog();
-
-  const load = useCallback((signal?: AbortSignal) => {
-    listAllReviewExceptions(showRevoked, signal)
-      .then(setRows)
-      .catch((err) => {
-        if (!isAbortError(err)) setError(errorMessage(err));
-      });
-  }, [showRevoked]);
-
-  useEffect(() => {
-    const ctrl = new AbortController();
-    setRows(null);
-    load(ctrl.signal);
-    return () => ctrl.abort();
-  }, [load]);
 
   const revoke = async (row: ReviewExceptionRow) => {
     const why = await dialog.prompt(
@@ -887,19 +873,11 @@ function FailingKey({
   count: number;
 }) {
   const [open, setOpen] = useState(false);
-  const [rows, setRows] = useState<FailingSubjects | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!open || rows !== null) return;
-    const ctrl = new AbortController();
-    getFailingSubjects(kind, itemKey, ctrl.signal)
-      .then(setRows)
-      .catch((err) => {
-        if (!isAbortError(err)) setError(errorMessage(err));
-      });
-    return () => ctrl.abort();
-  }, [open, rows, kind, itemKey]);
+  const { data: rows, error } = useLoad(
+    (signal) => getFailingSubjects(kind, itemKey, signal),
+    [kind, itemKey],
+    { enabled: open, once: true },
+  );
 
   return (
     <>

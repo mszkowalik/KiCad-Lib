@@ -18,14 +18,13 @@
  *  absolute travels to the API — so a stored figure can never drift from a
  *  percentage re-derived against a changed base.
  */
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { PART_STEPS } from "./InvoiceLinesTable";
 import {
   errorMessage,
   getCostSteps,
   resolveDocumentParts,
   splitCostLine,
-  type CostStepCatalog,
   type RunCostDocumentRow,
   type RunCostLineRow,
   type SplitChild,
@@ -40,6 +39,7 @@ import {
   type RunOption, type TransformOption } from "../costs";
 import { useModal } from "../modal";
 import { plural } from "../../format";
+import { useLoad } from "../useLoad";
 
 /** Templates come from the production-step catalog (`/api/cost-steps`): the
  *  vendor's exact wording paired with the vendor-neutral step key, so a split
@@ -207,12 +207,7 @@ export default function SplitLineDialog({
     );
   };
 
-  const [catalog, setCatalog] = useState<CostStepCatalog | null>(null);
-  useEffect(() => {
-    const ac = new AbortController();
-    getCostSteps(ac.signal).then(setCatalog).catch(() => setCatalog(null));
-    return () => ac.abort();
-  }, []);
+  const { data: catalog } = useLoad(getCostSteps, []);
 
 
   // Charged to a batch and stepped as its parts: never pool stock.

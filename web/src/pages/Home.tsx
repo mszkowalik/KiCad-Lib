@@ -6,7 +6,7 @@
  *  queue takes about a second) never holds the others back. A figure stays on its
  *  own page: this page only says that something is there.
  */
-import { useEffect, useState, type ReactNode } from "react";
+import { type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import {
   getAllRuns,
@@ -23,6 +23,8 @@ import { MiniBoard, nextUp } from "../components/process/ProcessBoard";
 import { Spinner } from "../components/Ui";
 import { pln } from "../format";
 import { useTodayRate } from "../useTodayRate";
+import { useLoad } from "../components/useLoad";
+import PageShell from "../components/PageShell";
 
 interface Waiting {
   n: ReactNode;
@@ -31,29 +33,17 @@ interface Waiting {
   to: string;
 }
 
-/** Runs one promise and returns its answer, or null while it runs or if it fails. */
-function useLoad<T>(load: (signal: AbortSignal) => Promise<T>): T | null {
-  const [value, setValue] = useState<T | null>(null);
-  useEffect(() => {
-    const ac = new AbortController();
-    load(ac.signal).then(setValue).catch(() => undefined);
-    return () => ac.abort();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-  return value;
-}
-
 const NEEDS_REVIEW = (state: string) => state !== "checked";
 
 export default function Home() {
   const rate = useTodayRate();
   const { user } = useAuth();
-  const runs = useLoad(getAllRuns);
-  const reviews = useLoad((s) => getReviewQueue(s));
-  const shipments = useLoad((s) => listShipments("open", s));
-  const ksef = useLoad(getKsefInbox);
-  const orders = useLoad((s) => listOrders(s));
-  const register = useLoad(getInvoiceRegister);
+  const runs = useLoad(getAllRuns, []).data;
+  const reviews = useLoad((s) => getReviewQueue(s), []).data;
+  const shipments = useLoad((s) => listShipments("open", s), []).data;
+  const ksef = useLoad(getKsefInbox, []).data;
+  const orders = useLoad((s) => listOrders(s), []).data;
+  const register = useLoad(getInvoiceRegister, []).data;
 
   const inWork: RunInfo[] = (runs ?? []).filter((r) => r.process_board);
   const waiting: Waiting[] = [];
@@ -90,49 +80,47 @@ export default function Home() {
   const loading = !runs || !reviews || !shipments || !orders || !ksef || !register;
 
   return (
-    <div className="main-solo">
-      <div className="page">
-        <div className="toolbar">
-          <h1>Home</h1>
-          {user ? <span className="toolbar-total">{user.display_name || user.username}</span> : null}
-        </div>
-
-        <div className="card pad">
-          <h2 className="card-title">Batches in work</h2>
-          {!runs ? <Spinner /> : inWork.length ? (
-            <div className="attention-rows">
-              {inWork.map((r) => {
-                const up = nextUp(r.process_board ?? []);
-                return (
-                  <div key={r.id} className="attention-row">
-                    <span>
-                      <Link className="comp-link" to={`/production/batches/${r.id}`}>{r.label}</Link>{" "}
-                      <span className="muted">{r.project}</span>
-                    </span>
-                    <span className="stat-row">
-                      <MiniBoard steps={r.process_board ?? []} />
-                      {up ? <StatChip n={up.can_go.toLocaleString()} tone="acc">can go at {up.label}</StatChip> : <span className="muted">nothing can go now</span>}
-                    </span>
-                  </div>
-                );
-              })}
-            </div>
-          ) : <p className="muted">No batch is in work. A batch starts from its project.</p>}
-        </div>
-
-        <div className="card pad">
-          <h2 className="card-title">Waiting</h2>
-          <div className="attention-rows">
-            {waiting.map((w) => (
-              <div key={w.text} className="attention-row">
-                <span><StatChip n={w.n} tone={w.tone} /> {w.text}</span>
-                <Link className="btn btn-sm" to={w.to}>Open</Link>
-              </div>
-            ))}
-          </div>
-          {loading ? <Spinner /> : waiting.length ? null : <p className="muted">Nothing waits.</p>}
-        </div>
+    <PageShell>
+      <div className="toolbar">
+        <h1>Home</h1>
+        {user ? <span className="toolbar-total">{user.display_name || user.username}</span> : null}
       </div>
-    </div>
+
+      <div className="card pad">
+        <h2 className="card-title">Batches in work</h2>
+        {!runs ? <Spinner /> : inWork.length ? (
+          <div className="attention-rows">
+            {inWork.map((r) => {
+              const up = nextUp(r.process_board ?? []);
+              return (
+                <div key={r.id} className="attention-row">
+                  <span>
+                    <Link className="comp-link" to={`/production/batches/${r.id}`}>{r.label}</Link>{" "}
+                    <span className="muted">{r.project}</span>
+                  </span>
+                  <span className="stat-row">
+                    <MiniBoard steps={r.process_board ?? []} />
+                    {up ? <StatChip n={up.can_go.toLocaleString()} tone="acc">can go at {up.label}</StatChip> : <span className="muted">nothing can go now</span>}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        ) : <p className="muted">No batch is in work. A batch starts from its project.</p>}
+      </div>
+
+      <div className="card pad">
+        <h2 className="card-title">Waiting</h2>
+        <div className="attention-rows">
+          {waiting.map((w) => (
+            <div key={w.text} className="attention-row">
+              <span><StatChip n={w.n} tone={w.tone} /> {w.text}</span>
+              <Link className="btn btn-sm" to={w.to}>Open</Link>
+            </div>
+          ))}
+        </div>
+        {loading ? <Spinner /> : waiting.length ? null : <p className="muted">Nothing waits.</p>}
+      </div>
+    </PageShell>
   );
 }

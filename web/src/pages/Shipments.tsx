@@ -4,15 +4,13 @@
  *  leaves; devices are scanned into it on `ShipmentDetail` and it is sent when
  *  the box is closed. Shipping is Pack, then Send (decision 0103).
  */
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   errorMessage,
-  isAbortError,
   listOrders,
   listShipments,
   openShipment,
-  type OrderRow,
   type ShipmentListRow,
 } from "../api";
 import DataTable, { type Column } from "../components/DataTable";
@@ -20,27 +18,15 @@ import Field, { FieldRow } from "../components/Field";
 import { StatChip, NarrowChip } from "../components/FoldSection";
 import { ErrorBanner, Spinner, StatusPill } from "../components/Ui";
 import { localDate } from "../format";
+import { useLoad } from "../components/useLoad";
+import PageShell from "../components/PageShell";
 
 export default function Shipments() {
-  const [rows, setRows] = useState<ShipmentListRow[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const { data: rows, error } = useLoad((signal) => listShipments(undefined, signal), []);
   const [creating, setCreating] = useState(false);
   const [narrow, setNarrow] = useState<"" | "open" | "sent" | "cancelled">("");
   const navigate = useNavigate();
 
-  const reload = useCallback(() => {
-    const ac = new AbortController();
-    listShipments(undefined, ac.signal)
-      .then((r) => {
-        setRows(r);
-        setError(null);
-      })
-      .catch((err) => {
-        if (!isAbortError(err)) setError(errorMessage(err));
-      });
-    return () => ac.abort();
-  }, []);
-  useEffect(reload, [reload]);
 
   const columns: Column<ShipmentListRow>[] = useMemo(
     () => [
@@ -64,71 +50,61 @@ export default function Shipments() {
   );
 
   return (
-    <div className="main-solo">
-      <div className="page">
-        <div className="toolbar">
-          <h1>Shipments</h1>
-          <span className="toolbar-total">
-            {rows ? `${rows.filter((r) => r.status === "open").length} open · ${rows.length} in all` : ""}
-          </span>
-          <button type="button" className="btn btn-primary btn-sm" onClick={() => setCreating((v) => !v)}>
-            {creating ? "Close" : "New shipment"}
-          </button>
-        </div>
-        {error ? <ErrorBanner message={error} /> : null}
-        {creating ? <NewShipmentCard onCreated={(id) => navigate(`/sales/shipments/${id}`)} /> : null}
-        <div className="card pad">
-          <h2 className="card-title">Shipments</h2>
-          <p className="muted dim">
-            An open shipment is a box being packed: its devices are reserved and nothing has left.
-            Click a row to scan devices into it or to send it.
-          </p>
-          {rows === null ? (
-            <Spinner label="Loading shipments…" />
-          ) : (
-            <>
-            <div className="stat-row">
-              <NarrowChip n={rows.filter((r) => r.status === "open").length} tone="warn" value="open" current={narrow} onNarrow={setNarrow}>open</NarrowChip>
-              <NarrowChip n={rows.filter((r) => r.status === "sent").length} tone="ok" value="sent" current={narrow} onNarrow={setNarrow}>sent</NarrowChip>
-              <NarrowChip n={rows.filter((r) => r.status === "cancelled").length} value="cancelled" current={narrow} onNarrow={setNarrow}>cancelled</NarrowChip>
-              <StatChip n={rows.reduce((a, r) => a + r.qty, 0).toLocaleString()}>devices</StatChip>
-            </div>
-            <DataTable
-              rows={narrow ? rows.filter((r) => r.status === narrow) : rows}
-              columns={columns}
-              rowKey={(s) => s.id}
-              group={(s) => (s.status === "open" ? 0 : 1)}
-              defaultSort={{ key: "id", dir: "desc" }}
-              onRowClick={(s) => navigate(`/sales/shipments/${s.id}`)}
-              persistKey="shipments"
-              empty="No shipments yet."
-            />
-            </>
-          )}
-        </div>
+    <PageShell>
+      <div className="toolbar">
+        <h1>Shipments</h1>
+        <span className="toolbar-total">
+          {rows ? `${rows.filter((r) => r.status === "open").length} open · ${rows.length} in all` : ""}
+        </span>
+        <button type="button" className="btn btn-primary btn-sm" onClick={() => setCreating((v) => !v)}>
+          {creating ? "Close" : "New shipment"}
+        </button>
       </div>
-    </div>
+      {error ? <ErrorBanner message={error} /> : null}
+      {creating ? <NewShipmentCard onCreated={(id) => navigate(`/sales/shipments/${id}`)} /> : null}
+      <div className="card pad">
+        <h2 className="card-title">Shipments</h2>
+        <p className="muted dim">
+          An open shipment is a box being packed: its devices are reserved and nothing has left.
+          Click a row to scan devices into it or to send it.
+        </p>
+        {rows === null ? (
+          <Spinner label="Loading shipments…" />
+        ) : (
+          <>
+          <div className="stat-row">
+            <NarrowChip n={rows.filter((r) => r.status === "open").length} tone="warn" value="open" current={narrow} onNarrow={setNarrow}>open</NarrowChip>
+            <NarrowChip n={rows.filter((r) => r.status === "sent").length} tone="ok" value="sent" current={narrow} onNarrow={setNarrow}>sent</NarrowChip>
+            <NarrowChip n={rows.filter((r) => r.status === "cancelled").length} value="cancelled" current={narrow} onNarrow={setNarrow}>cancelled</NarrowChip>
+            <StatChip n={rows.reduce((a, r) => a + r.qty, 0).toLocaleString()}>devices</StatChip>
+          </div>
+          <DataTable
+            rows={narrow ? rows.filter((r) => r.status === narrow) : rows}
+            columns={columns}
+            rowKey={(s) => s.id}
+            group={(s) => (s.status === "open" ? 0 : 1)}
+            defaultSort={{ key: "id", dir: "desc" }}
+            onRowClick={(s) => navigate(`/sales/shipments/${s.id}`)}
+            persistKey="shipments"
+            empty="No shipments yet."
+          />
+          </>
+        )}
+      </div>
+    </PageShell>
   );
 }
 
 /** Open a box for one order. The order is chosen here and never changes. */
 function NewShipmentCard({ onCreated }: { onCreated: (id: number) => void }) {
-  const [orders, setOrders] = useState<OrderRow[] | null>(null);
   const [orderId, setOrderId] = useState("");
   const [note, setNote] = useState("");
   const [tracking, setTracking] = useState("");
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    const ac = new AbortController();
-    listOrders(ac.signal)
-      .then((os) => setOrders(os.filter((o) => !o.cancelled && o.status !== "fulfilled")))
-      .catch((err) => {
-        if (!isAbortError(err)) setError(errorMessage(err));
-      });
-    return () => ac.abort();
-  }, []);
+  const { data: orders, error, setError } = useLoad(
+    (signal) => listOrders(signal).then((os) => os.filter((o) => !o.cancelled && o.status !== "fulfilled")),
+    [],
+  );
 
   const create = async () => {
     if (!orderId) {

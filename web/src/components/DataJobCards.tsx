@@ -5,7 +5,7 @@
  *  says so. A dialog closes when its write lands, so each `run` keeps the answer of
  *  the real write for the card to print.
  */
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import {
   companyBackfill,
   deleteMaterialStateMap,
@@ -14,13 +14,10 @@ import {
   getMaterialLedgerSummary,
   getMaterialStateMaps,
   getProjects,
-  isAbortError,
   putMaterialStateMap,
   recomputeChecks,
   type CompanyBackfillResult,
-  type MaterialLedgerSummary,
   type MaterialStateMapRow,
-  type ProjectInfo,
 } from "../api";
 import AutoTextarea from "./AutoTextarea";
 import ComponentPickDialog from "./ComponentPickDialog";
@@ -32,6 +29,7 @@ import NumberInput from "./NumberInput";
 import { DryRunDialog } from "./process/StageDialogs";
 import { ErrorBanner, Spinner } from "./Ui";
 import { plural } from "../format";
+import { useLoad } from "./useLoad";
 
 /** The ledger's tables, in the order a reader meets them. */
 const LEDGER_TABLES: [string, string][] = [
@@ -79,29 +77,16 @@ const EMPTY_FORM = { part: null as PickedPart | null, item: null as PickedPart |
 
 export function MaterialLedgerCard() {
   const dialog = useDialog();
-  const [summary, setSummary] = useState<MaterialLedgerSummary | null>(null);
-  const [maps, setMaps] = useState<MaterialStateMapRow[] | null>(null);
-  const [err, setErr] = useState("");
+  const { data, error: err, setError: setErr, reload: load } = useLoad(
+    (signal) => Promise.all([getMaterialLedgerSummary(signal), getMaterialStateMaps(signal)]),
+    [],
+  );
+  const summary = data?.[0] ?? null;
+  const maps = data?.[1] ?? null;
   const [form, setForm] = useState(EMPTY_FORM);
   const [picking, setPicking] = useState<"part" | "item" | null>(null);
   const [busy, setBusy] = useState(false);
 
-  const load = (signal?: AbortSignal) =>
-    Promise.all([getMaterialLedgerSummary(signal), getMaterialStateMaps(signal)])
-      .then(([s, m]) => {
-        setSummary(s);
-        setMaps(m);
-        setErr("");
-      })
-      .catch((e) => {
-        if (!isAbortError(e)) setErr(errorMessage(e));
-      });
-
-  useEffect(() => {
-    const ac = new AbortController();
-    void load(ac.signal);
-    return () => ac.abort();
-  }, []);
 
   /** The picker returns an id and an MPN, and an internal part often has no MPN. */
   const pick = async (which: "part" | "item", id: number | null) => {
@@ -324,22 +309,12 @@ export function CompanyBackfillCard() {
 
 export function RecomputeChecksCard() {
   const dialog = useDialog();
-  const [projects, setProjects] = useState<ProjectInfo[]>([]);
+  const { data: projectRows, error: err, setError: setErr } = useLoad(getProjects, []);
+  const projects = projectRows ?? [];
   const [projectId, setProjectId] = useState<number | null>(null);
   const [runId, setRunId] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState("");
   const [done, setDone] = useState("");
-
-  useEffect(() => {
-    const ac = new AbortController();
-    getProjects(ac.signal)
-      .then(setProjects)
-      .catch((e) => {
-        if (!isAbortError(e)) setErr(errorMessage(e));
-      });
-    return () => ac.abort();
-  }, []);
 
   const run = async () => {
     const project = projects.find((p) => p.id === projectId);

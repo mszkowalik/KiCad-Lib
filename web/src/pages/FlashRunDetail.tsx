@@ -17,10 +17,11 @@ import DataTable, { type Column } from "../components/DataTable";
 import FoldSection, { StatChip } from "../components/FoldSection";
 import { CheckField } from "../components/Field";
 import { useDialog } from "../components/Dialog";
-import { BackLink, ErrorBanner, Spinner, StatusPill } from "../components/Ui";
+import { BackLink, ErrorBanner, StatusPill } from "../components/Ui";
 import CheckGrid from "../components/flasher/CheckGrid";
 import { fmtDuration } from "../components/flasher/common";
 import { localWhen, localTime } from "../format";
+import PageShell, { PageLoading } from "../components/PageShell";
 
 const DIRS = ["", "tx", "rx", "app", "err", "esptool"];
 
@@ -165,106 +166,99 @@ export default function FlashRunDetail() {
     }
   };
 
-  if (error && !run) {
-    return <div className="main-solo"><div className="page"><ErrorBanner message={error} /></div></div>;
-  }
-  if (!run) {
-    return <div className="main-solo"><div className="page"><Spinner label="Loading run…" /></div></div>;
-  }
+  if (!run) return <PageLoading error={error} label="Loading run…" />;
 
   return (
-    <div className="main-solo">
-      <div className="page">
-        <div className="toolbar">
-          <BackLink to={run.device ? `/production/devices/${run.device.id}` : "/production/devices"}>
-            ← {run.device ? (run.device.serial || run.device.mac) : "Devices"}
-          </BackLink>
-          <h1>Programming run #{run.id}</h1>
-          <StatusPill status={run.status} />
-          {run.status === "running" ? (
-            <button type="button" className="btn btn-danger btn-sm" onClick={abortZombie}>
-              Mark aborted
-            </button>
-          ) : null}
-          <span className="toolbar-total">
-            {run.deployment ? `${run.deployment.name} v${run.deployment.version_no}` : "?"} ·{" "}
-            {run.production_run ? run.production_run.label : "?"} · {run.operator || "no operator"} ·{" "}
-            {run.station || "?"} · {localWhen(run.started_at)} · {fmtDuration(run.duration_ms)}
-          </span>
-        </div>
-        {error ? <ErrorBanner message={error} /> : null}
-        {run.error ? <div className="banner-error">{run.error}</div> : null}
-        {run.release_override_reason ? (
-          <div className="banner-warn">Script override: {run.release_override_reason}</div>
+    <PageShell>
+      <div className="toolbar">
+        <BackLink to={run.device ? `/production/devices/${run.device.id}` : "/production/devices"}>
+          ← {run.device ? (run.device.serial || run.device.mac) : "Devices"}
+        </BackLink>
+        <h1>Programming run #{run.id}</h1>
+        <StatusPill status={run.status} />
+        {run.status === "running" ? (
+          <button type="button" className="btn btn-danger btn-sm" onClick={abortZombie}>
+            Mark aborted
+          </button>
         ) : null}
+        <span className="toolbar-total">
+          {run.deployment ? `${run.deployment.name} v${run.deployment.version_no}` : "?"} ·{" "}
+          {run.production_run ? run.production_run.label : "?"} · {run.operator || "no operator"} ·{" "}
+          {run.station || "?"} · {localWhen(run.started_at)} · {fmtDuration(run.duration_ms)}
+        </span>
+      </div>
+      {error ? <ErrorBanner message={error} /> : null}
+      {run.error ? <div className="banner-error">{run.error}</div> : null}
+      {run.release_override_reason ? (
+        <div className="banner-warn">Script override: {run.release_override_reason}</div>
+      ) : null}
 
-        <div className="detail-page">
-          <div className="detail-left">
-            {run.checks?.length ? (
-              <div className="card pad">
-                <h2 className="card-title">What this run proved</h2>
-                <CheckGrid checks={run.checks} />
-              </div>
-            ) : null}
-
-            <FoldSection
-              title="Steps"
-              count={run.steps.length}
-              foldKey={`flash-run:${run.id}:steps`}
-              forceOpen={run.status === "running"}
-              chips={[...new Set(run.steps.map((st) => st.status))].sort((a, b) => stepRank(a) - stepRank(b)).slice(0, 4).map((st) => (
-                <StatChip key={st} n={run.steps.filter((x) => x.status === st).length}
-                  tone={stepRank(st) === 0 ? "err" : stepRank(st) === 1 ? "warn" : st === "pass" ? "ok" : undefined}>
-                  {st}
-                </StatChip>
-              ))}
-            >
-              <DataTable
-                rows={run.steps}
-                rowKey={(s) => s.idx}
-                columns={STEP_COLS}
-                defaultSort={{ key: "idx", dir: "asc" }}
-                empty="No steps recorded."
-              />
-            </FoldSection>
-            {run.results && Object.keys(run.results).length ? (
-              <FoldSection title="Captured results" count={Object.keys(run.results).length} foldKey={`flash-run:${run.id}:results`}>
-                <RunValues values={run.results} />
-              </FoldSection>
-            ) : null}
-            {run.params_snapshot && Object.keys(run.params_snapshot).length ? (
-              <FoldSection title="Applied parameters" count={Object.keys(run.params_snapshot).length} foldKey={`flash-run:${run.id}:params`}>
-                <p className="muted dim">Secrets are masked in the snapshot itself.</p>
-                <RunValues values={run.params_snapshot} />
-              </FoldSection>
-            ) : null}
-          </div>
-
-          <div className="detail-right">
+      <div className="detail-page">
+        <div className="detail-left">
+          {run.checks?.length ? (
             <div className="card pad">
-              <div className="toolbar">
-                <h2 className="card-title">Log</h2>
-                <select className="row-input" value={dir} onChange={(e) => setDir(e.target.value)}>
-                  {DIRS.map((d) => (
-                    <option key={d} value={d}>{d === "" ? "all directions" : d}</option>
-                  ))}
-                </select>
-                <CheckField checked={follow} onChange={setFollow}>follow</CheckField>
-                <span className="toolbar-total">{logs.length} lines</span>
-              </div>
-              <div ref={logBox} className="flash-log flash-log-tall mono">
-                {logs.map((row) => (
-                  <div key={row.seq} className={`fl-${row.dir}`} title={row.ts ?? ""}>
-                    <span className="dim">{row.device_ts || (row.ts ? localTime(row.ts) : "")}</span>{" "}
-                    {row.dir === "tx" ? "→ " : row.dir === "rx" ? "← " : `[${row.dir}] `}
-                    {row.text}
-                  </div>
+              <h2 className="card-title">What this run proved</h2>
+              <CheckGrid checks={run.checks} />
+            </div>
+          ) : null}
+
+          <FoldSection
+            title="Steps"
+            count={run.steps.length}
+            foldKey={`flash-run:${run.id}:steps`}
+            forceOpen={run.status === "running"}
+            chips={[...new Set(run.steps.map((st) => st.status))].sort((a, b) => stepRank(a) - stepRank(b)).slice(0, 4).map((st) => (
+              <StatChip key={st} n={run.steps.filter((x) => x.status === st).length}
+                tone={stepRank(st) === 0 ? "err" : stepRank(st) === 1 ? "warn" : st === "pass" ? "ok" : undefined}>
+                {st}
+              </StatChip>
+            ))}
+          >
+            <DataTable
+              rows={run.steps}
+              rowKey={(s) => s.idx}
+              columns={STEP_COLS}
+              defaultSort={{ key: "idx", dir: "asc" }}
+              empty="No steps recorded."
+            />
+          </FoldSection>
+          {run.results && Object.keys(run.results).length ? (
+            <FoldSection title="Captured results" count={Object.keys(run.results).length} foldKey={`flash-run:${run.id}:results`}>
+              <RunValues values={run.results} />
+            </FoldSection>
+          ) : null}
+          {run.params_snapshot && Object.keys(run.params_snapshot).length ? (
+            <FoldSection title="Applied parameters" count={Object.keys(run.params_snapshot).length} foldKey={`flash-run:${run.id}:params`}>
+              <p className="muted dim">Secrets are masked in the snapshot itself.</p>
+              <RunValues values={run.params_snapshot} />
+            </FoldSection>
+          ) : null}
+        </div>
+
+        <div className="detail-right">
+          <div className="card pad">
+            <div className="toolbar">
+              <h2 className="card-title">Log</h2>
+              <select className="row-input" value={dir} onChange={(e) => setDir(e.target.value)}>
+                {DIRS.map((d) => (
+                  <option key={d} value={d}>{d === "" ? "all directions" : d}</option>
                 ))}
-              </div>
+              </select>
+              <CheckField checked={follow} onChange={setFollow}>follow</CheckField>
+              <span className="toolbar-total">{logs.length} lines</span>
+            </div>
+            <div ref={logBox} className="flash-log flash-log-tall mono">
+              {logs.map((row) => (
+                <div key={row.seq} className={`fl-${row.dir}`} title={row.ts ?? ""}>
+                  <span className="dim">{row.device_ts || (row.ts ? localTime(row.ts) : "")}</span>{" "}
+                  {row.dir === "tx" ? "→ " : row.dir === "rx" ? "← " : `[${row.dir}] `}
+                  {row.text}
+                </div>
+              ))}
             </div>
           </div>
         </div>
       </div>
-    </div>
+    </PageShell>
   );
 }

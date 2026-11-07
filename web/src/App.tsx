@@ -58,19 +58,18 @@ import Skills from "./pages/Skills";
 import Templates from "./pages/Templates";
 import TemplateDetail from "./pages/TemplateDetail";
 import SimModelDetail from "./pages/SimModelDetail";
+import PageShell from "./components/PageShell";
 
 function NotFound() {
   return (
-    <div className="main-solo">
-      <div className="page">
-        <div className="card pad">
-          <h1>Page not found</h1>
-          <p className="muted">
-            Nothing lives at this address. <Link to="/">Back to Home.</Link>
-          </p>
-        </div>
+    <PageShell>
+      <div className="card pad">
+        <h1>Page not found</h1>
+        <p className="muted">
+          Nothing lives at this address. <Link to="/">Back to Home.</Link>
+        </p>
       </div>
-    </div>
+    </PageShell>
   );
 }
 

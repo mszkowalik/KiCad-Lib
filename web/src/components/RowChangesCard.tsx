@@ -10,12 +10,13 @@
  */
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { errorMessage, getRowHistory, isAbortError, type RowHistoryEntry } from "../api";
+import { getRowHistory, type RowHistoryEntry } from "../api";
 import { useAuth } from "../auth";
 import DataTable, { type Column } from "./DataTable";
 import { localWhen } from "../format";
 import FoldSection from "./FoldSection";
 import { ErrorBanner, Spinner } from "./Ui";
+import { useLoad } from "./useLoad";
 
 const OP_WORD: Record<RowHistoryEntry["op"], string> = { I: "added", U: "changed", D: "deleted" };
 
@@ -70,17 +71,10 @@ function ChangeRows({ table, id, onCount }: {
   table: string; id: number; onCount: (n: number) => void;
 }) {
   const { isAdmin } = useAuth();
-  const [rows, setRows] = useState<RowHistoryEntry[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  useEffect(() => {
-    const ac = new AbortController();
-    setRows(null);
-    setError(null);
-    getRowHistory(table, id, ac.signal)
-      .then((r) => { setRows(r); onCount(r.length); })
-      .catch((err) => { if (!isAbortError(err)) setError(errorMessage(err)); });
-    return () => ac.abort();
-  }, [table, id, onCount]);
+  const { data: rows, error } = useLoad(
+    (signal) => getRowHistory(table, id, signal).then((r) => { onCount(r.length); return r; }),
+    [table, id, onCount],
+  );
   if (error) return <ErrorBanner message={error} />;
   if (!rows) return <Spinner label="Loading changes" />;
   return (

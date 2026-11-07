@@ -1,9 +1,7 @@
 /** What was handed to the agent with "Queue shown → agent", and the way to take
  *  it back. The queue shows only that a row is handed off; this is the list. */
-import { useCallback, useEffect, useState } from "react";
 import {
   errorMessage,
-  isAbortError,
   listReviewRequests,
   withdrawReviewRequest,
   type ReviewRequestRow,
@@ -13,21 +11,11 @@ import { useDialog } from "./Dialog";
 import FoldSection, { StatChip } from "./FoldSection";
 import { localWhen } from "../format";
 import { ErrorBanner } from "./Ui";
+import { useLoad } from "./useLoad";
 
 export default function ReviewRequestsCard() {
   const dialog = useDialog();
-  const [rows, setRows] = useState<ReviewRequestRow[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const load = useCallback((signal?: AbortSignal) => {
-    listReviewRequests(false, signal)
-      .then((r) => { setRows(r); setError(null); })
-      .catch((err) => { if (!isAbortError(err)) setError(errorMessage(err)); });
-  }, []);
-  useEffect(() => {
-    const ac = new AbortController();
-    load(ac.signal);
-    return () => ac.abort();
-  }, [load]);
+  const { data: rows, error, reload: load } = useLoad((signal) => listReviewRequests(false, signal), []);
 
   if (error) return <ErrorBanner message={error} />;
   // Nothing handed off is nothing to say.

@@ -12,7 +12,6 @@
 import { useEffect, useRef, useState } from "react";
 import {
   errorMessage,
-  isAbortError,
   listModels3d,
   model3dPath,
   uploadModel3d,
@@ -26,6 +25,7 @@ import FilePick from "./FilePick";
 import FoldSection from "./FoldSection";
 import { fmtBytes } from "./flasher/common";
 import { ErrorBanner, Spinner } from "./Ui";
+import { useLoad } from "./useLoad";
 
 /** The route's own cap on one list. */
 const LIMIT = 300;
@@ -71,10 +71,9 @@ const COLUMNS: Column<Model3DRow>[] = [
 export default function Models3dPanel({ onChanged }: { onChanged?: () => void }) {
   const dialog = useDialog();
   const [query, setQuery] = useState("");
-  const [rows, setRows] = useState<Model3DRow[] | null>(null);
-  const [total, setTotal] = useState(0);
-  const [error, setError] = useState("");
-  const [seq, setSeq] = useState(0);
+  const { data, error, reload } = useLoad((signal) => listModels3d(query, LIMIT, signal), [query], { keep: true });
+  const rows = data?.models ?? null;
+  const total = data?.total_matching ?? 0;
   const typing = useRef<number | undefined>(undefined);
 
   const [relPath, setRelPath] = useState("");
@@ -82,20 +81,6 @@ export default function Models3dPanel({ onChanged }: { onChanged?: () => void })
   const [busy, setBusy] = useState(false);
   const [uploadError, setUploadError] = useState("");
   const [notice, setNotice] = useState("");
-
-  useEffect(() => {
-    const ac = new AbortController();
-    listModels3d(query, LIMIT, ac.signal)
-      .then((r) => {
-        setRows(r.models);
-        setTotal(r.total_matching);
-        setError("");
-      })
-      .catch((err) => {
-        if (!isAbortError(err)) setError(errorMessage(err));
-      });
-    return () => ac.abort();
-  }, [query, seq]);
 
   useEffect(() => () => window.clearTimeout(typing.current), []);
 
@@ -122,7 +107,7 @@ export default function Models3dPanel({ onChanged }: { onChanged?: () => void })
       setNotice(`${existing ? "Replaced" : "Added"} ${res.rel_path} (${fmtBytes(res.size_bytes)}). It is live now.`);
       setFile(null);
       setRelPath("");
-      setSeq((n) => n + 1);
+      void reload();
       onChanged?.();
     } catch (err) {
       setUploadError(errorMessage(err));

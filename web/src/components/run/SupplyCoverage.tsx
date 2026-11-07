@@ -13,17 +13,15 @@
  *  to make a reader stop reading the one that says it is not. A card stays when the
  *  check could not run, because no supplier BOM is cached.
  */
-import { useEffect, useState, type ReactNode } from "react";
+import { type ReactNode } from "react";
 import {
-  errorMessage,
   getSupplyCoverage,
-  isAbortError,
-  type SupplyCoverage as Coverage,
   type SupplyCoverageRow,
 } from "../../api";
 import DataTable from "../DataTable";
 import FoldSection, { StatChip } from "../FoldSection";
 import { ErrorBanner } from "../Ui";
+import { useLoad } from "../useLoad";
 
 /** What each verdict means, and how loudly to say it. `ok` never renders. */
 const VERDICTS: Record<string, { tone: string; label: string; why: string }> = {
@@ -68,17 +66,7 @@ const VERDICTS: Record<string, { tone: string; label: string; why: string }> = {
 };
 
 export default function SupplyCoverage({ runId }: { runId: number }) {
-  const [data, setData] = useState<Coverage | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    const ac = new AbortController();
-    setData(null);
-    getSupplyCoverage(runId, ac.signal)
-      .then(setData)
-      .catch((err) => { if (!isAbortError(err)) setError(errorMessage(err)); });
-    return () => ac.abort();
-  }, [runId]);
+  const { data, error } = useLoad((signal) => getSupplyCoverage(runId, signal), [runId]);
 
   const plain = (body: ReactNode) => (
     <div className="card pad">

@@ -42,13 +42,14 @@ import {
   revertParamSet,
   type ParamRevisionRow,
   type ParamSetRow,
-  type ProjectInfo,
 } from "../api";
 import FoldSection, { StatChip } from "../components/FoldSection";
 import { useDialog } from "../components/Dialog";
 import { ErrorBanner, Spinner } from "../components/Ui";
 import { localWhen } from "../format";
 import { useStickyState } from "../useStickyState";
+import { useLoad } from "../components/useLoad";
+import PageShell from "../components/PageShell";
 
 /* Values are shown in the clear. Masking them was tried and removed the same
    day (user decision 2026-09-17): every value here is a bench setting somebody
@@ -67,27 +68,17 @@ const sameRows = (a: Row[] | undefined, b: Row[] | undefined) =>
 
 export default function Parameters() {
   const dialog = useDialog();
-  const [projects, setProjects] = useState<ProjectInfo[] | null>(null);
+  // The page's other reads and writes report through this error too.
+  const { data: projects, error, setError } = useLoad(getProjects, []);
   const [projectId, setProjectId] = useStickyState<number | null>("flasher.project", null);
   const [sets, setSets] = useState<ParamSetRow[] | null>(null);
   const [stored, setStored] = useState<Values>({});
   const [draft, setDraft] = useState<Values>({});
   const [notes, setNotes] = useState<Record<number, string>>({});
   const [saving, setSaving] = useState<number | null>(null);
-  const [error, setError] = useState<string | null>(null);
   const [refused, setRefused] = useState<Record<number, string>>({});
   /** a save or a revert writes a revision: an open history reads it again */
   const [historyTick, setHistoryTick] = useState(0);
-
-  useEffect(() => {
-    const ac = new AbortController();
-    getProjects(ac.signal)
-      .then(setProjects)
-      .catch((err) => {
-        if (!isAbortError(err)) setError(errorMessage(err));
-      });
-    return () => ac.abort();
-  }, []);
 
   const valid = projects?.some((p) => p.id === projectId) ? projectId : projects?.[0]?.id ?? null;
 
@@ -192,231 +183,229 @@ export default function Parameters() {
   };
 
   return (
-    <div className="main-solo">
-      <div className="page">
-        <div className="toolbar">
-          <h1>Parameters</h1>
-          {projects ? (
-            <select
-              className="row-input"
-              value={valid ?? ""}
-              onChange={(e) => setProjectId(Number(e.target.value))}
-            >
-              {projects.map((p) => (
-                <option key={p.id} value={p.id}>{p.name}</option>
-              ))}
-            </select>
-          ) : null}
-          <button type="button" className="btn btn-sm" onClick={() => void newSet()}>
-            New set
-          </button>
-          <span className="toolbar-total">
-            shared, encrypted, not versioned — the history is what a revert reads
-          </span>
-        </div>
+    <PageShell>
+      <div className="toolbar">
+        <h1>Parameters</h1>
+        {projects ? (
+          <select
+            className="row-input"
+            value={valid ?? ""}
+            onChange={(e) => setProjectId(Number(e.target.value))}
+          >
+            {projects.map((p) => (
+              <option key={p.id} value={p.id}>{p.name}</option>
+            ))}
+          </select>
+        ) : null}
+        <button type="button" className="btn btn-sm" onClick={() => void newSet()}>
+          New set
+        </button>
+        <span className="toolbar-total">
+          shared, encrypted, not versioned — the history is what a revert reads
+        </span>
+      </div>
 
-        {error ? <ErrorBanner message={error} /> : null}
+      {error ? <ErrorBanner message={error} /> : null}
 
-        {sets === null ? (
-          <Spinner label="Loading parameters…" />
-        ) : sets.length === 0 ? (
-          <p className="muted">No parameter sets in this project yet.</p>
-        ) : (
-          sets.map((ps) => {
-            const rows = draft[ps.id] ?? [];
-            const dirty = !sameRows(rows, stored[ps.id]);
-            return (
-              <div key={ps.id} className="card pad param-set-card">
-                <div className="toolbar">
-                  <h2 className="card-title mono">{ps.name}</h2>
-                  <span className="pill neutral">
-                    {ps.revision_no ? `revision ${ps.revision_no}` : "no recorded edit"}
-                  </span>
-                  <span className="rail-spacer" />
-                  <button
-                    type="button"
-                    className="btn btn-sm row-del"
-                    onClick={() => void remove(ps)}
-                  >
-                    Delete
-                  </button>
-                </div>
-                <p className="muted dim">
-                  {ps.updated_by ? `${ps.updated_by} · ` : ""}{localWhen(ps.updated_at)} · a save
-                  changes what the NEXT run of every version pointing here uses
-                </p>
-
-                <FoldSection
-                  bare
-                  title="Values"
-                  count={rows.length}
-                  foldKey={`params:${ps.id}:values`}
-                  forceOpen={dirty}
-                  chips={
-                    <>
-                      {dirty ? <StatChip tone="warn">not saved</StatChip> : null}
-                      {rows.some((r) => !(ps.used_by[r.key] ?? []).length) ? (
-                        <StatChip n={rows.filter((r) => !(ps.used_by[r.key] ?? []).length).length}>unused</StatChip>
-                      ) : null}
-                    </>
-                  }
+      {sets === null ? (
+        <Spinner label="Loading parameters…" />
+      ) : sets.length === 0 ? (
+        <p className="muted">No parameter sets in this project yet.</p>
+      ) : (
+        sets.map((ps) => {
+          const rows = draft[ps.id] ?? [];
+          const dirty = !sameRows(rows, stored[ps.id]);
+          return (
+            <div key={ps.id} className="card pad param-set-card">
+              <div className="toolbar">
+                <h2 className="card-title mono">{ps.name}</h2>
+                <span className="pill neutral">
+                  {ps.revision_no ? `revision ${ps.revision_no}` : "no recorded edit"}
+                </span>
+                <span className="rail-spacer" />
+                <button
+                  type="button"
+                  className="btn btn-sm row-del"
+                  onClick={() => void remove(ps)}
                 >
-                <table className="data data-fixed param-keys-table">
-                  <thead>
-                    <tr>
-                      <th>Key</th>
-                      <th>Value</th>
-                      <th className="ctr" />
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {rows.map((r, i) => {
-                      // `used_by` still drives the × tooltip. The COLUMN is gone
-                      // (user decision 2026-09-17): a parameter set is scoped to
-                      // one project, so the list only ever named sibling
-                      // deployments of the project already picked above, and it
-                      // was taking 42% of the table to say so. The guard never
-                      // depended on it — the server refuses the save and names
-                      // the versions itself.
-                      const uses = ps.used_by[r.key] ?? [];
-                      const who = uses.map((u) => `${u.deployment} v${u.version_no}`).join(", ");
-                      return (
-                        <tr key={i}>
-                          <td>
-                            {/* The key and its "unused" marker share the cell,
-                                in a DIV — `display: flex` on a <td> takes the
-                                cell out of the table layout and it then sizes
-                                to its own content (see components/CLAUDE.md). */}
-                            <div className="param-key-cell">
-                              <input
-                                className="row-input mono"
-                                value={r.key}
-                                onChange={(e) => edit(ps.id, i, { key: e.target.value })}
-                              />
-                              {/* The full "needed by" list was a column and is
-                                  gone. What stayed is the one fact that was
-                                  useful (user, 2026-09-17): nothing published
-                                  reads this key, so removing it is free. Who
-                                  DOES need it is on the × and in the refusal. */}
-                              {uses.length ? null : (
-                                <span className="pill neutral" title="No published version reads this key">
-                                  unused
-                                </span>
-                              )}
-                            </div>
-                          </td>
-                          <td>
+                  Delete
+                </button>
+              </div>
+              <p className="muted dim">
+                {ps.updated_by ? `${ps.updated_by} · ` : ""}{localWhen(ps.updated_at)} · a save
+                changes what the NEXT run of every version pointing here uses
+              </p>
+
+              <FoldSection
+                bare
+                title="Values"
+                count={rows.length}
+                foldKey={`params:${ps.id}:values`}
+                forceOpen={dirty}
+                chips={
+                  <>
+                    {dirty ? <StatChip tone="warn">not saved</StatChip> : null}
+                    {rows.some((r) => !(ps.used_by[r.key] ?? []).length) ? (
+                      <StatChip n={rows.filter((r) => !(ps.used_by[r.key] ?? []).length).length}>unused</StatChip>
+                    ) : null}
+                  </>
+                }
+              >
+              <table className="data data-fixed param-keys-table">
+                <thead>
+                  <tr>
+                    <th>Key</th>
+                    <th>Value</th>
+                    <th className="ctr" />
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.map((r, i) => {
+                    // `used_by` still drives the × tooltip. The COLUMN is gone
+                    // (user decision 2026-09-17): a parameter set is scoped to
+                    // one project, so the list only ever named sibling
+                    // deployments of the project already picked above, and it
+                    // was taking 42% of the table to say so. The guard never
+                    // depended on it — the server refuses the save and names
+                    // the versions itself.
+                    const uses = ps.used_by[r.key] ?? [];
+                    const who = uses.map((u) => `${u.deployment} v${u.version_no}`).join(", ");
+                    return (
+                      <tr key={i}>
+                        <td>
+                          {/* The key and its "unused" marker share the cell,
+                              in a DIV — `display: flex` on a <td> takes the
+                              cell out of the table layout and it then sizes
+                              to its own content (see components/CLAUDE.md). */}
+                          <div className="param-key-cell">
                             <input
                               className="row-input mono"
-                              value={r.value}
-                              onChange={(e) => edit(ps.id, i, { value: e.target.value })}
+                              value={r.key}
+                              onChange={(e) => edit(ps.id, i, { key: e.target.value })}
                             />
-                          </td>
-                          <td className="ctr">
-                            <button
-                              type="button"
-                              className="btn btn-sm row-del"
-                              title={uses.length
-                                ? `Needed by ${who} — the server will refuse this`
-                                : "Remove this row"}
-                              onClick={() =>
-                                setDraft((cur) => ({
-                                  ...cur,
-                                  [ps.id]: (cur[ps.id] ?? []).filter((_, j) => j !== i),
-                                }))
-                              }
-                            >
-                              ×
-                            </button>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-                </FoldSection>
+                            {/* The full "needed by" list was a column and is
+                                gone. What stayed is the one fact that was
+                                useful (user, 2026-09-17): nothing published
+                                reads this key, so removing it is free. Who
+                                DOES need it is on the × and in the refusal. */}
+                            {uses.length ? null : (
+                              <span className="pill neutral" title="No published version reads this key">
+                                unused
+                              </span>
+                            )}
+                          </div>
+                        </td>
+                        <td>
+                          <input
+                            className="row-input mono"
+                            value={r.value}
+                            onChange={(e) => edit(ps.id, i, { value: e.target.value })}
+                          />
+                        </td>
+                        <td className="ctr">
+                          <button
+                            type="button"
+                            className="btn btn-sm row-del"
+                            title={uses.length
+                              ? `Needed by ${who} — the server will refuse this`
+                              : "Remove this row"}
+                            onClick={() =>
+                              setDraft((cur) => ({
+                                ...cur,
+                                [ps.id]: (cur[ps.id] ?? []).filter((_, j) => j !== i),
+                              }))
+                            }
+                          >
+                            ×
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+              </FoldSection>
 
-                <div className="btn-row">
-                  <button
-                    type="button"
-                    className="btn btn-sm"
-                    onClick={() =>
-                      setDraft((cur) => ({
-                        ...cur, [ps.id]: [...(cur[ps.id] ?? []), { key: "", value: "" }],
-                      }))
-                    }
-                  >
-                    Add row
-                  </button>
-                </div>
-
-                {dirty ? (
-                  <div className="param-save">
-                    <input
-                      className="text"
-                      placeholder="what changed and why — the only record that a VALUE moved"
-                      value={notes[ps.id] ?? ""}
-                      onChange={(e) => setNotes((c) => ({ ...c, [ps.id]: e.target.value }))}
-                    />
-                    <div className="btn-row">
-                      <button
-                        type="button"
-                        className="btn btn-primary btn-sm"
-                        onClick={() => void save(ps)}
-                        disabled={saving === ps.id}
-                      >
-                        {saving === ps.id ? "Saving…" : "Save"}
-                      </button>
-                      <button
-                        type="button"
-                        className="btn btn-sm"
-                        onClick={() => {
-                          setDraft((cur) => ({ ...cur, [ps.id]: stored[ps.id] ?? [] }));
-                          setNotes((c) => ({ ...c, [ps.id]: "" }));
-                          setRefused((c) => ({ ...c, [ps.id]: "" }));
-                        }}
-                        disabled={saving === ps.id}
-                      >
-                        Cancel
-                      </button>
-                      {refused[ps.id] ? (
-                        <button
-                          type="button"
-                          className="btn btn-danger btn-sm"
-                          onClick={() => void save(ps, true)}
-                          disabled={saving === ps.id}
-                          title="Those versions stop validating and cannot be run until the key comes back"
-                        >
-                          Save anyway
-                        </button>
-                      ) : null}
-                    </div>
-                  </div>
-                ) : null}
-
-                <FoldSection
-                  bare
-                  title="History"
-                  count={ps.revision_no}
-                  limit={0}
-                  foldKey={`params:${ps.id}:history`}
+              <div className="btn-row">
+                <button
+                  type="button"
+                  className="btn btn-sm"
+                  onClick={() =>
+                    setDraft((cur) => ({
+                      ...cur, [ps.id]: [...(cur[ps.id] ?? []), { key: "", value: "" }],
+                    }))
+                  }
                 >
-                  {ps.revision_no ? (
-                    <ParamHistory setId={ps.id} tick={historyTick} onRevert={(r) => void revert(ps, r)} onError={setError} />
-                  ) : (
-                    <p className="muted">
-                      Nothing recorded yet. The log starts at the first save after the platform
-                      began keeping one — an older value simply has no entry, which is not the
-                      same as never having changed.
-                    </p>
-                  )}
-                </FoldSection>
+                  Add row
+                </button>
               </div>
-            );
-          })
-        )}
-      </div>
-    </div>
+
+              {dirty ? (
+                <div className="param-save">
+                  <input
+                    className="text"
+                    placeholder="what changed and why — the only record that a VALUE moved"
+                    value={notes[ps.id] ?? ""}
+                    onChange={(e) => setNotes((c) => ({ ...c, [ps.id]: e.target.value }))}
+                  />
+                  <div className="btn-row">
+                    <button
+                      type="button"
+                      className="btn btn-primary btn-sm"
+                      onClick={() => void save(ps)}
+                      disabled={saving === ps.id}
+                    >
+                      {saving === ps.id ? "Saving…" : "Save"}
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-sm"
+                      onClick={() => {
+                        setDraft((cur) => ({ ...cur, [ps.id]: stored[ps.id] ?? [] }));
+                        setNotes((c) => ({ ...c, [ps.id]: "" }));
+                        setRefused((c) => ({ ...c, [ps.id]: "" }));
+                      }}
+                      disabled={saving === ps.id}
+                    >
+                      Cancel
+                    </button>
+                    {refused[ps.id] ? (
+                      <button
+                        type="button"
+                        className="btn btn-danger btn-sm"
+                        onClick={() => void save(ps, true)}
+                        disabled={saving === ps.id}
+                        title="Those versions stop validating and cannot be run until the key comes back"
+                      >
+                        Save anyway
+                      </button>
+                    ) : null}
+                  </div>
+                </div>
+              ) : null}
+
+              <FoldSection
+                bare
+                title="History"
+                count={ps.revision_no}
+                limit={0}
+                foldKey={`params:${ps.id}:history`}
+              >
+                {ps.revision_no ? (
+                  <ParamHistory setId={ps.id} tick={historyTick} onRevert={(r) => void revert(ps, r)} onError={setError} />
+                ) : (
+                  <p className="muted">
+                    Nothing recorded yet. The log starts at the first save after the platform
+                    began keeping one — an older value simply has no entry, which is not the
+                    same as never having changed.
+                  </p>
+                )}
+              </FoldSection>
+            </div>
+          );
+        })
+      )}
+    </PageShell>
   );
 }
 
@@ -429,15 +418,15 @@ function ParamHistory({ setId, tick, onRevert, onError }: {
   onRevert: (r: ParamRevisionRow) => void;
   onError: (message: string) => void;
 }) {
-  const [history, setHistory] = useState<ParamRevisionRow[] | null>(null);
+  const { data: history, error } = useLoad(
+    (signal) => listParamRevisions(setId, signal),
+    [setId, tick],
+    { keep: true },
+  );
   useEffect(() => {
-    const ac = new AbortController();
-    listParamRevisions(setId, ac.signal)
-      .then(setHistory)
-      .catch((err) => { if (!isAbortError(err)) onError(errorMessage(err)); });
-    return () => ac.abort();
+    if (error) onError(error);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [setId, tick]);
+  }, [error]);
   if (history === null) return <Spinner label="Loading history…" />;
   return (
     <div className="version-timeline param-history">

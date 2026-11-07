@@ -7,13 +7,11 @@
  *  FOUND, and a unit on the shelf that a delivery lists NEVER LEFT on it.
  *  Shipping it, missing or not, is done from the order.
  */
-import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import {
   disposeDevice,
   errorMessage,
   getDeviceHistory,
-  isAbortError,
   listOrders,
   markDeviceFound,
   markDeviceMissing,
@@ -29,6 +27,7 @@ import FoldSection, { StatChip } from "./FoldSection";
 import { useDialog } from "./Dialog";
 import { ErrorBanner, Spinner, StatusPill } from "./Ui";
 import { amount, localWhen } from "../format";
+import { useLoad } from "./useLoad";
 
 const STATE_LABEL: Record<string, string> = {
   "": "unrecorded",
@@ -85,24 +84,12 @@ function describe(ev: DeviceEventRow): string {
 const EVENT_PROBLEM = new Set(["returned", "disposed", "missing"]);
 
 export default function DeviceHistoryCard({ deviceId, serial }: { deviceId: number; serial: string }) {
-  const [hist, setHist] = useState<DeviceHistory | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const { data: hist, setData: setHist, error } = useLoad(
+    (signal) => getDeviceHistory(deviceId, signal),
+    [deviceId],
+    { keep: true },
+  );
   const dialog = useDialog();
-
-  const reload = useCallback(() => {
-    const ac = new AbortController();
-    getDeviceHistory(deviceId, ac.signal)
-      .then((h) => {
-        setHist(h);
-        setError(null);
-      })
-      .catch((err) => {
-        if (!isAbortError(err)) setError(errorMessage(err));
-      });
-    return () => ac.abort();
-  }, [deviceId]);
-
-  useEffect(() => reload(), [reload]);
 
   const run = async (work: () => Promise<DeviceHistory>) => {
     try {

@@ -24,17 +24,14 @@ import {
   errorMessage,
   getRuns,
   getProjects,
-  isAbortError,
   listDeployments,
   type DeploymentRow,
-  type ProjectInfo,
   type RunInfo,
   getBenchStacks,
   setBenchStack,
   type BenchStacks,
   type BenchStep,
   getFlasherMeta,
-  type FlasherMeta,
 } from "../api";
 import BenchStation, { type BenchSegment, type MarkOp } from "../components/flasher/BenchStation";
 import {
@@ -50,6 +47,8 @@ import Field, { CheckField, FieldRow } from "../components/Field";
 import InfoTip from "../components/InfoTip";
 import { ErrorBanner } from "../components/Ui";
 import { useStickyState } from "../useStickyState";
+import { useLoad } from "../components/useLoad";
+import PageShell from "../components/PageShell";
 
 const MAX_STATIONS = 4;
 const COUNT_KEY = "flasher.station-count.v1";
@@ -59,6 +58,9 @@ const COUNT_KEY = "flasher.station-count.v1";
  *  only whether the agent is there, every ten seconds. */
 const MACHINE_POLL_MS = 2000;
 const AGENT_POLL_MS = 10_000;
+/** One identity each, because `runs` and `deployments` are deps further down. */
+const NO_RUNS: RunInfo[] = [];
+const NO_DEPLOYMENTS: DeploymentRow[] = [];
 
 /** How many programming stations this bench uses. One by default — a new
  *  operator has one cable in their hand, not four. */
@@ -194,13 +196,10 @@ export default function Bench() {
   const linkSteps = useMemo(() => (params.get("steps") ?? "").split(",").filter(Boolean), [params]);
   const linkStack = params.get("stack");
   const dropLink = () => { if (linkProject) setParams({}, { replace: true }); };
-  const [projects, setProjects] = useState<ProjectInfo[]>([]);
-  const [runs, setRuns] = useState<RunInfo[]>([]);
-  /** Which project `runs` belongs to: an empty list cannot say whether it is
-   *  "no batches" or "not loaded yet". */
-  const [runsFor, setRunsFor] = useState<number | null>(null);
-  const [deployments, setDeployments] = useState<DeploymentRow[]>([]);
-  const [error, setError] = useState<string | null>(null);
+  // Every company's projects, whatever the header switcher shows: the bench
+  // works on whichever company's devices are on the table.
+  const { data: projectRows, error: projectsError } = useLoad((signal) => getProjects(signal, "all"), []);
+  const projects = projectRows ?? [];
   const [projectId, setProjectId] = useStickyState<number | null>("bench.project", null);
   /** No batch = a bench trial. Defaulted to the project's latest batch each
    *  time the project is chosen (user decision 2026-09-17). */
@@ -219,23 +218,10 @@ export default function Bench() {
     [],
   );
   const [slots, setSlots] = useState(readStationCount);
-  const [meta, setMeta] = useState<FlasherMeta | null>(null);
+  const { data: meta } = useLoad(getFlasherMeta, []);
   /** Another version than a procedure's current one, by deployment, and why. */
   const [pickedVersion, setPickedVersion] = useState<Record<number, number>>({});
   const [overrideReason, setOverrideReason] = useState("");
-
-  useEffect(() => {
-    const ac = new AbortController();
-    getFlasherMeta(ac.signal).then(setMeta).catch(() => setMeta(null));
-    // Every company's projects, whatever the header switcher shows: the bench
-    // works on whichever company's devices are on the table.
-    getProjects(ac.signal, "all")
-      .then(setProjects)
-      .catch((err) => {
-        if (!isAbortError(err)) setError(errorMessage(err));
-      });
-    return () => ac.abort();
-  }, []);
 
   useEffect(() => {
     if (linkProject) setProjectId(linkProject);
@@ -244,20 +230,19 @@ export default function Bench() {
 
   const validProject = projects.some((p) => p.id === projectId) ? projectId : projects[0]?.id ?? null;
 
-  useEffect(() => {
-    if (!validProject) return;
-    const ac = new AbortController();
-    Promise.all([getRuns(validProject, ac.signal, "all"), listDeployments(validProject, ac.signal)])
-      .then(([r, d]) => {
-        setRuns(r);
-        setRunsFor(validProject);
-        setDeployments(d);
-      })
-      .catch((err) => {
-        if (!isAbortError(err)) setError(errorMessage(err));
-      });
-    return () => ac.abort();
-  }, [validProject]);
+  const { data: picked, error: pickedError } = useLoad(
+    (signal) =>
+      Promise.all([getRuns(validProject as number, signal, "all"), listDeployments(validProject as number, signal)])
+        .then(([rows, deps]) => ({ runs: rows, deployments: deps, runsFor: validProject })),
+    [validProject],
+    { enabled: !!validProject, keep: true },
+  );
+  const runs = picked?.runs ?? NO_RUNS;
+  /** Which project `runs` belongs to: an empty list cannot say whether it is
+   *  "no batches" or "not loaded yet". */
+  const runsFor = picked?.runsFor ?? null;
+  const deployments = picked?.deployments ?? NO_DEPLOYMENTS;
+  const error = projectsError ?? pickedError;
 
   /** The project's LATEST batch: newest run date, then newest id. */
   const latestRunId = useMemo(() => {
@@ -411,300 +396,298 @@ export default function Bench() {
   const oneAtATime = !(agent.kind === "up" && agent.stationsTogether);
 
   return (
-    <div className="main-solo">
-      <div className="page">
-        <div className="toolbar">
-          <h1>Bench</h1>
-          <span className="toolbar-total">
-            the batch's process says what this bench can do · the engine stores every line as it arrives
-          </span>
+    <PageShell>
+      <div className="toolbar">
+        <h1>Bench</h1>
+        <span className="toolbar-total">
+          the batch's process says what this bench can do · the engine stores every line as it arrives
+        </span>
+      </div>
+      {error ? <ErrorBanner message={error} /> : null}
+      {lotError ? <ErrorBanner message={lotError} /> : null}
+      {agent.kind === "up" && agent.cannotProgram && segments.some((s) => !s.markOps.length) ? (
+        <div className="banner-error">
+          <strong>This machine is running an old bench agent.</strong> It cannot program — it has no
+          esptool inside it. Download it again below, replace the copy in Applications, and restart it.
         </div>
-        {error ? <ErrorBanner message={error} /> : null}
-        {lotError ? <ErrorBanner message={lotError} /> : null}
-        {agent.kind === "up" && agent.cannotProgram && segments.some((s) => !s.markOps.length) ? (
-          <div className="banner-error">
-            <strong>This machine is running an old bench agent.</strong> It cannot program — it has no
-            esptool inside it. Download it again below, replace the copy in Applications, and restart it.
+      ) : null}
+
+      <div className="card pad stack">
+        {linkProject && batch && validRun === linkBatch ? (
+          <div className="banner-ok">
+            Set up from <b>{batch.label}</b>
+            {linkSteps.length ? <> → {linkSteps.map((k) => steps.find((s) => s.key === k)?.label ?? k).join(" + ")}</> : null}.
+            {" "}You can change any setting.{" "}
+            <Link to={`/production/batches/${batch.id}`}>Back to the batch</Link>
+          </div>
+        ) : null}
+        {linkRefused.length ? (
+          <div className="banner-warn">
+            This bench cannot run {linkRefused.map((k) => steps.find((s) => s.key === k)?.label ?? k).join(", ")}:
+            {" "}the step is no bench step of this batch, or its procedure has no published version.
+          </div>
+        ) : null}
+        <FieldRow>
+          <Field label="Project">
+            <select
+              className="text"
+              value={validProject ?? ""}
+              onChange={(e) => {
+                dropLink();
+                setProjectId(Number(e.target.value));
+                setRunId(null);
+                // Picking a project asks for its latest batch back.
+                batchDefaultedFor.current = null;
+              }}
+            >
+              {projects.map((p) => (
+                <option key={p.id} value={p.id}>{p.name}</option>
+              ))}
+            </select>
+          </Field>
+          <Field label="Batch">
+            <select
+              className="text"
+              value={validRun ?? ""}
+              title="The batch this run belongs to. None = a bench trial: any procedure, drafts included, recorded as a trial."
+              onChange={(e) => {
+                dropLink();
+                setRunId(e.target.value === "" ? null : Number(e.target.value));
+              }}
+            >
+              <option value="">no batch — bench trial</option>
+              {runs.map((r) => (
+                <option key={r.id} value={r.id}>{r.label}</option>
+              ))}
+            </select>
+          </Field>
+          {stacks?.crafted && steps.some((s) => s.kind === "program" && selectedKeys.includes(s.key)) ? (
+            <Field label="Boards from">
+              <select
+                className="text"
+                value={stacks.selected ?? ""}
+                title="The stack these boards come from. Each board programmed takes one unit of it; when it is used up the bench asks for the next."
+                onChange={(e) => { dropLink(); pickStack(e.target.value); }}
+              >
+                <option value="">no stack — boards become gaps</option>
+                {stacks.selected && !stacks.stacks.some((s) => s.stack === stacks.selected) ? (
+                  <option value={stacks.selected}>selected stack (used up)</option>
+                ) : null}
+                {stacks.stacks.map((s) => (
+                  <option key={s.stack} value={s.stack}>
+                    {s.run_label}: {s.done.join(" + ")} — {s.count} left
+                  </option>
+                ))}
+              </select>
+            </Field>
+          ) : null}
+          {trial ? (
+            <Field label="Procedure to try">
+              <select
+                className="text"
+                value={trialVersionId ?? ""}
+                onChange={(e) => setTrialVersionId(e.target.value === "" ? null : Number(e.target.value))}
+              >
+                <option value="">— pick a version to try —</option>
+                {deployments.map((d) => (
+                  <optgroup key={d.id} label={`${d.name} (${d.kind})`}>
+                    {d.versions.map((v) => (
+                      <option key={v.id} value={v.id}>
+                        v{v.version_no} ({v.status})
+                      </option>
+                    ))}
+                  </optgroup>
+                ))}
+              </select>
+            </Field>
+          ) : null}
+          {wantsSimPin ? (
+            <Field label="SIM PIN">
+              <input
+                className="text mono"
+                type="password"
+                placeholder="optional"
+                title="Used by the lte_sim_pin step. Empty = the param set default, else the engine prompts."
+                value={simPin}
+                onChange={(e) => setSimPin(e.target.value)}
+              />
+            </Field>
+          ) : null}
+        </FieldRow>
+
+        {!trial && batch && stacks && !stacks.crafted ? (
+          <p className="banner-warn">
+            {batch.label} has no process yet, so this bench cannot tell what to do with its devices.
+            Give it one with Rebuild twins on <Link to={`/production/batches/${batch.id}?tab=settings`}>the batch's Settings tab</Link>.
+            The project needs a published process first, on <Link to={`/projects/${validProject}?tab=Process`}>its Process tab</Link>.
+            Or run a bench trial.
+          </p>
+        ) : null}
+        {!trial && stacks?.crafted && !steps.length ? (
+          <p className="banner-warn">
+            The process of {batch?.label} has no step a bench does. Add Program, Test, Laser mark or
+            Label to it on <Link to={`/projects/${validProject}?tab=Process`}>the project's Process tab</Link>.
+          </p>
+        ) : null}
+
+        {/* The process's bench steps, in its order. The operator ticks what
+            this bench does today; a step whose process names no procedure is
+            shown and cannot be ticked, with the reason. */}
+        {!trial && steps.length ? (
+          <div className="stack">
+            <span className="muted">Steps this bench does</span>
+            <div className="btn-row">
+              {steps.map((s) => (
+                <CheckField
+                  key={s.key}
+                  checked={selectedKeys.includes(s.key)}
+                  onChange={(on) => toggleStep(s.key, on)}
+                  disabled={!runnable(s)}
+                  title={
+                    !s.deployment
+                      ? "The process names no procedure for this step — set one on the project's Process tab"
+                      : !s.deployment.current_version_id
+                        ? `${s.deployment.name} has no published version`
+                        : `${s.deployment.name} ${versionLabel(s.deployment.id, pickedVersion[s.deployment.id] ?? s.deployment.current_version_id)}`
+                  }
+                >
+                  {s.label}
+                  {s.deployment && runnable(s) ? (
+                    <span className="muted dim">
+                      {" "}· {s.deployment.name}{" "}
+                      {versionLabel(s.deployment.id, pickedVersion[s.deployment.id] ?? s.deployment.current_version_id)}
+                    </span>
+                  ) : (
+                    <span className="muted dim"> · no procedure</span>
+                  )}
+                </CheckField>
+              ))}
+            </div>
+            {usedDeps.length ? (
+              <details>
+                <summary className="muted">Versions…</summary>
+                <FieldRow>
+                  {usedDeps.map((d) => (
+                    <Field key={d.id} label={d.name}>
+                      <select
+                        className="text"
+                        value={pickedVersion[d.id] ?? d.current ?? ""}
+                        onChange={(e) => {
+                          const vid = Number(e.target.value);
+                          const next = { ...pickedVersion };
+                          if (vid === d.current) delete next[d.id];
+                          else next[d.id] = vid;
+                          setPickedVersion(next);
+                        }}
+                      >
+                        {versionsOf(d.id).filter((v) => v.status === "published").map((v) => (
+                          <option key={v.id} value={v.id}>
+                            v{v.version_no}{v.id === d.current ? " (current)" : ""}
+                          </option>
+                        ))}
+                      </select>
+                    </Field>
+                  ))}
+                </FieldRow>
+                {overridden ? (
+                  <Field label="Why not the current version?" hint="Required — it goes in each run's record.">
+                    <input
+                      className="text"
+                      value={overrideReason}
+                      onChange={(e) => setOverrideReason(e.target.value)}
+                    />
+                  </Field>
+                ) : null}
+              </details>
+            ) : null}
           </div>
         ) : null}
 
-        <div className="card pad stack">
-          {linkProject && batch && validRun === linkBatch ? (
-            <div className="banner-ok">
-              Set up from <b>{batch.label}</b>
-              {linkSteps.length ? <> → {linkSteps.map((k) => steps.find((s) => s.key === k)?.label ?? k).join(" + ")}</> : null}.
-              {" "}You can change any setting.{" "}
-              <Link to={`/production/batches/${batch.id}`}>Back to the batch</Link>
-            </div>
-          ) : null}
-          {linkRefused.length ? (
-            <div className="banner-warn">
-              This bench cannot run {linkRefused.map((k) => steps.find((s) => s.key === k)?.label ?? k).join(", ")}:
-              {" "}the step is no bench step of this batch, or its procedure has no published version.
-            </div>
-          ) : null}
-          <FieldRow>
-            <Field label="Project">
-              <select
-                className="text"
-                value={validProject ?? ""}
-                onChange={(e) => {
-                  dropLink();
-                  setProjectId(Number(e.target.value));
-                  setRunId(null);
-                  // Picking a project asks for its latest batch back.
-                  batchDefaultedFor.current = null;
-                }}
-              >
-                {projects.map((p) => (
-                  <option key={p.id} value={p.id}>{p.name}</option>
-                ))}
-              </select>
-            </Field>
-            <Field label="Batch">
-              <select
-                className="text"
-                value={validRun ?? ""}
-                title="The batch this run belongs to. None = a bench trial: any procedure, drafts included, recorded as a trial."
-                onChange={(e) => {
-                  dropLink();
-                  setRunId(e.target.value === "" ? null : Number(e.target.value));
-                }}
-              >
-                <option value="">no batch — bench trial</option>
-                {runs.map((r) => (
-                  <option key={r.id} value={r.id}>{r.label}</option>
-                ))}
-              </select>
-            </Field>
-            {stacks?.crafted && steps.some((s) => s.kind === "program" && selectedKeys.includes(s.key)) ? (
-              <Field label="Boards from">
-                <select
-                  className="text"
-                  value={stacks.selected ?? ""}
-                  title="The stack these boards come from. Each board programmed takes one unit of it; when it is used up the bench asks for the next."
-                  onChange={(e) => { dropLink(); pickStack(e.target.value); }}
-                >
-                  <option value="">no stack — boards become gaps</option>
-                  {stacks.selected && !stacks.stacks.some((s) => s.stack === stacks.selected) ? (
-                    <option value={stacks.selected}>selected stack (used up)</option>
-                  ) : null}
-                  {stacks.stacks.map((s) => (
-                    <option key={s.stack} value={s.stack}>
-                      {s.run_label}: {s.done.join(" + ")} — {s.count} left
-                    </option>
-                  ))}
-                </select>
-              </Field>
-            ) : null}
-            {trial ? (
-              <Field label="Procedure to try">
-                <select
-                  className="text"
-                  value={trialVersionId ?? ""}
-                  onChange={(e) => setTrialVersionId(e.target.value === "" ? null : Number(e.target.value))}
-                >
-                  <option value="">— pick a version to try —</option>
-                  {deployments.map((d) => (
-                    <optgroup key={d.id} label={`${d.name} (${d.kind})`}>
-                      {d.versions.map((v) => (
-                        <option key={v.id} value={v.id}>
-                          v{v.version_no} ({v.status})
-                        </option>
-                      ))}
-                    </optgroup>
-                  ))}
-                </select>
-              </Field>
-            ) : null}
-            {wantsSimPin ? (
-              <Field label="SIM PIN">
-                <input
-                  className="text mono"
-                  type="password"
-                  placeholder="optional"
-                  title="Used by the lte_sim_pin step. Empty = the param set default, else the engine prompts."
-                  value={simPin}
-                  onChange={(e) => setSimPin(e.target.value)}
-                />
-              </Field>
-            ) : null}
-          </FieldRow>
+        <CheckField
+          checked={autoStart}
+          onChange={setAutoStart}
+          title="Each station runs the selected steps the moment a new device appears on its socket, once per device. A unit that resets itself during or after its run is not run again. A marking run also waits for the device's serial and for the machines it needs."
+        >
+          Run the selected steps automatically when a device is plugged in
+        </CheckField>
+        <CheckField
+          checked={sound}
+          onChange={setSound}
+          title="One sound for PASS and another for FAIL, once every selected step has ended. Nothing for an Abort."
+        >
+          Play a sound when a device is finished
+        </CheckField>
+        {agent.kind === "up" && !agent.stationsTogether && stationCount > 1 ? (
+          <p className="banner-warn">
+            This bench agent runs one station at a time: the others wait until it is done. Download it
+            again below, replace the copy in Applications and restart it, to program several devices at
+            once.
+          </p>
+        ) : null}
+        {trialIsDraft ? (
+          <p className="banner-warn">
+            Trying a DRAFT version. Each run is marked as a draft run and cannot be counted as batch
+            production.
+          </p>
+        ) : null}
 
-          {!trial && batch && stacks && !stacks.crafted ? (
-            <p className="banner-warn">
-              {batch.label} has no process yet, so this bench cannot tell what to do with its devices.
-              Give it one with Rebuild twins on <Link to={`/production/batches/${batch.id}?tab=settings`}>the batch's Settings tab</Link>.
-              The project needs a published process first, on <Link to={`/projects/${validProject}?tab=Process`}>its Process tab</Link>.
-              Or run a bench trial.
-            </p>
-          ) : null}
-          {!trial && stacks?.crafted && !steps.length ? (
-            <p className="banner-warn">
-              The process of {batch?.label} has no step a bench does. Add Program, Test, Laser mark or
-              Label to it on <Link to={`/projects/${validProject}?tab=Process`}>the project's Process tab</Link>.
-            </p>
-          ) : null}
+        <AgentStrip state={agent} checkedAt={checkedAt} marking={marking} />
+      </div>
 
-          {/* The process's bench steps, in its order. The operator ticks what
-              this bench does today; a step whose process names no procedure is
-              shown and cannot be ticked, with the reason. */}
-          {!trial && steps.length ? (
-            <div className="stack">
-              <span className="muted">Steps this bench does</span>
-              <div className="btn-row">
-                {steps.map((s) => (
-                  <CheckField
-                    key={s.key}
-                    checked={selectedKeys.includes(s.key)}
-                    onChange={(on) => toggleStep(s.key, on)}
-                    disabled={!runnable(s)}
-                    title={
-                      !s.deployment
-                        ? "The process names no procedure for this step — set one on the project's Process tab"
-                        : !s.deployment.current_version_id
-                          ? `${s.deployment.name} has no published version`
-                          : `${s.deployment.name} ${versionLabel(s.deployment.id, pickedVersion[s.deployment.id] ?? s.deployment.current_version_id)}`
-                    }
-                  >
-                    {s.label}
-                    {s.deployment && runnable(s) ? (
-                      <span className="muted dim">
-                        {" "}· {s.deployment.name}{" "}
-                        {versionLabel(s.deployment.id, pickedVersion[s.deployment.id] ?? s.deployment.current_version_id)}
-                      </span>
-                    ) : (
-                      <span className="muted dim"> · no procedure</span>
-                    )}
-                  </CheckField>
-                ))}
-              </div>
-              {usedDeps.length ? (
-                <details>
-                  <summary className="muted">Versions…</summary>
-                  <FieldRow>
-                    {usedDeps.map((d) => (
-                      <Field key={d.id} label={d.name}>
-                        <select
-                          className="text"
-                          value={pickedVersion[d.id] ?? d.current ?? ""}
-                          onChange={(e) => {
-                            const vid = Number(e.target.value);
-                            const next = { ...pickedVersion };
-                            if (vid === d.current) delete next[d.id];
-                            else next[d.id] = vid;
-                            setPickedVersion(next);
-                          }}
-                        >
-                          {versionsOf(d.id).filter((v) => v.status === "published").map((v) => (
-                            <option key={v.id} value={v.id}>
-                              v{v.version_no}{v.id === d.current ? " (current)" : ""}
-                            </option>
-                          ))}
-                        </select>
-                      </Field>
-                    ))}
-                  </FieldRow>
-                  {overridden ? (
-                    <Field label="Why not the current version?" hint="Required — it goes in each run's record.">
-                      <input
-                        className="text"
-                        value={overrideReason}
-                        onChange={(e) => setOverrideReason(e.target.value)}
-                      />
-                    </Field>
-                  ) : null}
-                </details>
-              ) : null}
-            </div>
-          ) : null}
-
-          <CheckField
-            checked={autoStart}
-            onChange={setAutoStart}
-            title="Each station runs the selected steps the moment a new device appears on its socket, once per device. A unit that resets itself during or after its run is not run again. A marking run also waits for the device's serial and for the machines it needs."
-          >
-            Run the selected steps automatically when a device is plugged in
-          </CheckField>
-          <CheckField
-            checked={sound}
-            onChange={setSound}
-            title="One sound for PASS and another for FAIL, once every selected step has ended. Nothing for an Abort."
-          >
-            Play a sound when a device is finished
-          </CheckField>
-          {agent.kind === "up" && !agent.stationsTogether && stationCount > 1 ? (
-            <p className="banner-warn">
-              This bench agent runs one station at a time: the others wait until it is done. Download it
-              again below, replace the copy in Applications and restart it, to program several devices at
-              once.
-            </p>
-          ) : null}
-          {trialIsDraft ? (
-            <p className="banner-warn">
-              Trying a DRAFT version. Each run is marked as a draft run and cannot be counted as batch
-              production.
-            </p>
-          ) : null}
-
-          <AgentStrip state={agent} checkedAt={checkedAt} marking={marking} />
-        </div>
-
-        <div className={`bench-grid${marking ? " bench-grid-one" : ""}`}>
-          {Array.from({ length: marking ? 1 : MAX_STATIONS }, (_, i) =>
-            i < stationCount ? (
-              <BenchStation
-                key={`${marking ? "mark" : "prog"}-${i}`}
-                index={i}
-                layout={marking ? "mark" : "program"}
-                segments={segments}
-                productionRunId={validRun}
-                autoStart={autoStart}
-                sound={sound}
-                oneAtATime={oneAtATime}
-                othersBusy={oneAtATime && busySlots.some((x) => x !== i)}
-                onBusyChange={busySetters[i]}
-                overrideReason={overridden ? overrideReason : ""}
-                // A hidden box must not still be sending a value.
-                simPin={wantsSimPin ? simPin : ""}
-                projectId={validProject}
-                meta={meta}
-                agentUp={agentUp}
-                laser={
-                  agent.kind === "up"
-                    ? { responsive: agent.lightburn, busy: agent.busy, laserUsb: agent.laserUsb }
-                    : { responsive: false, busy: null, laserUsb: null }
-                }
-                printers={agent.kind === "up" ? agent.printers : []}
-                rolls={agent.kind === "up" ? agent.rolls : []}
-              />
-            ) : (
-              <div key={i} className="bench-empty" />
-            ),
-          )}
-        </div>
-        {marking ? null : (
-          <div className="btn-row">
-            <button
-              type="button"
-              className="btn btn-sm"
-              onClick={() => setSlots((n) => writeStationCount(Math.min(n + 1, MAX_STATIONS)))}
-              disabled={slots >= MAX_STATIONS}
-            >
-              + Station
-            </button>
-            <button
-              type="button"
-              className="btn btn-sm"
-              onClick={() => setSlots((n) => writeStationCount(Math.max(n - 1, 1)))}
-              disabled={slots <= 1}
-            >
-              − Station
-            </button>
-          </div>
+      <div className={`bench-grid${marking ? " bench-grid-one" : ""}`}>
+        {Array.from({ length: marking ? 1 : MAX_STATIONS }, (_, i) =>
+          i < stationCount ? (
+            <BenchStation
+              key={`${marking ? "mark" : "prog"}-${i}`}
+              index={i}
+              layout={marking ? "mark" : "program"}
+              segments={segments}
+              productionRunId={validRun}
+              autoStart={autoStart}
+              sound={sound}
+              oneAtATime={oneAtATime}
+              othersBusy={oneAtATime && busySlots.some((x) => x !== i)}
+              onBusyChange={busySetters[i]}
+              overrideReason={overridden ? overrideReason : ""}
+              // A hidden box must not still be sending a value.
+              simPin={wantsSimPin ? simPin : ""}
+              projectId={validProject}
+              meta={meta}
+              agentUp={agentUp}
+              laser={
+                agent.kind === "up"
+                  ? { responsive: agent.lightburn, busy: agent.busy, laserUsb: agent.laserUsb }
+                  : { responsive: false, busy: null, laserUsb: null }
+              }
+              printers={agent.kind === "up" ? agent.printers : []}
+              rolls={agent.kind === "up" ? agent.rolls : []}
+            />
+          ) : (
+            <div key={i} className="bench-empty" />
+          ),
         )}
       </div>
-    </div>
+      {marking ? null : (
+        <div className="btn-row">
+          <button
+            type="button"
+            className="btn btn-sm"
+            onClick={() => setSlots((n) => writeStationCount(Math.min(n + 1, MAX_STATIONS)))}
+            disabled={slots >= MAX_STATIONS}
+          >
+            + Station
+          </button>
+          <button
+            type="button"
+            className="btn btn-sm"
+            onClick={() => setSlots((n) => writeStationCount(Math.max(n - 1, 1)))}
+            disabled={slots <= 1}
+          >
+            − Station
+          </button>
+        </div>
+      )}
+    </PageShell>
   );
 }
 

@@ -12,32 +12,18 @@
  *  session (`personalised`, `httplib_url`, `pcm_repo_url`), so this component
  *  needs no user id and no new endpoint.
  */
-import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 
 import {
-  errorMessage,
   getKicadConfig,
   httplibFileUrl,
-  isAbortError,
   syncScriptUrl,
-  type KicadConfig,
 } from "../api";
 import { ErrorBanner } from "./Ui";
+import { useLoad } from "./useLoad";
 
 export default function KicadClientCards() {
-  const [config, setConfig] = useState<KicadConfig | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    const ctrl = new AbortController();
-    getKicadConfig(ctrl.signal)
-      .then(setConfig)
-      .catch((err) => {
-        if (!isAbortError(err)) setError(errorMessage(err));
-      });
-    return () => ctrl.abort();
-  }, []);
+  const { data: config, error } = useLoad(getKicadConfig, []);
 
   const base = config?.public_base_url ?? "…";
 
