@@ -13,8 +13,8 @@ const DEMAND_COLS: Column<DemandRow>[] = [
     get: (r) => r.project,
     render: (r) => <Link className="comp-link" to={`/projects/${r.project_id}`}>{r.project}</Link>,
   },
-  { key: "open", label: "Open", width: 9, numeric: true, get: (r) => r.open, render: (r) => <>{r.open.toLocaleString()}</> },
-  { key: "orders", label: "Orders", width: 8, numeric: true, get: (r) => r.open_orders },
+  { key: "open", label: "Open", width: 8, numeric: true, get: (r) => r.open, render: (r) => <>{r.open.toLocaleString()}</> },
+  { key: "orders", label: "Orders", width: 7, numeric: true, get: (r) => r.open_orders },
   {
     key: "sellable",
     // The widest header on the row, and it names the rule the column applies, so
@@ -28,6 +28,18 @@ const DEMAND_COLS: Column<DemandRow>[] = [
     numeric: true,
     get: (r) => r.on_shelf,
     render: (r) => <>{r.on_shelf.toLocaleString()}</>,
+  },
+  {
+    key: "in_work",
+    label: (
+      <span title="What the batches ordered or in production will still finish: their units not finished yet, and the boards not received yet.">
+        In work
+      </span>
+    ),
+    width: 9,
+    numeric: true,
+    get: (r) => r.in_work,
+    render: (r) => <>{r.in_work.toLocaleString()}</>,
   },
   { key: "planned", label: "Planned", width: 9, numeric: true, get: (r) => r.planned, render: (r) => <>{r.planned.toLocaleString()}</> },
   {
@@ -44,24 +56,40 @@ const DEMAND_COLS: Column<DemandRow>[] = [
   },
   {
     key: "batches",
-    label: "Planned batches",
-    width: 37,
-    get: (r) => r.planned_runs.map((b) => b.label).join(", "),
-    render: (r) => (r.planned_runs.length === 0 ? (
-      <span className="muted">—</span>
-    ) : r.planned_runs.map((b, i) => (
-      <span key={b.run_id}>
-        {i ? ", " : ""}
-        <Link className="comp-link" to={`/production/batches/${b.run_id}`}>{b.label}</Link>
-        <span className="muted"> ({b.qty.toLocaleString()})</span>
-      </span>
-    ))),
+    label: "Batches",
+    width: 30,
+    get: (r) => batchesOf(r).map((b) => `${b.label} (${b.what})`).join(", "),
+    render: (r) => {
+      const batches = batchesOf(r);
+      return batches.length === 0 ? (
+        <span className="muted">—</span>
+      ) : batches.map((b, i) => (
+        <span key={b.run_id}>
+          {i ? ", " : ""}
+          <Link className="comp-link" to={`/production/batches/${b.run_id}`}>{b.label}</Link>
+          <span className="muted"> ({b.what})</span>
+        </span>
+      ));
+    },
   },
 ];
 
-/** Open demand per project against the shelf and the planned batches. */
+/** The batches behind the supply: those in work first, then the planned ones. */
+function batchesOf(r: DemandRow): { run_id: number; label: string; what: string }[] {
+  return [
+    ...r.in_work_runs.map((b) => ({
+      run_id: b.run_id,
+      label: b.label,
+      what: [b.units ? `${b.units.toLocaleString()} in work` : "", b.boards ? `${b.boards.toLocaleString()} not received` : ""]
+        .filter(Boolean).join(", "),
+    })),
+    ...r.planned_runs.map((b) => ({ run_id: b.run_id, label: b.label, what: `${b.qty.toLocaleString()} planned` })),
+  ];
+}
+
+/** Open demand per project against the shelf, the batches in work and the planned batches. */
 export default function DemandCard({ rows, title = "Demand" }: { rows: DemandRow[] | null; title?: string }) {
-  const live = useMemo(() => (rows ? rows.filter((r) => r.open || r.on_shelf || r.planned) : []), [rows]);
+  const live = useMemo(() => (rows ? rows.filter((r) => r.open || r.on_shelf || r.in_work || r.planned) : []), [rows]);
   const shortUnits = live.reduce((a, r) => a + r.shortfall, 0);
   return (
     <FoldSection
@@ -73,7 +101,7 @@ export default function DemandCard({ rows, title = "Demand" }: { rows: DemandRow
           {shortUnits ? <StatChip n={shortUnits.toLocaleString()} tone="err">short</StatChip> : null}
           <StatChip n={live.reduce((a, r) => a + r.open, 0).toLocaleString()} tone="acc">open</StatChip>
           <StatChip n={live.reduce((a, r) => a + r.on_shelf, 0).toLocaleString()}>sellable now</StatChip>
-          <StatChip n={live.reduce((a, r) => a + r.planned, 0).toLocaleString()}>planned</StatChip>
+          <StatChip n={live.reduce((a, r) => a + r.in_work + r.planned, 0).toLocaleString()}>in work or planned</StatChip>
         </>
       ) : undefined}
     >
@@ -86,9 +114,10 @@ export default function DemandCard({ rows, title = "Demand" }: { rows: DemandRow
         only devices a shipment may draw — condition <code>ok</code>. A faulty or prototype
         unit is on the shelf and can never leave, so counting it as supply would say an
         order can be filled by devices that cannot go out of the door; every device we
-        hold, whatever condition, is on <Link to="/stock/finished">Stock → Finished devices</Link>. Planned
-        counts every batch still in the planned state, and Short is what nothing covers
-        yet.
+        hold, whatever condition, is on <Link to="/stock/finished">Stock → Finished devices</Link>. <b>In
+        work</b> is what the batches ordered or in production will still finish: their units that are
+        not finished yet, and the boards not received yet. Planned counts every batch still in the
+        planned state, and Short is what nothing covers yet.
       </p>
       {!rows ? (
         <Spinner label="Counting…" />

@@ -964,7 +964,8 @@ def rebatch(run_id: int, body: RebatchIn, request: Request, db: Session = Depend
 
 @router.get("/demand", openapi_extra={"x-agent-tool": "get_demand"})
 def demand(project_id: int | None = None, db: Session = Depends(get_db)):
-    """Open order quantity against shelf stock and planned batches, per project."""
+    """Open order quantity against shelf stock, the batches in work and the
+    planned batches, per project."""
     return svc.project_demand(db, project_id)
 
 

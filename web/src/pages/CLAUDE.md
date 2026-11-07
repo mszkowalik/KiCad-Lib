@@ -307,7 +307,8 @@ code, and keep the redirects: saved links depend on them.
   The project window has an **Orders tab** (`components/project/OrdersTab.tsx`):
   read-only, one row per order line of that project, headed by the demand
   card (`components/DemandCard.tsx`, from `GET /api/demand`) — open
-  quantity against the shelf and the planned batches. Both surfaces share
+  quantity against the shelf, the batches in work and the planned batches.
+  Both surfaces share
   the one component so the figure has one rendering.
 
 - **Shipments are packed on Sales → Shipments** (`pages/Shipments.tsx`,

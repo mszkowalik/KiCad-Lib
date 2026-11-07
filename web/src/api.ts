@@ -8321,7 +8321,8 @@ export function listOrders(signal?: AbortSignal, projectId?: number): Promise<Or
   return request(`/api/orders${projectId ? `?project_id=${projectId}` : ""}`, { signal });
 }
 
-/** Open order quantity against the shelf and the planned batches, per project. */
+/** Open order quantity against the shelf, the batches in work and the planned
+ *  batches, per project. */
 export interface DemandRow {
   project_id: number;
   project: string;
@@ -8330,6 +8331,10 @@ export interface DemandRow {
   on_shelf: number;
   planned: number;
   planned_runs: { run_id: number; label: string; qty: number; run_date: string }[];
+  /** what the batches ordered or in production will still finish */
+  in_work: number;
+  /** per batch: `units` live units not stock yet, `boards` not received yet */
+  in_work_runs: { run_id: number; label: string; status: string; units: number; boards: number; run_date: string }[];
   shortfall: number;
   surplus: number;
 }

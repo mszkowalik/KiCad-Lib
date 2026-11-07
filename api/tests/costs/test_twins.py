@@ -2443,6 +2443,33 @@ def test_the_header_and_the_board_count_received_and_finished_the_same_way(db, w
     assert seen == {"TB1": (4, 10, 0), "TB2": (0, 10, 1)}
 
 
+def test_a_batch_in_work_is_supply_until_its_units_are_stock(db, world):
+    """CE_Dongle_V2, 2026-11-07: "short 128" with 171 units of Batch 8 in work,
+    because a batch counted only while it was planned."""
+    b1 = world["b1"]
+    b1.status = "in production"
+    cust = osvc.get_customer(db, "test-twins-demand")
+    order = M.SalesOrder(customer_id=cust.id, order_ref="TEST/TWIN-DEMAND", order_date="2026-03-01")
+    db.add(order)
+    db.flush()
+    db.add(M.SalesOrderLine(order_id=order.id, project_id=world["project"].id, product="thing",
+                            qty_ordered=12, unit_price=1.0))
+    db.flush()
+    _crafted_devices(db, world, 161, 2)     # 2 boards received, enclosed and programmed
+    stack = _received(db, world, 2)         # 2 more, unnamed
+    T.scrap(db, b1, stack=stack, qty=1, reason="dropped", dry_run=False)
+    (row,) = osvc.project_demand(db, world["project"].id)
+    # On the shelf the 2 programmed devices are held "in process"; in work are
+    # 3 live units and the 6 boards of 10 not received (a broken board was received).
+    assert (row["open"], row["on_shelf"], row["planned"], row["in_work"]) == (12, 0, 0, 9)
+    assert [(r["run_id"], r["units"], r["boards"]) for r in row["in_work_runs"]] == [(b1.id, 3, 6)]
+    assert (row["shortfall"], row["surplus"]) == (3, 0)
+    b1.closed_at = datetime(2026, 3, 1, tzinfo=UTC)   # closed books: no more work on it
+    db.flush()
+    (row,) = osvc.project_demand(db, world["project"].id)
+    assert (row["in_work"], row["shortfall"]) == (0, 12)
+
+
 def test_a_step_that_must_come_before_one_already_done_is_not_still_to_do(db, world):
     """Batch 2164, 2026-11-07: UV print read "still to do 60" while 51 units had
     their lightpipes, and a UV print must come before the lightpipes."""

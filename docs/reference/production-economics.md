@@ -166,12 +166,25 @@ guard reads one company's stock is in [companies.md](companies.md).
     be compared.
   - **Demand is derived, never stored** (`project_demand`, `GET /api/demand`):
     open = unshipped order-line quantity, supply = shelf stock + devices
-    ALLOCATED to those same open lines + the quantity of every run still
-    `planned`. The allocated term is easy to leave out and wrong to: such a
-    device is on the shelf, `run_stock` excludes it (see §9 above), and the
-    line holding it still counts its open quantity — so without it a boxed
-    device reads as one to build. A planned batch is not yet linked to the
-    order lines it covers; the project tab shows the arithmetic only.
+    ALLOCATED to those same open lines + what the batches IN WORK will still
+    finish + the quantity of every run still `planned`. The allocated term is
+    easy to leave out and wrong to: such a device is on the shelf, `run_stock`
+    excludes it (see §9 above), and the line holding it still counts its open
+    quantity — so without it a boxed device reads as one to build. A planned
+    batch is not yet linked to the order lines it covers; the project tab
+    shows the arithmetic only.
+  - **A batch is in work while it is `ordered` or `in production` and its
+    books are open** (`orders._in_work`). A crafted batch then counts its
+    active twins that are not stock yet (no device, or a device on the shelf
+    held "in process") and the boards it has not received
+    (`twins.received_counts`). A batch with no process counts the boards it
+    has no device record for. A twin whose device is allocated is supply
+    through its allocation already. Before 2026-11-07 a batch counted only
+    while `planned`, so its units counted nowhere from the day it went into
+    production until each one finished: CE_Dongle_V2 read "short 128" with
+    171 units of Batch 8 in work, and CE_Dongle_V3 "short 299" with 60 units
+    in Batch 1 and 300 boards of Batch 2 on order. An active twin of a batch
+    that is `completed`, `done` or closed counts nowhere.
 - **A JLC decision outranks JLC's cached panelisation.** `JlcImport.panel_info`
   is what the sync saw; a `JlcOrderDecision` with a `panel_factor` is a person
   saying it was wrong (a re-order assembles boards panelised earlier and JLC

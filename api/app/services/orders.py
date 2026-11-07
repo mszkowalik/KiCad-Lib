@@ -1538,12 +1538,71 @@ def run_sales_json(db: Session, run: M.ProductionRun) -> dict:
     return {"qty_sold_derived": devices, "orders": orders, "stock": stock}
 
 
+#: A batch whose boards are on order or on the floor. A `planned` batch counts
+#: by its quantity, and a `completed`, `done` or `cancelled` one only by its
+#: devices.
+IN_WORK_STATUSES = ("ordered", "in production")
+
+
+def _in_work(db: Session, project_id: int | None = None) -> tuple[dict[int, int], dict[int, list[dict]]]:
+    """What the batches in work will still turn into devices, per project, and
+    per batch. A batch is in work when its status is in `IN_WORK_STATUSES` and
+    its books are open.
+
+    A crafted batch counts its active twins that are not stock yet: with no
+    device, or with a device on the shelf, which the shelf holds back while
+    its twin is in work. It also counts the boards it has not received
+    (`twins.received_counts`). A batch with no process counts the boards it
+    has no device record for. A unit whose device is allocated is already
+    supply through its allocation, and is not counted again here.
+
+    Before this, a batch counted only while `planned`, so its units counted
+    nowhere from the day it went into production until each one finished:
+    CE_Dongle_V2 read "short 128" with 171 units of Batch 8 in work.
+    """
+    from sqlalchemy import func
+
+    from . import twins as _twins
+
+    rq = db.query(M.ProductionRun).filter(M.ProductionRun.status.in_(IN_WORK_STATUSES),
+                                          M.ProductionRun.closed_at.is_(None))
+    if project_id:
+        rq = rq.filter(M.ProductionRun.project_id == project_id)
+    runs = rq.all()
+    rids = [r.id for r in runs]
+    active: dict[int, int] = defaultdict(int)
+    for rid, n in (db.query(M.Unit.run_id, func.count(M.Unit.id))
+                   .outerjoin(M.DeviceUnit, M.DeviceUnit.id == M.Unit.device_unit_id)
+                   .filter(M.Unit.run_id.in_(rids or [-1]), M.Unit.status == "active",
+                           (M.Unit.device_unit_id.is_(None)) | (M.DeviceUnit.state == "in_stock"))
+                   .group_by(M.Unit.run_id).all()):
+        active[rid] = n
+    received = _twins.received_counts(db, [r.id for r in runs if r.process_version_id])
+    devices = dict(db.query(M.DeviceUnit.production_run_id, func.count(M.DeviceUnit.id))
+                   .filter(M.DeviceUnit.production_run_id.in_([r.id for r in runs if not r.process_version_id]
+                                                              or [-1]))
+                   .group_by(M.DeviceUnit.production_run_id).all())
+    total: dict[int, int] = defaultdict(int)
+    by_run: dict[int, list[dict]] = defaultdict(list)
+    for r in runs:
+        made = received.get(r.id, 0) if r.process_version_id else devices.get(r.id, 0)
+        boards = max((r.qty or 0) - made, 0)
+        units = active[r.id]
+        if not (units or boards):
+            continue
+        total[r.project_id] += units + boards
+        by_run[r.project_id].append({"run_id": r.id, "label": r.label, "status": r.status, "units": units,
+                                     "boards": boards, "run_date": r.run_date or ""})
+    return total, by_run
+
+
 def project_demand(db: Session, project_id: int | None = None) -> list[dict]:
     """Open demand against supply, per project — the number the project window
     and the Orders page both ask for. Open demand is the unshipped part of
     every non-cancelled order line; supply is what is on the shelf AND CAN BE
     SOLD, plus the devices ALLOCATED to those same open lines, plus what
-    planned batches will build. Shortfall is what nothing yet covers.
+    planned batches will build, plus what the batches in work will still
+    finish (`_in_work`). Shortfall is what nothing yet covers.
 
     SUPPLY IS `available`, NOT `in_stock` (user decision 2026-09-21). A faulty
     or prototype unit is on the shelf, counted and ours, and a shipment may
@@ -1592,19 +1651,22 @@ def project_demand(db: Session, project_id: int | None = None) -> list[dict]:
         planned[r.project_id] += r.qty or 0
         planned_runs[r.project_id].append({"run_id": r.id, "label": r.label, "qty": r.qty or 0,
                                            "run_date": r.run_date or ""})
+    in_work, in_work_runs = _in_work(db, project_id)
     projects = {p.id: p.name for p in db.query(M.Project).all()}
-    ids = set(open_qty) | set(shelf) | set(planned)
+    ids = set(open_qty) | set(shelf) | set(planned) | set(in_work)
     if project_id:
         ids = {project_id}
     out = []
     for pid in sorted(ids, key=lambda i: projects.get(i, "")):
-        o, sh, pl = open_qty.get(pid, 0), shelf.get(pid, 0), planned.get(pid, 0)
+        o, sh, pl, iw = open_qty.get(pid, 0), shelf.get(pid, 0), planned.get(pid, 0), in_work.get(pid, 0)
         out.append({
             "project_id": pid, "project": projects.get(pid, f"#{pid}"),
             "open": o, "open_orders": len(open_orders.get(pid, ())),
             "on_shelf": sh, "planned": pl,
             "planned_runs": sorted(planned_runs.get(pid, []), key=lambda r: (r["run_date"], r["run_id"])),
-            "shortfall": max(o - sh - pl, 0),
-            "surplus": max(sh + pl - o, 0),
+            "in_work": iw,
+            "in_work_runs": sorted(in_work_runs.get(pid, []), key=lambda r: (r["run_date"], r["run_id"])),
+            "shortfall": max(o - sh - pl - iw, 0),
+            "surplus": max(sh + pl + iw - o, 0),
         })
     return out

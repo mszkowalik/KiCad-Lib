@@ -2,6 +2,13 @@
 
 ## 2026-11-07 (figures on the production screens)
 
+- **The demand card counts the batches in work.** Sales → Orders and Project → Orders have an "In
+  work" column: what the batches ordered or in production will still finish, their units not finished
+  yet and their boards not received yet. A batch counted only while it was planned, so "Short" read
+  128 for CE_Dongle_V2 with 171 units of Batch 8 in work, and 299 for CE_Dongle_V3 with 60 units in
+  Batch 1 and 300 boards of Batch 2 on order. Both now read 0 short: CE_Dongle_V2 has 2 sellable and
+  171 in work against 130 open, and CE_Dongle_V3 has 1 sellable and 360 in work against 300 open. The
+  "Batches" column names the batches in work and the planned ones.
 - **A step that a unit can never take is not "still to do" on the batch board.** That is a unit that
   did another option of the step's choice, or a step that this step must come before. Batch 2164 read
   "still to do 60" for the optional UV print. 51 of its 60 units have lightpipes, and a UV print must
