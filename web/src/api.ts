@@ -8124,12 +8124,26 @@ export interface ShipmentRow {
 
 export interface OrderEconomics {
   currency: string;
+  /** The ORDER's revenue: its money invoices, else its line totals. Not what the
+   *  margin is taken on — that is `shipped_revenue_*`. */
   revenue_net: number | null;
   revenue_basis: "invoices" | "order";
   revenue_usd: number | null;
+  /** What the units shipped so far earn: each line's price for each unit shipped
+   *  against it, up to the quantity ordered. A fully shipped order earns its
+   *  whole revenue. */
+  shipped_revenue_net: number | null;
+  shipped_revenue_pln: number | null;
+  shipped_revenue_usd: number | null;
+  shipped_units: number;
+  ordered_units: number;
+  /** Ordered and not shipped yet, at the line prices, in the order's currency. */
+  to_ship_units: number;
+  to_ship_net: number | null;
   devices_cost_usd: number | null;
   repair_cost_usd: number | null;
   cost_usd: number | null;
+  /** Shipped revenue less cost. Null while nothing has shipped. */
   margin_usd: number | null;
   /** What the screen prints: each device at its batch's rate, so these are
    *  summed on the server and not converted from the USD figures (decision 0103). */
@@ -8138,6 +8152,7 @@ export interface OrderEconomics {
   repair_cost_pln: number | null;
   cost_pln: number | null;
   margin_pln: number | null;
+  /** Over the shipped revenue. Null while nothing has shipped. */
   margin_pct: number | null;
   shipped_devices: number;
   replacements: number;

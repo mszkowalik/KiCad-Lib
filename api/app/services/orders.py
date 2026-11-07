@@ -1167,9 +1167,11 @@ def _to_usd(db: Session, amount: float, currency: str, date_iso: str, cache: dic
 
 def order_economics(db: Session, order: M.SalesOrder, unit_cost: dict[int, float],
                     twin_cost: dict[int, float] | None = None) -> dict:
-    """What an order earned against what its shipped devices cost. A device with
-    a twin costs its twin's price (decision 0059 §13); any other device costs
-    its batch's average (`unit_cost`, decision 0043)."""
+    """What the shipped units of an order earned against what they cost. A
+    device with a twin costs its twin's price (decision 0059 §13); any other
+    device costs its batch's average (`unit_cost`, decision 0043). The order's
+    whole revenue and what is still to ship are reported beside the margin,
+    never in it."""
     cache: dict = {}
     unknown: set[str] = set()
     cur = (order.currency or "PLN").upper()
@@ -1232,7 +1234,6 @@ def order_economics(db: Session, order: M.SalesOrder, unit_cost: dict[int, float
                 repair_usd += one
                 repair_pln += one * (fx.pln_per_usd(db, ev.at) or 0.0)
     cost_usd = devices_cost + repair_usd
-    margin = revenue_usd - cost_usd
     # The same order in PLN (decision 0103). Revenue in PLN is what was invoiced;
     # another currency converts at its invoice's date. A device costs what its own
     # batch cost in PLN, at that batch's date.
@@ -1247,21 +1248,58 @@ def order_economics(db: Session, order: M.SalesOrder, unit_cost: dict[int, float
     else:
         revenue_pln = revenue_usd * (fx.pln_per_usd(db, _as_dt(order.order_date) if order.order_date else None) or 0.0)
     cost_pln = devices_cost_pln + repair_pln
+    # THE MARGIN COMPARES LIKE WITH LIKE: what the shipped units earn against
+    # what the shipped units cost. It compared the whole order's revenue with
+    # the cost of the units shipped so far, so order 1574 read 87.3 % on 55,000
+    # PLN for 250 units against the cost of 120, where the 120 earn 26,400 and
+    # 73.6 %; an order with nothing shipped read 100 %. A line earns its price
+    # for each unit shipped against it, up to the quantity ordered: a unit sent
+    # above that is not billed, and its cost still counts. A fully shipped
+    # order earns its whole revenue, so its invoices count as they are.
+    fulfilled = {li.id: 0 for li in order.lines}
+    for ev, _d in evs:
+        if ev.replaces_device_id is None and ev.order_line_id in fulfilled:
+            fulfilled[ev.order_line_id] += 1
+    shipped_units = sum(min(fulfilled[li.id], li.qty_ordered or 0) for li in order.lines)
+    ordered_units = sum(li.qty_ordered or 0 for li in order.lines)
+    complete = bool(order.lines) and all(fulfilled[li.id] >= (li.qty_ordered or 0) for li in order.lines)
+    if complete:
+        earned_net, earned_usd, earned_pln = revenue_net, revenue_usd, revenue_pln
+    else:
+        earned_net = sum(min(fulfilled[li.id], li.qty_ordered or 0) * (li.unit_price or 0) for li in order.lines)
+        earned_usd = _to_usd(db, earned_net, cur, order.order_date, cache, unknown)
+        earned_pln = earned_net if cur == "PLN" else earned_usd * (
+            fx.pln_per_usd(db, _as_dt(order.order_date) if order.order_date else None) or 0.0)
+    to_ship_net = sum(max((li.qty_ordered or 0) - fulfilled[li.id], 0) * (li.unit_price or 0) for li in order.lines)
+    # Nothing shipped is no margin at all, not 100 %: there is no cost to set
+    # against the revenue yet.
+    has_margin = shipped_devices > 0
     return {
         "currency": cur,
+        # The ORDER's revenue: its money invoices, else its line totals.
         "revenue_net": _round(revenue_net),
         "revenue_pln": _round(revenue_pln),
+        # What the units shipped so far earn, the side the margin is taken on.
+        "shipped_revenue_net": _round(earned_net),
+        "shipped_revenue_pln": _round(earned_pln),
+        "shipped_revenue_usd": _round(earned_usd),
+        "shipped_units": shipped_units,
+        "ordered_units": ordered_units,
+        # Still to ship, at the line prices.
+        "to_ship_units": max(ordered_units - shipped_units, 0),
+        "to_ship_net": _round(to_ship_net),
         "devices_cost_pln": _round(devices_cost_pln),
         "repair_cost_pln": _round(repair_pln),
         "cost_pln": _round(cost_pln),
-        "margin_pln": _round(revenue_pln - cost_pln),
+        "margin_pln": _round(earned_pln - cost_pln) if has_margin else None,
         "revenue_basis": basis,
         "revenue_usd": _round(revenue_usd),
         "devices_cost_usd": _round(devices_cost),
         "repair_cost_usd": _round(repair_usd),
         "cost_usd": _round(cost_usd),
-        "margin_usd": _round(margin),
-        "margin_pct": _round((revenue_pln - cost_pln) / revenue_pln * 100) if revenue_pln else None,
+        "margin_usd": _round(earned_usd - cost_usd) if has_margin else None,
+        "margin_pct": (_round((earned_pln - cost_pln) / earned_pln * 100)
+                       if has_margin and earned_pln else None),
         "shipped_devices": shipped_devices,
         "replacements": replacements,
         "uncosted_units": uncosted,

@@ -124,7 +124,7 @@ export default function OrderDetail() {
             <h2 className="card-title">Did this order make money?</h2>
             {eco ? (
               <dl className="kv">
-                <dt>Revenue (net)</dt>
+                <dt>Order revenue (net)</dt>
                 <dd title={eco.revenue_basis === "invoices" ? "sum of advance, final and correction invoices" : "no money invoice yet — the order's line totals"}>
                   {amount(eco.revenue_net, eco.currency)}
                   {eco.currency !== "PLN" ? <span className="muted"> · {plnAmount(eco.revenue_pln, 0)}</span> : null}
@@ -132,18 +132,36 @@ export default function OrderDetail() {
                 </dd>
                 <dt>Devices shipped</dt>
                 <dd>
-                  {eco.shipped_devices.toLocaleString()}
+                  {eco.shipped_units.toLocaleString()} of {eco.ordered_units.toLocaleString()}
                   {eco.replacements ? <span className="muted"> · {plural(eco.replacements, "replacement")}</span> : null}
                 </dd>
+                <dt>Shipped units earn</dt>
+                <dd title="each line's net price for each unit shipped against it, up to the quantity ordered; a fully shipped order earns its whole revenue">
+                  {amount(eco.shipped_revenue_net, eco.currency)}
+                  {eco.currency !== "PLN" ? <span className="muted"> · {plnAmount(eco.shipped_revenue_pln, 0)}</span> : null}
+                </dd>
+                {eco.to_ship_units ? (
+                  <>
+                    <dt>Still to ship</dt>
+                    <dd>
+                      {plural(eco.to_ship_units, "unit")}
+                      <span className="muted"> · {amount(eco.to_ship_net, eco.currency)}</span>
+                    </dd>
+                  </>
+                ) : null}
                 <dt>Cost of devices</dt>
                 <dd>{plnAmount(eco.devices_cost_pln, 0)}</dd>
                 <dt>Repairs</dt>
                 <dd>{plnAmount(eco.repair_cost_pln, 0)}</dd>
-                <dt>Margin</dt>
-                <dd className={(eco.margin_pln ?? 0) < 0 ? "err-text" : undefined}>
-                  {plnAmount(eco.margin_pln, 0)}
-                  {eco.margin_pct != null ? <span className="muted"> · {eco.margin_pct.toFixed(1)}%</span> : null}
-                </dd>
+                <dt>Margin on shipped units</dt>
+                {eco.margin_pln == null ? (
+                  <dd className="muted">— nothing shipped yet</dd>
+                ) : (
+                  <dd className={eco.margin_pln < 0 ? "err-text" : undefined}>
+                    {plnAmount(eco.margin_pln, 0)}
+                    {eco.margin_pct != null ? <span className="muted"> · {eco.margin_pct.toFixed(1)}%</span> : null}
+                  </dd>
+                )}
               </dl>
             ) : (
               <Spinner />
@@ -162,7 +180,8 @@ export default function OrderDetail() {
             ) : null}
             <p className="muted">
               Every shipped device carries the actual per-device cost of the batch it came from,
-              replacements included. Revenue converts per invoice at the invoice date.
+              replacements included. The margin sets the shipped units&apos; revenue against
+              that cost. Revenue converts per invoice at the invoice date.
             </p>
           </div>
           <HeaderCard order={order} apply={apply} />

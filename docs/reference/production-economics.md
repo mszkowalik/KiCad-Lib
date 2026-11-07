@@ -243,18 +243,20 @@ guard reads one company's stock is in [companies.md](companies.md).
     and leaves the run's sale columns in place — the register still reads them,
     so its figures cannot move. The run page shows `sales` (derived `qty_sold`,
     the orders its units went to, what is on the shelf) beside them.
-- **The sale side ALSO still lives on the run, for the register** (`sale_unit_price`, `sale_currency`, `qty_sold`,
-  `customer`, `order_ref`, `order_date`; startup-migrated). Price is stored PER
-  DEVICE, never as a batch total — the total is derived, so a later quantity
-  correction cannot silently rewrite revenue. Revenue charges on `qty_sold` (units
-  BILLED), falling back to `qty_good` then `plan_qty` then `qty`: a customer is
-  invoiced for what shipped, which is routinely neither the planned count nor the
-  number that passed test. `run_actuals` returns `revenue`/`margin`/`margin_pct`
-  (gross margin over revenue, the figure a price decision is made against) in the
-  platform's display currency (PLN, decision 0103); the register's `by_run_usd` converts both sides to USD
-  at the **order date** when set, else the run date — a sale is struck on a day and
-  its FX must not drift with today's rate. `RunPatch` applies these only when
-  explicitly present (`exclude_unset`), so patching a label can never blank a price.
+- **The run's sale columns are history** (`sale_unit_price`, `sale_currency`,
+  `qty_sold`, `customer`, `order_ref`, `order_date`). A batch has no revenue and
+  no margin (decision
+  [0043](../decisions/0043-a-batch-costs-an-order-earns-and-a-unit-joins-them.md)).
+  `RunPatch` applies these only when explicitly present (`exclude_unset`), so
+  patching a label can never blank a price.
+- **An order's margin is taken on the units it SHIPPED** (`order_economics`,
+  2026-11-07). A line earns its net price for each unit shipped against it, up to
+  the quantity ordered. When every line is shipped, the order earns its whole
+  revenue (its money invoices, else its line totals). The cost is the shipped
+  devices' cost. While nothing has shipped, the margin is null, not 100 %. The
+  order's whole revenue and what is still to ship are reported beside the margin.
+  Before this, order 1574 set 55,000 PLN for 250 units against the cost of the 120
+  shipped and read 87.3 %. The 120 earn 26,400 PLN, which is 73.6 %.
 - **`resolve_part_lines` has THREE outcomes, not two.** `resolved` (linked to a
   library component), `unresolved` (MPN recognised by nothing) and **`unlinked`** —
   the MPN matched a `JlcStockItem` that itself has no `component_id`. An unlinked

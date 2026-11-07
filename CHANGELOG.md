@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-11-07 (money and stock figures that did not add up)
+
+- **An order's margin is taken on the units it shipped.** "Did this order make money?" set the whole
+  order's revenue against the cost of the units shipped so far. Order 1574 read 87.3 % on 55,000 PLN for
+  250 units against the cost of the 120 shipped. The 120 earn 26,400 PLN, so the margin is 73.6 %. Orders
+  1573 and 18 read 100 % with nothing shipped. They now show no margin. The card also shows the order's
+  whole revenue and what is still to ship.
+
 ## 2026-11-07 (figures on the production screens)
 
 - **The demand card counts the batches in work.** Sales → Orders and Project → Orders have an "In
