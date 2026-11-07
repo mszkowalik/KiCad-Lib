@@ -80,11 +80,12 @@ function SearchTab() {
   const q = params.get("q") ?? "";
   const [typed, setTyped] = useState(q);
   const [old, setOld] = useState(false);
-  const { data: hits, loading: busy, error } = useLoad(
-    (signal) => searchDatasheets(q, { limit: 50, includeSuperseded: old }, signal).then((r) => r.hits),
+  const { data: found, loading: busy, error } = useLoad(
+    (signal) => searchDatasheets(q, { limit: 50, includeSuperseded: old }, signal),
     [q, old],
     { enabled: !!q, keep: true },
   );
+  const hits = found?.hits ?? null;
 
   const go = () => {
     const next = new URLSearchParams(params);
@@ -100,7 +101,14 @@ function SearchTab() {
           onKeyDown={(e) => { if (e.key === "Enter") go(); }} />
         <button type="button" className="btn btn-primary" onClick={go}>Search</button>
         <CheckField checked={old} onChange={setOld}>Also older versions</CheckField>
-        {hits ? <span className="toolbar-total">{hits.length} page(s)</span> : null}
+        {/* The server counts every match; the list holds the best 50 of them. */}
+        {found ? (
+          <span className="toolbar-total">
+            {found.truncated
+              ? `best ${found.hits.length} of ${found.total.toLocaleString()} page(s)`
+              : `${found.total.toLocaleString()} page(s)`}
+          </span>
+        ) : null}
       </div>
       {error ? <ErrorBanner message={error} /> : null}
       {busy ? <Spinner label="Searching" /> : null}

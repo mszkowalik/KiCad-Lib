@@ -36,6 +36,10 @@
   and the stored count did not. Now both count every datasheet a component lists. The line also says
   for how many KiCad opens the stored copy, and for how many web pages it opens the live link. The
   page header no longer says that KiCad reads the archived copy of everything.
+- **Library → Datasheets → Search says how many pages match.** It printed the number of rows it had
+  asked for, so any common word read "50 page(s)". Now it reads, for example, "best 50 of 1,234
+  page(s)". The agent tool `search_datasheets` also returns `total`, and a `note` when it shows only
+  the best pages.
 
 ## 2026-11-07 (a reopened device keeps its steps on the batch board)
 

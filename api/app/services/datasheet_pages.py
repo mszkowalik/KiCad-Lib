@@ -342,6 +342,20 @@ _TSCONFIG = "simple"
 # Pages belong to documents; documents reach components through the versions
 # that point at them. A document shared by three components yields one hit
 # per component, which is the honest answer to "where does this text appear".
+#
+# The FROM and WHERE are one fragment, read by the page query AND by the count
+# beside it, so the total can never describe a different set from the hits.
+_MATCH_SQL = """
+  FROM datasheet_pages p
+  JOIN documents doc ON doc.id = p.document_id
+  {version_join}
+  JOIN components c  ON c.id = d.component_id
+  CROSS JOIN websearch_to_tsquery(:cfg, :q) AS q(query)
+ WHERE p.tsv @@ q.query
+   AND d.archived = false
+   {component_filter}
+"""
+_COUNT_SQL = "SELECT count(*) " + _MATCH_SQL
 _SEARCH_SQL = """
 SELECT c.id           AS component_id,
        c.name         AS component,
@@ -355,14 +369,7 @@ SELECT c.id           AS component_id,
        ts_headline(:cfg, p.content, q.query,
                    'MaxFragments=2,MaxWords=28,MinWords=8,ShortWord=2') AS snippet,
        ts_rank_cd(p.tsv, q.query) AS rank
-  FROM datasheet_pages p
-  JOIN documents doc ON doc.id = p.document_id
-  {version_join}
-  JOIN components c  ON c.id = d.component_id
-  CROSS JOIN websearch_to_tsquery(:cfg, :q) AS q(query)
- WHERE p.tsv @@ q.query
-   AND d.archived = false
-   {component_filter}
+""" + _MATCH_SQL + """
  ORDER BY rank DESC, c.name, p.page_no
  LIMIT :limit
 """
@@ -385,18 +392,27 @@ def search(db: Session, query: str, limit: int = 20, component: str = "",
 
     Superseded PDF versions are excluded by default: they are the same document
     a version or two back, so including them returns the same hit several times
-    and points the reader at a page the library no longer serves."""
+    and points the reader at a page the library no longer serves.
+
+    `count` is the hits returned and `total` every page that matches. They
+    differ when the cap is hit, and then `truncated` is true and `note` says
+    so: an agent, and the Search tab, printed `count` as the number of pages
+    found, which read "50 page(s)" for any query that matched 50 or more.
+    """
     q = (query or "").strip()
     if not q:
         return {"query": q, "hits": [], "error": "empty query"}
-    sql = _SEARCH_SQL.format(
-        version_join=_JOIN_ANY if include_superseded else _JOIN_CURRENT,
-        component_filter="AND c.name ILIKE :comp" if component.strip() else "",
-    )
+    fmt = {
+        "version_join": _JOIN_ANY if include_superseded else _JOIN_CURRENT,
+        "component_filter": "AND c.name ILIKE :comp" if component.strip() else "",
+    }
+    sql = _SEARCH_SQL.format(**fmt)
     params = {"cfg": _TSCONFIG, "q": q, "limit": max(1, min(int(limit), 100))}
     if component.strip():
         params["comp"] = f"%{component.strip()}%"
     rows = db.execute(sa_text(sql), params).mappings().all()
+    total = (db.execute(sa_text(_COUNT_SQL.format(**fmt)), params).scalar() or 0
+             if len(rows) >= params["limit"] else len(rows))
     hits = []
     for r in rows:
         hits.append({
@@ -414,7 +430,12 @@ def search(db: Session, query: str, limit: int = 20, component: str = "",
             "read": {"component": r["component"], "datasheet_label": r["label"],
                      "pages": str(r["page_no"])},
         })
-    return {"query": q, "hits": hits, "count": len(hits)}
+    out = {"query": q, "hits": hits, "count": len(hits), "total": total,
+           "truncated": total > len(hits)}
+    if out["truncated"]:
+        out["note"] = (f"showing the best {len(hits)} of {total} matching pages - "
+                       "narrow with more words, a phrase, or `component`")
+    return out
 
 
 def _current_document_id(db: Session, ds: M.Datasheet) -> int | None:

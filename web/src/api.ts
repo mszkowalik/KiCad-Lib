@@ -10547,8 +10547,10 @@ export function getDatasheetOutline(id: number, signal?: AbortSignal): Promise<{
   return request(`/api/datasheets/${id}/outline`, { signal });
 }
 
+/** `count` is the hits returned, `total` every page that matches. They differ
+ *  when the server's cap (100) or `limit` is hit, and then `truncated` is true. */
 export function searchDatasheets(q: string, opts: { limit?: number; includeSuperseded?: boolean } = {},
-  signal?: AbortSignal): Promise<{ query: string; hits: DatasheetHit[] }> {
+  signal?: AbortSignal): Promise<{ query: string; hits: DatasheetHit[]; count: number; total: number; truncated: boolean }> {
   const qs = new URLSearchParams({ q });
   if (opts.limit) qs.set("limit", String(opts.limit));
   if (opts.includeSuperseded) qs.set("include_superseded", "true");

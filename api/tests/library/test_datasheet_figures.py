@@ -90,3 +90,32 @@ def test_every_archive_figure_counts_one_set(db, component):
     assert d["datasheets_kicad_live"] == 1, "a stored web page keeps its live link"
     assert d["datasheets_without_url"] == 1
     assert after["datasheets_with_local_copy"] <= after["datasheets_total"]
+
+
+# ------------------------------------------------------------ finding 7
+@pytest.fixture
+def five_pages(db, component):
+    """Five indexed pages that carry one word nothing else in the corpus has."""
+    word = f"zqx{uuid.uuid4().hex[:10]}"
+    _, doc = _datasheet(db, component, 0, "https://example.invalid/s.pdf", "application/pdf", "s.pdf")
+    for n in range(1, 6):
+        db.add(M.DatasheetPage(document_id=doc.id, page_no=n, content=f"page {n} {word}",
+                               chars=20, extract_kind="text"))
+    db.flush()
+    return word
+
+
+def test_search_reports_every_matching_page(db, five_pages):
+    out = datasheet_pages.search(db, five_pages, limit=2)
+
+    assert out["count"] == 2
+    assert out["total"] == 5, "the total printed the rows asked for, not the pages found"
+    assert out["truncated"] is True
+    assert "5" in out["note"]
+
+
+def test_a_search_under_its_limit_is_not_truncated(db, five_pages):
+    out = datasheet_pages.search(db, five_pages, limit=20)
+
+    assert (out["count"], out["total"], out["truncated"]) == (5, 5, False)
+    assert "note" not in out

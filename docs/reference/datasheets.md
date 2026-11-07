@@ -273,6 +273,10 @@ before you change a fetch, a hash, a classification or an endpoint.
     `/{id}/pages/{n}`, and the agent tools `search_datasheets` /
     `datasheet_outline` (34 client tools now — the count in
     [agent-tools.md](agent-tools.md) has been stale since before this).
+  - **A search answers `count` (the hits returned, at most 100) and `total`
+    (every matching page)**, plus `truncated` and a `note` when they differ.
+    Print `total` as the number found. The Search tab printed the row count
+    and read "50 page(s)" for any query that matched 50 or more (2026-11-07).
 - **`GET`/`DELETE /api/datasheets/broken`** list and remove documents that were
   archived before the gate existed. `purge_broken` does three things in order,
   and all three are load-bearing: NULL the `ComponentVersionDatasheet` pins (a
