@@ -49,7 +49,7 @@ class ReverseIn(BaseModel):
     dry_run: bool = True
 
 
-@router.get("/transfers")
+@router.get("/transfers", openapi_extra={"x-agent-tool": "list_transfers"})
 def list_transfers(request: Request = None, db: Session = Depends(get_db)):
     """Transfers that touch a company in the header scope."""
     return svc.list_transfers(db, company_svc.scope_ids(db, request))

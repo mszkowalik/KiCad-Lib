@@ -11,7 +11,9 @@ import {
   type SignoffRow,
 } from "../api";
 import { useDialog } from "./Dialog";
+import FoldSection, { StatChip } from "./FoldSection";
 import { ErrorBanner, SignoffPill, Spinner } from "./Ui";
+import { localWhen } from "../format";
 
 /** Production sign-off for one component.
  *
@@ -39,7 +41,6 @@ export default function SignoffCard({
   const [loadError, setLoadError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [showHistory, setShowHistory] = useState(false);
   const [note, setNote] = useState("");
   const dialog = useDialog();
 
@@ -48,7 +49,6 @@ export default function SignoffCard({
     setDetail(null);
     setLoadError(null);
     setActionError(null);
-    setShowHistory(false);
     getSignoff(componentId, ctrl.signal)
       .then(setDetail)
       .catch((err) => {
@@ -154,7 +154,7 @@ export default function SignoffCard({
           <dd>
             {live.signed_by}
             {live.signed_at ? (
-              <span className="muted"> on {new Date(live.signed_at).toLocaleString()}</span>
+              <span className="muted"> on {localWhen(live.signed_at)}</span>
             ) : null}
           </dd>
           <dt>How</dt>
@@ -169,7 +169,7 @@ export default function SignoffCard({
                 {live.revoked_by ?? "?"}
                 <span className="muted">
                   {" on "}
-                  {live.revoked_at ? new Date(live.revoked_at).toLocaleString() : ""}
+                  {live.revoked_at ? localWhen(live.revoked_at) : ""}
                 </span>
                 {live.revoke_reason ? <> — {live.revoke_reason}</> : null}
               </dd>
@@ -249,33 +249,38 @@ export default function SignoffCard({
             Revoke
           </button>
         )}
-        {detail.history.length > 0 ? (
-          <button
-            type="button"
-            className="btn btn-sm"
-            onClick={() => setShowHistory((v) => !v)}
-            aria-expanded={showHistory}
-          >
-            {showHistory ? "Hide history" : `History (${detail.history.length})`}
-          </button>
-        ) : null}
       </div>
 
-      {showHistory ? (
-        <ul className="notes-list">
-          {detail.history.map((r) => (
-            <li key={r.id} className="note">
-              <div className="note-head mono">
-                <span className="note-author">{r.signed_by}</span>
-                <span className="note-date">
-                  {r.signed_at ? new Date(r.signed_at).toLocaleString() : ""}
-                </span>
-                <SignoffPill state={r.revoked_at ? "revoked" : "signed"} />
-              </div>
-              <p className="muted">{describeRow(r)}</p>
-            </li>
-          ))}
-        </ul>
+      {detail.history.length > 0 ? (
+        <FoldSection
+          bare
+          title="History"
+          count={detail.history.length}
+          foldKey={`component:${componentId}:signoff-history`}
+          chips={
+            <>
+              <StatChip n={detail.history.filter((r) => !r.revoked_at).length} tone="ok">signed</StatChip>
+              {detail.history.some((r) => r.revoked_at) ? (
+                <StatChip n={detail.history.filter((r) => r.revoked_at).length} tone="warn">revoked</StatChip>
+              ) : null}
+            </>
+          }
+        >
+          <ul className="notes-list">
+            {detail.history.map((r) => (
+              <li key={r.id} className="note">
+                <div className="note-head mono">
+                  <span className="note-author">{r.signed_by}</span>
+                  <span className="note-date">
+                    {r.signed_at ? localWhen(r.signed_at) : ""}
+                  </span>
+                  <SignoffPill state={r.revoked_at ? "revoked" : "signed"} />
+                </div>
+                <p className="muted">{describeRow(r)}</p>
+              </li>
+            ))}
+          </ul>
+        </FoldSection>
       ) : null}
     </section>
   );

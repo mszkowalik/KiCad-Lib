@@ -50,20 +50,19 @@ text applied to another.
   Yes/No of an `operator_check` step) and
   forwards every station log line as `{t:"log"}` so the stored record is
   complete. The scenario itself NEVER runs in the browser.
-- Pages: **`/production/deployments`** is the home of the flasher — deployment
+- Pages: **`/production/procedures`** is the home of the flasher — deployment
   tiles across the top, then two columns (version timeline → the deployment's
   own fields and the selected version), with `DiffView` for comparisons.
-  **`/production/files`** administers what a version PINS, one kind per tab
+  **`/production/procedures/files`** administers what a version PINS, one kind per tab
   (`?tab=releases|artwork|firmware`; `bundles` and `files` are aliases of
   `releases`) — releases first, because that is the unit berryware ships in.
   Releases and drawings are platform wide, so those tabs have no project
   selector; firmware keeps it. `?open=<set id>` opens one row, which is how
   the version card links here. `/production/artifacts` redirects there.
-  **`/production/parameters`** is what a version DEPENDS on and does not
+  **`/production/procedures/parameters`** is what a version DEPENDS on and does not
   contain: the values, who needs each key, and the revision log (decision
   [0024](../../../../docs/decisions/0024-a-version-declares-the-parameters-it-needs.md)).
-  It was a fourth tab under Files until 2026-09-17;
-  `/production/files/parameters` redirects. Then `/production/bench` (stations),
+  It was a fourth tab under Files until 2026-09-17; Then `/production/bench` (stations),
   `/production/devices` (+ `/:id`), `/production/flash-runs/:id` (step
   timeline + full log, live-tails by polling `after=<last seq>`). The bench log
   box keeps a bounded tail — the full log is in Postgres.
@@ -117,7 +116,7 @@ text applied to another.
 - **Berryware reads as a RELEASE, not a file list** (user feedback 2026-07-30).
   The version view leads with one pill per set — the release, green, and the
   drawing, blue — each a link to its row on the Files page, and puts the file
-  table behind a Show-files toggle. **The card is titled by `files_kind`** —
+  table behind a fold at any length (`FoldSection`, `limit={0}`). **The card is titled by `files_kind`** —
   Berryware, Artwork or Files; the diff, the timeline line and the bench
   summary read `file_set` / `artwork_set` the same way (2026-09-17, after a
   mark version's drawing was labelled berryware). There is no "unnamed set":
@@ -332,9 +331,8 @@ text applied to another.
 ## The "Planned as" column is the step EDITOR, not a label
 
 Every non-header invoice line renders a step select (catalog from
-`GET /api/cost-steps`, grouped by stage) writing `plan_key` directly; the
-"link to a specific plan item…" option opens the old PlanLinkDialog for
-free-form `c<id>` links. The split dialog carries the same select per row, and
+`GET /api/cost-steps`, grouped by stage) writing `plan_key` directly. The split
+dialog carries the same select per row, and
 picking a step back-fills the row's kind from the catalog default. The run
 panel's "Where the money goes" table shows per-step plan-vs-billed with
 supplier chips whose data comes from `RunActuals.steps[].sources` — computed

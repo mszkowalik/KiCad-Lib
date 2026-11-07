@@ -522,17 +522,6 @@ def _footprint_glb(fp: M.Footprint, ver: M.FootprintVersion, immutable: bool) ->
                     headers={"Cache-Control": cache})
 
 
-@router.get("/footprints/{fp_id}/preview.glb")
-def footprint_glb(fp_id: int, db: Session = Depends(get_db)):
-    f = db.get(M.Footprint, fp_id)
-    if f is None:
-        raise HTTPException(404, "footprint not found")
-    cur = _current(f)
-    if cur is None:
-        raise HTTPException(404, "no published version to preview")
-    return _footprint_glb(f, cur, immutable=False)
-
-
 @router.get("/footprints/{fp_id}/versions/{version_no}/preview.glb")
 def footprint_version_glb(fp_id: int, version_no: int, db: Session = Depends(get_db)):
     f = db.get(M.Footprint, fp_id)
@@ -546,19 +535,3 @@ def footprint_version_glb(fp_id: int, version_no: int, db: Session = Depends(get
         raise HTTPException(404, f"footprint has no version {version_no}")
     return _footprint_glb(f, ver, immutable=True)
 
-
-@router.get("/symbols/{sym_id}/versions/{version_no}/preview.svg")
-def symbol_version_preview(sym_id: int, version_no: int, unit: int | None = None,
-                           db: Session = Depends(get_db)):
-    s = db.get(M.Symbol, sym_id)
-    if s is None:
-        raise HTTPException(404, "symbol not found")
-    return _version_preview("symbol", s, version_no, db, unit)
-
-
-@router.get("/footprints/{fp_id}/versions/{version_no}/preview.svg")
-def footprint_version_preview(fp_id: int, version_no: int, db: Session = Depends(get_db)):
-    f = db.get(M.Footprint, fp_id)
-    if f is None:
-        raise HTTPException(404, "footprint not found")
-    return _version_preview("footprint", f, version_no, db)

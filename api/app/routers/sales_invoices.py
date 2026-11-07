@@ -273,6 +273,12 @@ class TemplateIn(BaseModel):
     active: bool = True
 
 
+def _check_day(day: object) -> None:
+    """"last", or a day every month has. A 31 would fail on the first short month."""
+    if str(day) != "last" and not (str(day).isdigit() and 1 <= int(str(day)) <= 28):
+        raise HTTPException(422, 'the day is "last" or a number from 1 to 28')
+
+
 def _template_json(t: M.SalesInvoiceTemplate) -> dict:
     return {"id": t.id, "company_id": t.company_id, "key": t.key, "description": t.description,
             "customer_id": t.customer_id, "day": t.day, "payment_terms_days": t.payment_terms_days,
@@ -288,12 +294,16 @@ def list_templates(request: Request = None, db: Session = Depends(get_db)):
 
 @router.post("/sales-invoice-templates")
 def create_template(body: TemplateIn, request: Request = None, db: Session = Depends(get_db)):
+    _check_day(body.day)
     _visible(db, request, body.company_id)
     svc.issuing_company(db, body.company_id)
     try:
         A.lines([ln.model_dump() for ln in body.lines])
     except ValueError as e:
         raise HTTPException(422, str(e)) from e
+    # `uq_sales_template_key` would answer this with a 500.
+    if db.query(M.SalesInvoiceTemplate).filter_by(company_id=body.company_id, key=body.key).first():
+        raise HTTPException(409, f"a recurring invoice with the key {body.key!r} already exists")
     t = M.SalesInvoiceTemplate(**{**body.model_dump(), "lines": [ln.model_dump() for ln in body.lines]})
     db.add(t)
     db.flush()
@@ -307,6 +317,8 @@ def update_template(template_id: int, body: dict, db: Session = Depends(get_db))
     t = db.get(M.SalesInvoiceTemplate, template_id)
     if t is None:
         raise HTTPException(404, "template not found")
+    if "day" in body:
+        _check_day(body["day"])
     allowed = {"description", "customer_id", "day", "payment_terms_days", "lines", "extra_info", "active"}
     for k, v in body.items():
         if k not in allowed:

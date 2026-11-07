@@ -13,6 +13,7 @@ import {
   type EditDs,
   type EditRow,
 } from "../components/editing";
+import Field, { FieldGrid } from "../components/Field";
 import { BackLink, ErrorBanner } from "../components/Ui";
 
 const FP_DATALIST_ID = "fp-options-new";
@@ -74,9 +75,7 @@ export default function NewComponent() {
   return (
     <div className="main-solo">
       <div className="page">
-        <BackLink to="/" className="backlink">
-          &larr; Browse
-        </BackLink>
+        <BackLink to="/library/components">&larr; Components</BackLink>
         <h1>New component</h1>
         <p className="muted">
           Creates a published v1 directly — you are the approval. Names are globally unique.
@@ -86,9 +85,8 @@ export default function NewComponent() {
         {error ? <ErrorBanner message={error} /> : null}
 
         <section className="card pad edit-card">
-          <div className="field-grid">
-            <label>
-              Name
+          <FieldGrid>
+            <Field label="Name">
               <input
                 type="text"
                 className="text mono new-name"
@@ -97,17 +95,15 @@ export default function NewComponent() {
                 onChange={(e) => setName(e.target.value)}
                 autoFocus
               />
-            </label>
+            </Field>
             <span />
-            <label>
-              Base symbol
+            <Field label="Base symbol">
               <BaseSymbolSelect value={base} pickers={pickers} onChange={setBase} />
-            </label>
-            <label>
-              Category
+            </Field>
+            <Field label="Category">
               <CategorySelect value={catId} pickers={pickers} fallbackLabel="" onChange={setCatId} />
-            </label>
-          </div>
+            </Field>
+          </FieldGrid>
           <p className="muted edit-hint">
             The <span className="mono">Footprint</span> property drives the pinned footprint —
             its value field suggests <span className="mono">7Sigma:</span> footprints.
@@ -148,7 +144,7 @@ export default function NewComponent() {
             />
             <button
               type="button"
-              className="btn btn-accent"
+              className="btn btn-primary"
               disabled={!canSubmit}
               onClick={() => void submit()}
             >

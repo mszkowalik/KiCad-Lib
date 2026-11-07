@@ -177,7 +177,8 @@ def test_an_allocation_to_a_closed_line_is_not_supply(world):
 
 
 def test_a_shipment_can_be_recorded_from_serials(world):
-    """A scan sheet names devices by the string on the label."""
+    """A scan sheet names devices by the string on the label. Pack, then Send is
+    the only way a delivery is written over HTTP (decision 0103)."""
     from app.routers import orders as router
 
     db, line, order = world["db"], world["line"], world["order"]
@@ -185,12 +186,19 @@ def test_a_shipment_can_be_recorded_from_serials(world):
     svc.reverse_shipment(db, sh, actor="test", dry_run=False)
     db.flush()
     db.refresh(order)
-    body = router.ShipmentIn(shipped_at="2026-04-01",
-                             lines=[router.ShipmentLineIn(order_line_id=line.id,
-                                                          serials=["A0", "A1", "A2"])])
-    router.create_shipment(order.id, body, _Req(), db=db)
+    box = svc.open_shipment(db, order)
+    checked = router.check_shipment_codes(box.id, router.ShipmentCheckIn(codes=["A0", "A1", "A2"]), db=db)
+    assert all(c["ok"] for c in checked)
+    router.pack_shipment(box.id, router.ShipmentPackIn(device_ids=[c["device_id"] for c in checked]), _Req(), db=db)
+    router.send_shipment(box.id, router.ShipmentSendIn(shipped_at="2026-04-01"), _Req(), db=db)
     db.flush()
     assert svc.line_shipped(line) == 3
+
+
+def test_the_one_step_shipment_route_is_gone():
+    from app.routers import orders as router
+
+    assert not [r.path for r in router.router.routes if r.path.endswith("/orders/{order_id}/shipments")]
 
 
 def test_a_reversed_shipment_says_it_cannot_be_deleted(world):
@@ -319,16 +327,16 @@ def test_a_shipment_refuses_a_quantity_with_a_batch_behind_it(world):
     # THERE IS NO QUANTITY FIELD. Not `qty`, not `qty_unserialized`. A parameter
     # that is never valid does not belong on the schema, in the OpenAPI document
     # or in a generated client, so the SCHEMA refuses one and names it
-    # (decision 0049).
+    # (decision 0049). The body of a pack is what a delivery takes now.
     from pydantic import ValidationError
 
-    from app.routers.orders import ShipmentLineIn
+    from app.routers.orders import ShipmentPackIn
 
     assert not {"qty", "qty_unserialized", "source_run_id", "run_ids"} \
-        & set(ShipmentLineIn.model_fields)
+        & set(ShipmentPackIn.model_fields)
     for bad in ("qty", "qty_unserialized", "source_run_id"):
         with pytest.raises(ValidationError) as ve:
-            ShipmentLineIn(order_line_id=line.id, **{bad: 4})
+            ShipmentPackIn(device_ids=[], order_line_id=line.id, **{bad: 4})
         assert bad in str(ve.value), f"{bad} must be named in the refusal"
 
     # And the service still refuses to move nothing, which is what a caller that

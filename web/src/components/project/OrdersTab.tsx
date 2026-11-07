@@ -1,6 +1,6 @@
 /** Customer orders for this project's products — the demand side of the
- *  Batches tab. Read-only: an order is created and shipped from
- *  /production/orders, this tab only shows which orders want this project's
+ *  Batches tab. Read-only: an order is created and shipped on Sales → Orders
+ *  (/sales/orders), this tab only shows which orders want this project's
  *  devices and whether the shelf plus the planned batches cover them. */
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
@@ -17,7 +17,7 @@ import {
 import DataTable, { type Column } from "../DataTable";
 import { ErrorBanner, Spinner, StatusPill } from "../Ui";
 import { amount } from "../../format";
-import { DemandCard } from "../../pages/Orders";
+import DemandCard from "../DemandCard";
 
 interface Props {
   project: ProjectInfo;
@@ -73,7 +73,7 @@ export default function OrdersTab({ project }: Props) {
       className: "mono",
       get: (r) => r.order.order_ref || "—",
       render: (r) => (
-        <Link className="comp-link" to={`/production/orders/${r.order.id}`} onClick={(e) => e.stopPropagation()}>
+        <Link className="comp-link" to={`/sales/orders/${r.order.id}`} onClick={(e) => e.stopPropagation()}>
           {r.order.order_ref || `order #${r.order.id}`}
         </Link>
       ),
@@ -114,13 +114,13 @@ export default function OrdersTab({ project }: Props) {
         <div className="toolbar">
           <h2 className="card-title">Customer orders</h2>
           <span className="toolbar-total">{orders ? `${rows.length} line(s)` : ""}</span>
-          <Link className="btn btn-sm" to="/production/orders">
+          <Link className="btn btn-sm" to="/sales/orders">
             All orders
           </Link>
         </div>
-        <p className="card-subtitle">
+        <p className="muted dim">
           One row per order line for this project. Orders are created, invoiced and shipped
-          from the Orders page.
+          on Sales → Orders.
         </p>
         {orders === null && !error ? <Spinner label="Loading orders" /> : null}
         {orders ? (
@@ -130,7 +130,7 @@ export default function OrdersTab({ project }: Props) {
             rowKey={(r) => r.key}
             persistKey="project-orders"
             defaultSort={{ key: "date", dir: "desc" }}
-            onRowClick={(r) => navigate(`/production/orders/${r.order.id}`)}
+            onRowClick={(r) => navigate(`/sales/orders/${r.order.id}`)}
             empty="No customer orders for this project yet."
           />
         ) : null}

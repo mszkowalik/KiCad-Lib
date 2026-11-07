@@ -146,6 +146,9 @@ adjustment that names no company.
   one company once the switch is on. The switch itself goes once production is
   migrated (`docs/todo.md` row 39): the companies' stock must never mix.
 
+The office organizers are shared, and a balance in a box is a company's
+([organizers.md](organizers.md)).
+
 ## Transfers
 
 A transfer is an in-house document (`doc_type="transfer"`, `MM nnnn/yyyy`)
@@ -153,11 +156,7 @@ billed to the receiver, naming the sender in `counterparty_company_id`, plus
 one sender draw per position (`transfer_line_id`, basis `transfer`, no batch).
 
 * **Price**: the lot's landed cost when the units' lot is named. Else the
-  sender's moving average on the date. While `lot_pricing` is on, a line that
-  names no lot takes the sender's lots oldest first instead, its sender draw is
-  bound to them, and a line those lots cannot cover is refused
-  ([production-economics.md](production-economics.md), "Lots and FIFO
-  pricing").
+  sender's moving average on the date.
 * **A lot transfer takes the receiver's draws bound to that lot** (decision
   0069): oldest first, dated on or after the transfer, up to the moved
   quantity, a binding split when only part of it moves. A caller may name the

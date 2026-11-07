@@ -1,7 +1,8 @@
-/** Deployments — one revision binds firmware + berryware + procedure + params.
+/** Production → Procedures: one revision binds firmware + berryware + steps + params.
+ *  The code and the API call a procedure a deployment.
  *
- *  Left: the deployments of a project with their channel badges.
- *  Middle: the version timeline, each row saying what changed.
+ *  Top: the procedures of a project as tiles, with their channel badges.
+ *  Left: the version timeline, each row saying what changed.
  *  Right: the composed view of the selected version.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -10,6 +11,7 @@ import {
   createDeployment,
   deleteDeployment,
   errorMessage,
+  getDeploymentVersion,
   getFlasherMeta,
   getProjects,
   isAbortError,
@@ -25,6 +27,7 @@ import {
   type FlasherMeta,
   type ProjectInfo,
 } from "../api";
+import FoldSection, { StatChip } from "../components/FoldSection";
 import AutoTextarea from "../components/AutoTextarea";
 import { useDialog } from "../components/Dialog";
 import Field, { CheckField, FieldRow } from "../components/Field";
@@ -32,19 +35,15 @@ import InfoTip from "../components/InfoTip";
 import { ErrorBanner, Spinner, StatusPill } from "../components/Ui";
 import DiffView from "../components/flasher/DiffView";
 import VersionView from "../components/flasher/VersionView";
-import { fmtWhen } from "../components/flasher/common";
+import { localWhen, plural } from "../format";
 import { useStickyState } from "../useStickyState";
 
 /** The three procedure kinds the API accepts (`DEPLOYMENT_KINDS` in
- *  routers/flasher.py). The bench reads `kind`, never the name. */
-/** Bare words, no explanations (user request 2026-09-17). What each kind DOES
- *  is on the field's ⓘ; repeating it inside every option made the control the
- *  widest thing on the card for three values that are read once. */
-const KIND_OPTIONS = [
-  { value: "flash", label: "flash" },
-  { value: "test", label: "test" },
-  { value: "mark", label: "mark" },
-];
+ *  routers/flasher.py). The bench reads `kind`, never the name. Bare words, no
+ *  explanations (user request 2026-09-17). What each kind DOES is on the field's
+ *  ⓘ; repeating it inside every option made the control the widest thing on the
+ *  card for three values that are read once. */
+const KINDS = ["flash", "test", "mark"];
 
 export default function Deployments() {
   const dialog = useDialog();
@@ -72,6 +71,21 @@ export default function Deployments() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [params]);
   const [versionId, setVersionId] = useState<number | null>(null);
+  // A link from a file set names one version: open its deployment, in its project.
+  const linkVersion = Number(params.get("version")) || null;
+  useEffect(() => {
+    if (!linkVersion) return;
+    const ac = new AbortController();
+    getDeploymentVersion(linkVersion, ac.signal)
+      .then((v) => {
+        setProjectId(v.deployment.project_id);
+        setSelectedId(v.deployment.id);
+        setVersionId(v.id);
+      })
+      .catch((err) => { if (!isAbortError(err)) setError(errorMessage(err)); });
+    return () => ac.abort();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [linkVersion]);
   /** True while the POST that mints a draft is in flight. There is no modal
    *  any more: `New version` creates the draft, selects it, and the right-hand
    *  column IS the editor (user request 2026-09-17). */
@@ -150,8 +164,8 @@ export default function Deployments() {
   const newDeployment = async () => {
     if (!validProject) return;
     const taken = new Set((deployments ?? []).map((d) => d.name));
-    let name = "New deployment";
-    for (let n = 2; taken.has(name); n += 1) name = `New deployment ${n}`;
+    let name = "New procedure";
+    for (let n = 2; taken.has(name); n += 1) name = `New procedure ${n}`;
     try {
       const res = await createDeployment(validProject, { name });
       setSelectedId(res.id);
@@ -266,8 +280,8 @@ export default function Deployments() {
     if (!(await dialog.confirm(
       `Delete "${target.name}" and its ${target.versions.length} version(s)? `
       + "Firmware and berryware stay in the project pool. Refused if any programming run "
-      + "records this deployment.",
-      { title: "Delete deployment", tone: "danger", confirmLabel: "Delete" },
+      + "records this procedure.",
+      { title: "Delete procedure", tone: "danger", confirmLabel: "Delete" },
     ))) return;
     try {
       await deleteDeployment(target.id);
@@ -317,7 +331,7 @@ export default function Deployments() {
     <div className="main-solo">
       <div className="page">
         <div className="toolbar">
-          <h1>Deployments</h1>
+          <h1>Procedures</h1>
           <select
             className="row-input"
             value={validProject ?? ""}
@@ -335,9 +349,15 @@ export default function Deployments() {
         {error ? <ErrorBanner message={error} /> : null}
 
         {deployments === null ? (
-          <Spinner label="Loading deployments…" />
+          <Spinner label="Loading procedures…" />
         ) : deployments.length === 0 ? (
-          <p className="muted">No deployments in this project yet.</p>
+          <div className="depl-tiles">
+            <p className="muted">No procedures in this project yet.</p>
+            <button type="button" className="depl-item depl-item-new" onClick={newDeployment}>
+              <span className="depl-plus">+</span>
+              <span className="muted dim">new procedure</span>
+            </button>
+          </div>
         ) : (
           <>
             {/* The deployments are TILES across the top, not a column down the
@@ -360,7 +380,7 @@ export default function Deployments() {
                 >
                   <span className="depl-name">{d.name}</span>
                   <span className="muted dim">
-                    {d.chip || "no chip"} · {d.versions.length} version{d.versions.length === 1 ? "" : "s"}
+                    {d.chip || "no chip"} · {plural(d.versions.length, "version")}
                   </span>
                   <span className="depl-chips">
                     {d.kind !== "flash" ? <span className="pill neutral">{d.kind}</span> : null}
@@ -400,7 +420,7 @@ export default function Deployments() {
                   2026-09-17). */}
               <button type="button" className="depl-item depl-item-new" onClick={newDeployment}>
                 <span className="depl-plus">+</span>
-                <span className="muted dim">new deployment</span>
+                <span className="muted dim">new procedure</span>
               </button>
             </div>
 
@@ -411,19 +431,31 @@ export default function Deployments() {
                     {/* New version belongs to the timeline, not to the card of
                         editable fields: it acts on versions, and as a primary
                         button beside the name it outranked Save. */}
-                    <div className="depl-versions-bar">
-                      <span className="card-subtitle depl-versions-title">
-                        {selected.versions.length} version{selected.versions.length === 1 ? "" : "s"}
-                      </span>
-                      <button
-                        type="button"
-                        className="btn btn-primary btn-sm"
-                        onClick={() => void newVersion()}
-                        disabled={composing}
-                      >
-                        {composing ? "Creating…" : "New version"}
-                      </button>
-                    </div>
+                    <FoldSection
+                      bare
+                      title="Versions"
+                      count={selected.versions.length}
+                      foldKey={`deployment:${selected.id}:versions`}
+                      forceOpen={!!linkVersion}
+                      chips={
+                        <>
+                          {selected.versions.some((v) => v.status === "draft") ? (
+                            <StatChip n={selected.versions.filter((v) => v.status === "draft").length} tone="warn">draft</StatChip>
+                          ) : null}
+                          <StatChip n={selected.versions.filter((v) => v.status === "published").length} tone="ok">published</StatChip>
+                        </>
+                      }
+                      actions={
+                        <button
+                          type="button"
+                          className="btn btn-primary btn-sm"
+                          onClick={() => void newVersion()}
+                          disabled={composing}
+                        >
+                          {composing ? "Creating…" : "New version"}
+                        </button>
+                      }
+                    >
                     <div className="version-timeline">
                       {selected.versions.map((v) => {
                         const chans = selected.channels.filter((c) => c.deployment_version_id === v.id);
@@ -440,7 +472,7 @@ export default function Deployments() {
                               {chans.map((c) => (
                                 <span key={c.name} className="pill ok">{c.name}</span>
                               ))}
-                              <span className="muted dim">{fmtWhen(v.created_at)}</span>
+                              <span className="muted dim">{localWhen(v.created_at)}</span>
                             </div>
                             <div className="version-changes muted">
                               {v.changes?.summary ?? ""}
@@ -491,6 +523,7 @@ export default function Deployments() {
                         );
                       })}
                     </div>
+                    </FoldSection>
                   </>
                 ) : null}
               </div>
@@ -556,9 +589,7 @@ export default function Deployments() {
                               value={draft.kind}
                               onChange={(e) => setDraft({ ...draft, kind: e.target.value })}
                             >
-                              {KIND_OPTIONS.map((k) => (
-                                <option key={k.value} value={k.value}>{k.label}</option>
-                              ))}
+                              {KINDS.map((k) => <option key={k} value={k}>{k}</option>)}
                             </select>
                           </Field>
                           {draft.kind === "test" ? (
@@ -591,7 +622,7 @@ export default function Deployments() {
                             <>
                               Parameters{" "}
                               <InfoTip>
-                                The set this deployment works against. A NEW version starts from
+                                The set this procedure works against. A NEW version starts from
                                 it; a version already published keeps the set it was made with, so
                                 changing this never rewrites what a device was given. Edit the
                                 values on the Parameters page.
@@ -651,7 +682,7 @@ export default function Deployments() {
                             type="button"
                             className="btn btn-sm row-del"
                             onClick={() => void removeDeployment()}
-                            title="Delete this deployment — refused while any programming run records it"
+                            title="Delete this procedure — refused while any programming run records it"
                           >
                             Delete
                           </button>

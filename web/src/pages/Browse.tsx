@@ -12,9 +12,22 @@ import {
 } from "../api";
 import CategoryTree from "../components/CategoryTree";
 import DataTable, { type Column } from "../components/DataTable";
+import { NarrowChip } from "../components/FoldSection";
 import { useDialog } from "../components/Dialog";
-import { ErrorBanner, LifecyclePill, ReviewPill, SignoffPill, Spinner } from "../components/Ui";
+import { useDebounced } from "../components/useDebounced";
+import {
+  ErrorBanner,
+  LifecyclePill,
+  REVIEW_RANK,
+  ReviewPill,
+  reviewWord,
+  SIGNOFF_RANK,
+  SignoffPill,
+  signoffWord,
+  Spinner,
+} from "../components/Ui";
 import { useStickyState } from "../useStickyState";
+import { plural } from "../format";
 
 const PAGE_SIZE = 1000;
 const DEBOUNCE_MS = 300;
@@ -31,68 +44,6 @@ function ExternalLinkIcon() {
     </svg>
   );
 }
-
-// -------------------------------------------------- client-side sort/filter
-
-type ColKey =
-  | "mfg_pn"
-  | "manufacturer"
-  | "value"
-  | "description"
-  | "footprint"
-  | "lcsc"
-  | "price_bulk"
-  | "category"
-  | "signoff"
-  | "review";
-
-const COL_LABELS: Record<ColKey, string> = {
-  mfg_pn: "Mfg PN",
-  manufacturer: "Manufacturer",
-  value: "Value",
-  description: "Description",
-  footprint: "Footprint",
-  lcsc: "LCSC",
-  price_bulk: "Price @1k",
-  category: "Category",
-  signoff: "Sign-off",
-  review: "Review",
-};
-
-/** The label the sign-off column PRINTS. The filter box matches what the user
- *  can see, so typing "re-check" finds the stale rows. */
-const SIGNOFF_TEXT: Record<string, string> = {
-  signed: "signed",
-  stale: "re-check",
-  revoked: "revoked",
-  unsigned: "not signed",
-};
-
-/** Printed labels for the review column — filter matches what the user sees,
- *  including the lifecycle words shown alongside for deprecated/obsolete. */
-const REVIEW_TEXT: Record<string, string> = {
-  checked: "checked",
-  partial: "partial",
-  // The word ReviewPill PRINTS for `failed`. It used to read "checks fail"
-  // here, so filtering for what the pill actually says matched nothing.
-  failed: "issues",
-  unreviewed: "unreviewed",
-};
-
-/** Sign-off states worst-first: what needs attention sorts to the top. */
-const SIGNOFF_ORDER: Record<string, number> = {
-  revoked: 0,
-  stale: 1,
-  unsigned: 2,
-  signed: 3,
-};
-
-const REVIEW_ORDER: Record<string, number> = {
-  failed: 0,
-  unreviewed: 1,
-  partial: 2,
-  checked: 3,
-};
 
 export default function Browse() {
   const [params, setParams] = useSearchParams();
@@ -111,9 +62,9 @@ export default function Browse() {
   const [refresh, setRefresh] = useState(0);
   const dialog = useDialog();
 
-  // Remember the selected library + search across navigation. The "← back" link
-  // from a component goes to a bare "/", so on the first mount with no params we
-  // restore the last Browse location; otherwise we save the current one.
+  // Remember the selected library + search across navigation. A link from the top
+  // bar has no parameters, so on the first mount with none we restore the last
+  // Browse location; otherwise we save the current one.
   const [lastSearch, setLastSearch] = useStickyState<string>("browse:lastSearch", "");
   const restored = useRef(false);
   useEffect(() => {
@@ -134,22 +85,23 @@ export default function Browse() {
     setInput(q);
   }, [q]);
 
-  // Debounced search: commit the input to the URL after a short pause.
+  // Debounced search: commit the input to the URL after a short pause. Only a
+  // settled input may write. `q` is not a dependency: on back/forward the URL
+  // changes first, and the input then follows it, so nothing has to be written.
+  const settledInput = useDebounced(input, DEBOUNCE_MS);
   useEffect(() => {
-    if (input === q) return;
-    const t = window.setTimeout(() => {
-      setParams(
-        (prev) => {
-          const next = new URLSearchParams(prev);
-          if (input) next.set("q", input);
-          else next.delete("q");
-          return next;
-        },
-        { replace: true },
-      );
-    }, DEBOUNCE_MS);
-    return () => window.clearTimeout(t);
-  }, [input, q, setParams]);
+    if (settledInput === q) return;
+    setParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        if (settledInput) next.set("q", settledInput);
+        else next.delete("q");
+        return next;
+      },
+      { replace: true },
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [settledInput]);
 
   const [treeRefresh, setTreeRefresh] = useState(0);
   useEffect(() => {
@@ -202,6 +154,12 @@ export default function Browse() {
   // `visible` comes back from it so "select all" still means the FILTERED set.
   const [visible, setVisible] = useState<ComponentListItem[]>([]);
   const total = data?.total ?? 0;
+  // The state chips. They count what the browser holds, so they stay away while
+  // the server has more rows than one fetch returns: part of a list is not a count.
+  const [narrow, setNarrow] = useState<"" | "failed" | "unsigned" | "stale" | "signed">("");
+  const narrowOf = (c: ComponentListItem, n: typeof narrow) => (n === "failed" ? c.review === "failed" : c.signoff === n);
+  const chipCount = (n: typeof narrow) => (data?.items ?? []).filter((c) => narrowOf(c, n)).length;
+  const complete = !!data && data.items.length >= data.total;
 
   // ---- bulk production sign-off -------------------------------------------
   // Signing a BOM's worth of parts one page at a time is the whole reason this
@@ -230,7 +188,7 @@ export default function Browse() {
     const ids = [...selected];
     if (ids.length === 0) return;
     const ok = await dialog.confirm(
-      `Sign off ${ids.length} component${ids.length === 1 ? "" : "s"} for production? ` +
+      `Sign off ${plural(ids.length, "component")} for production? ` +
         "This records that YOU checked each one's symbol and land pattern.",
       { title: "Sign off for production", confirmLabel: "Sign off", tone: "ok" },
     );
@@ -283,24 +241,24 @@ export default function Browse() {
     },
     {
       key: "mfg_pn",
-      label: COL_LABELS.mfg_pn,
+      label: "Mfg PN",
       width: 11,
       get: (c) => c.mfg_pn,
       render: (c) => (
         <Link
           to={`/library/components/${c.id}`}
-          state={{ backTo: `/${params.toString() ? `?${params.toString()}` : ""}` }}
+          state={{ backTo: `/library/components${params.toString() ? `?${params.toString()}` : ""}` }}
           className="mono comp-link"
         >
           {c.mfg_pn || <span className="muted">—</span>}
         </Link>
       ),
     },
-    { key: "manufacturer", label: COL_LABELS.manufacturer, width: 11, get: (c) => c.manufacturer },
-    { key: "value", label: COL_LABELS.value, width: 6, className: "mono", get: (c) => c.value },
-    { key: "description", label: COL_LABELS.description, width: 13, get: (c) => c.description },
-    { key: "footprint", label: COL_LABELS.footprint, width: 12, className: "mono", get: (c) => c.footprint },
-    { key: "lcsc", label: COL_LABELS.lcsc, width: 7, className: "mono", get: (c) => c.lcsc },
+    { key: "manufacturer", label: "Manufacturer", width: 11, get: (c) => c.manufacturer },
+    { key: "value", label: "Value", width: 6, className: "mono", get: (c) => c.value },
+    { key: "description", label: "Description", width: 12, get: (c) => c.description },
+    { key: "footprint", label: "Footprint", width: 12, className: "mono", get: (c) => c.footprint },
+    { key: "lcsc", label: "LCSC", width: 7, className: "mono", get: (c) => c.lcsc },
     {
       key: "datasheet",
       label: "DS",
@@ -324,30 +282,31 @@ export default function Browse() {
     },
     {
       key: "price_bulk",
-      label: COL_LABELS.price_bulk,
+      label: "Price @1k",
       width: 8,
       numeric: true,
       get: (c) => c.price_bulk,
       title: (c) => (c.bulk_qty ? `Unit price at qty ${c.bulk_qty}` : undefined),
     },
-    { key: "category", label: COL_LABELS.category, width: 7, get: (c) => c.category_path },
+    { key: "category", label: "Category", width: 7, get: (c) => c.category_path },
     {
       key: "signoff",
-      label: COL_LABELS.signoff,
+      label: "Sign-off",
       // A pill is inline-block, so the column's ellipsis cannot shorten it —
-      // too narrow simply cuts the word in half. 9% fits the longest label
-      // ("not signed"); the review column below is 9% for the same reason.
-      width: 9,
+      // too narrow simply cuts the word in half. 10% fits the longest label
+      // ("not signed", measured at a 1400 px window); the review column below
+      // is sized for the same reason.
+      width: 10,
       className: "ctr",
       // Filter on the PRINTED word (typing "re-check" finds the stale rows);
       // sort on rank, worst first.
-      get: (c) => SIGNOFF_TEXT[c.signoff] ?? c.signoff,
-      sortValue: (c) => SIGNOFF_ORDER[c.signoff] ?? 9,
+      get: (c) => signoffWord(c.signoff),
+      sortValue: (c) => SIGNOFF_RANK[c.signoff] ?? 9,
       render: (c) => <SignoffPill state={c.signoff} />,
     },
     {
       key: "review",
-      label: COL_LABELS.review,
+      label: "Review",
       // Wider than sign-off: ReviewPill adds the actor glyph too
       // ("checked 🤖"), which is the state most rows are in.
       width: 10,
@@ -355,9 +314,9 @@ export default function Browse() {
       get: (c) => {
         const life =
           c.lifecycle === "deprecated" || c.lifecycle === "obsolete" ? ` ${c.lifecycle}` : "";
-        return (REVIEW_TEXT[c.review] ?? c.review) + life;
+        return reviewWord(c.review) + life;
       },
-      sortValue: (c) => REVIEW_ORDER[c.review] ?? 9,
+      sortValue: (c) => REVIEW_RANK[c.review] ?? 9,
       render: (c) => (
         <>
           <ReviewPill state={c.review} provenance={c.review_provenance} />
@@ -403,7 +362,7 @@ export default function Browse() {
             {data === null
               ? ""
               : visible.length === total
-                ? `${total} component${total === 1 ? "" : "s"}`
+                ? `${plural(total, "component")}`
                 : `${visible.length} of ${total} components`}
           </span>
           <button
@@ -426,6 +385,15 @@ export default function Browse() {
 
         {error ? <ErrorBanner message={`Components failed to load: ${error}`} /> : null}
 
+        {complete ? (
+          <div className="stat-row">
+            <NarrowChip n={chipCount("failed")} tone="err" value="failed" current={narrow} onNarrow={setNarrow}>review failed</NarrowChip>
+            <NarrowChip n={chipCount("unsigned")} tone="warn" value="unsigned" current={narrow} onNarrow={setNarrow}>not signed</NarrowChip>
+            <NarrowChip n={chipCount("stale")} tone="warn" value="stale" current={narrow} onNarrow={setNarrow}>re-check</NarrowChip>
+            <NarrowChip n={chipCount("signed")} tone="ok" value="signed" current={narrow} onNarrow={setNarrow}>signed</NarrowChip>
+          </div>
+        ) : null}
+
         {data === null && loading ? (
           <div className="block-loading">
             <Spinner label="Loading components" />
@@ -434,7 +402,7 @@ export default function Browse() {
           <div className={"card table-wrap" + (loading ? " is-loading" : "")}>
             <DataTable
               columns={cols}
-              rows={data.items}
+              rows={narrow && complete ? data.items.filter((c) => narrowOf(c, narrow)) : data.items}
               rowKey={(c) => c.id}
               persistKey="browse"
               onVisibleChange={setVisible}

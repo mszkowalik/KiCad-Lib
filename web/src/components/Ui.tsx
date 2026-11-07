@@ -1,7 +1,8 @@
 /** Small shared UI atoms: spinner, error banner, status pill, back link,
- *  fold-away list, copy button. */
-import { useState, type ReactNode } from "react";
+ *  copy button. */
+import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
+import { plural, localWhen } from "../format";
 
 /** "← Back" that means BACK, not UP.
  *
@@ -113,9 +114,39 @@ const STATUS_TONES: Record<string, string> = {
   // did not fail.
   pass: "ok",
   fail: "err",
+  // What the fleet broker says about a device or about its own connection.
+  online: "ok",
+  connected: "ok",
+  offline: "err",
+  disconnected: "err",
   // A shipment's own words (decision 0053). `open` stays neutral: an order
   // uses the same word and has always been drawn neutral.
   sent: "ok",
+  // Ready to use: a snapshot that finished its ingest, a scanned device the box
+  // may take.
+  ready: "ok",
+  // A device's verdict (`checks.verdict`).
+  programmed: "ok",
+  "not programmed": "err",
+  // A sales invoice's state. `proforma`, `cancelled` and `not recorded` stay
+  // neutral: none of them asks for anything.
+  paid: "ok",
+  unpaid: "warn",
+  overdue: "err",
+  // A row of the KSeF inbox (decision 0067). `new` waits for a person, and
+  // `skipped` is a decision already made, so it stays neutral.
+  new: "warn",
+  linked: "ok",
+  imported: "ok",
+  // A standing decision: a review exception, an in-house transfer. `revoked` and
+  // `reversed` stay neutral, because nothing is wrong with a withdrawn one.
+  "in force": "ok",
+  stale: "warn",
+  // JLC's words on an order that waits for us, and the invoice draw's answer.
+  // `shipped` stays neutral: an order of ours may use the same word.
+  attached: "ok",
+  waitpay: "warn",
+  waitreview: "warn",
   aborted: "warn",
   draft: "warn",
   pending: "warn",
@@ -128,10 +159,57 @@ const STATUS_TONES: Record<string, string> = {
   archived: "err",
 };
 
-export function StatusPill({ status }: { status: string | null | undefined }) {
+export function StatusPill({ status, title }: { status: string | null | undefined; title?: string }) {
   if (!status) return <span className="pill neutral">unknown</span>;
   const tone = STATUS_TONES[status.toLowerCase()] ?? "neutral";
-  return <span className={`pill ${tone}`}>{status}</span>;
+  return <span className={`pill ${tone}`} title={title}>{status}</span>;
+}
+
+/** Names as links, comma separated: who uses this template. */
+export function LinkList({ items, to }: {
+  items: { id: number; name: string }[];
+  to: (id: number) => string;
+}) {
+  return (
+    <p>
+      {items.map((u, i) => (
+        <span key={u.id}>
+          {i > 0 ? ", " : ""}
+          <Link to={to(u.id)} className="comp-link">{u.name}</Link>
+        </span>
+      ))}
+    </p>
+  );
+}
+
+/** Who published this version, when and why: rows for a `table.kv`. */
+export function VersionRows({ at, by, note }: {
+  at?: string | null;
+  by?: string | null;
+  note?: string | null;
+}) {
+  return (
+    <>
+      {at ? (
+        <tr>
+          <td>Published</td>
+          <td>{localWhen(at)}</td>
+        </tr>
+      ) : null}
+      {by ? (
+        <tr>
+          <td>Author</td>
+          <td>{by}</td>
+        </tr>
+      ) : null}
+      {note ? (
+        <tr>
+          <td>Version note</td>
+          <td>{note}</td>
+        </tr>
+      ) : null}
+    </>
+  );
 }
 
 /** Production sign-off state — deliberately its OWN pill, not a StatusPill.
@@ -146,6 +224,15 @@ const SIGNOFF_TONES: Record<string, [string, string]> = {
   revoked: ["err", "revoked"],
   unsigned: ["neutral", "not signed"],
 };
+
+/** The word `SignoffPill` prints. A list filter matches this, so typing what the
+ *  reader sees finds the row: "re-check" finds the stale ones. */
+export function signoffWord(state: string | null | undefined): string {
+  return (SIGNOFF_TONES[(state ?? "").toLowerCase()] ?? ["neutral", "not signed"])[1];
+}
+
+/** Worst first: sorting a sign-off column means "what still needs looking at". */
+export const SIGNOFF_RANK: Record<string, number> = { revoked: 0, stale: 1, unsigned: 2, signed: 3 };
 
 export function SignoffPill({
   state,
@@ -176,6 +263,14 @@ const REVIEW_TONES: Record<string, [string, string]> = {
   unreviewed: ["neutral", "unreviewed"],
 };
 
+/** The word `ReviewPill` prints, for a filter that matches what the reader sees. */
+export function reviewWord(state: string | null | undefined): string {
+  return (REVIEW_TONES[(state ?? "").toLowerCase()] ?? ["neutral", "unreviewed"])[1];
+}
+
+/** Worst first: sorting a review column means "what still needs looking at". */
+export const REVIEW_RANK: Record<string, number> = { failed: 0, unreviewed: 1, partial: 2, checked: 3 };
+
 /** Who answered, as one glyph: ⚙ the validator on publish, 🤖 an agent run.
  *
  *  A human answer carries no mark — it is the default and the strongest claim.
@@ -183,7 +278,7 @@ const REVIEW_TONES: Record<string, [string, string]> = {
  *  style into `CHECKED (AGENT)`), which was the widest thing a review column
  *  printed and got clipped in every narrow cell (user report 2026-09-18). The
  *  full word still reaches the reader through the pill's `title`. */
-export const ACTOR_MARK: Record<string, string> = { machine: "⚙", agent: "🤖" };
+const ACTOR_MARK: Record<string, string> = { machine: "⚙", agent: "🤖" };
 
 export function actorMark(actor: string | null | undefined): string | null {
   return actor ? (ACTOR_MARK[actor] ?? null) : null;
@@ -261,7 +356,7 @@ export function ReviewPill({
       ) : null}
       {warnings ? (
         <span className="pill warn" title="Warning-level failures. They do not fail the subject.">
-          {warnings} warning{warnings === 1 ? "" : "s"}
+          {plural(warnings, "warning")}
         </span>
       ) : null}
     </span>
@@ -313,43 +408,3 @@ export function LifecyclePill({ state, title }: { state: string | null | undefin
   );
 }
 
-/** A long list that shows its first few rows and unfolds the rest in place.
- *
- *  The library-health cards hold lists that are legitimately long — every part
- *  used on a board and not signed off, every chronically skipped checklist item
- *  — and a card whose list runs to forty rows pushes everything under it off
- *  the screen, so the OTHER cards stop being readable at a glance. This shows
- *  `min` rows and puts the rest behind one button.
- *
- *  **It slices the array; it does not clamp a height.** A CSS `max-height`
- *  would have to guess a row height, and the row would then shrink or the last
- *  visible row would be cut in half. Rows keep exactly the height they have,
- *  folded or not — which is the point, since these are read by scanning.
- */
-export function FoldList<T>({
-  items,
-  min = 2,
-  noun = "more",
-  children,
-}: {
-  items: T[];
-  /** Rows shown while folded. */
-  min?: number;
-  /** What the unfold button counts, e.g. "part" -> "Show 12 more parts". */
-  noun?: string;
-  children: (shown: T[]) => ReactNode;
-}) {
-  const [open, setOpen] = useState(false);
-  const hidden = items.length - min;
-  const shown = open || hidden <= 0 ? items : items.slice(0, min);
-  return (
-    <>
-      {children(shown)}
-      {hidden > 0 ? (
-        <button type="button" className="btn btn-sm fold-more" onClick={() => setOpen(!open)}>
-          {open ? "Show fewer" : `Show ${hidden} more ${noun}${hidden === 1 ? "" : "s"}`}
-        </button>
-      ) : null}
-    </>
-  );
-}

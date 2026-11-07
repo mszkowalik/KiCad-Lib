@@ -37,7 +37,8 @@ import FilePick from "../FilePick";
 import DataTable, { type Column } from "../DataTable";
 import { ErrorBanner, Spinner } from "../Ui";
 import { useModal } from "../modal";
-import { fmtBytes, fmtWhen, lbrnThumbnail, shortSha } from "./common";
+import { fmtBytes, lbrnThumbnail, shortSha } from "./common";
+import { localWhen, plural } from "../../format";
 
 const KIND_TITLE: Record<string, string> = { berryware: "release", artwork: "drawing" };
 
@@ -140,7 +141,7 @@ export default function FileSetsPanel({
   const remove = async (s: FileSetRow) => {
     if (!(await dialog.confirm(
       s.used_by
-        ? `"${s.label}" is pinned by ${s.used_by} deployment version(s) — the platform will refuse. Try anyway?`
+        ? `"${s.label}" is pinned by ${s.used_by} procedure version(s) — the platform will refuse. Try anyway?`
         : `Delete "${s.label}"? Content no other ${noun} shares goes with it.`,
       { title: `Delete ${noun}`, tone: "danger", confirmLabel: "Delete" },
     ))) return;
@@ -177,22 +178,22 @@ export default function FileSetsPanel({
       key: "used",
       label: "Used by",
       width: 12,
-      get: (s) => (s.used_by ? `${s.used_by} version${s.used_by === 1 ? "" : "s"}` : "unused"),
+      get: (s) => (s.used_by ? `${plural(s.used_by, "version")}` : "unused"),
       render: (s) => (
         <span
           className={`pill ${s.used_by ? "ok" : "neutral"}`}
           title={s.used_by
-            ? "deployment versions pinning this set — open the row to see which"
-            : "no deployment version pins this set — it can be deleted"}
+            ? "procedure versions pinning this set — open the row to see which"
+            : "no procedure version pins this set — it can be deleted"}
         >
-          {s.used_by ? `${s.used_by} version${s.used_by === 1 ? "" : "s"}` : "unused"}
+          {s.used_by ? `${plural(s.used_by, "version")}` : "unused"}
         </span>
       ),
     },
     {
       key: "created", label: "Created", width: kind === "artwork" ? 16 : 20, className: "muted",
       get: (s) => s.created_at ?? "",
-      render: (s) => <>{fmtWhen(s.created_at)}{s.created_by ? ` · ${s.created_by}` : ""}</>,
+      render: (s) => <>{localWhen(s.created_at)}{s.created_by ? ` · ${s.created_by}` : ""}</>,
     },
     {
       key: "actions",
@@ -234,7 +235,7 @@ export default function FileSetsPanel({
           above it, not a column beside it. */}
       <div className="toolbar">
         <h2 className="card-title">{kind === "artwork" ? "Drawings" : "Releases"}</h2>
-        <span className="muted">{sets ? `${sets.length} ${noun}${sets.length === 1 ? "" : "s"}` : ""}</span>
+        <span className="muted">{sets ? plural(sets.length, noun) : ""}</span>
         {kind === "berryware" ? (
           <FilePick
             directory
@@ -259,7 +260,7 @@ export default function FileSetsPanel({
           {busy ? "Working…" : kind === "artwork" ? "Upload a .lbrn2…" : "Upload files…"}
         </FilePick>
       </div>
-      <p className="card-subtitle">
+      <p className="muted dim">
         {kind === "artwork"
           ? "One LightBurn file is one drawing. The same file uploaded twice is one row."
           : "A release is one exact set of files. The same set is always the same release, whatever the folder was called — so re-importing cannot create a twin. To change one file, use Derive… on its row."}
@@ -372,13 +373,13 @@ function SetDetail({
         {set.comment ? <span className="muted">{set.comment}</span> : null}
       </div>
       <p className="muted">
-        {users.length === 0 ? "Pinned by no deployment version." : (
+        {users.length === 0 ? "Pinned by no procedure version." : (
           <>
             Pinned by{" "}
             {users.map((u, i) => (
               <span key={u.version_id}>
                 {i ? ", " : ""}
-                <Link className="val-link" to={`/production/deployments?version=${u.version_id}`}>
+                <Link className="val-link" to={`/production/procedures?version=${u.version_id}`}>
                   {u.deployment} v{u.version_no}
                 </Link>
                 {u.status !== "published" ? ` (${u.status})` : ""}
@@ -388,52 +389,39 @@ function SetDetail({
         )}
       </p>
       <div className="table-wrap">
-        <table className="data data-fixed set-files-table">
-          <thead>
-            <tr>
-              <th className="num">#</th>
-              <th>File</th>
-              <th className="num">Size</th>
-              <th>sha256</th>
-              <th>vs previous</th>
-              <th />
-            </tr>
-          </thead>
-          <tbody>
-            {(set.files ?? []).map((f, i) => (
-              <tr key={f.filename}>
-                <td className="num">{i + 1}</td>
-                <td className="mono" title={f.filename}>{f.filename}</td>
-                <td className="num">{fmtBytes(f.size_bytes)}</td>
-                <td className="mono dim" title={f.sha256}>{shortSha(f.sha256)}</td>
-                <td>
-                  {f.previous === null || f.previous === undefined ? (
-                    <span className="pill info">new</span>
-                  ) : f.previous.same ? (
-                    <span className="muted dim">same as {f.previous.label}</span>
-                  ) : (
-                    <span className="pill warn" title={`differs from the copy in ${f.previous.label}`}>
-                      changed since {f.previous.label}
-                    </span>
-                  )}
-                </td>
-                <td className="ctr">
-                  <span className="btn-row">
-                    <EyeButton title={`Preview ${f.filename}`} onClick={() => onPreview(set, f)} />
-                    <a
-                      className="btn btn-sm"
-                      href={fileSetFilePath(set.id, f.filename)}
-                      download={f.filename}
-                      title="Download this file's bytes"
-                    >
-                      ↓
-                    </a>
-                  </span>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        <DataTable
+          rows={(set.files ?? []).map((f, i) => ({ ...f, n: i + 1 }))}
+          rowKey={(f) => f.filename}
+          columns={[
+            { key: "n", label: "#", width: 7, numeric: true, get: (f) => f.n },
+            { key: "file", label: "File", width: 31, className: "mono", get: (f) => f.filename },
+            { key: "size", label: "Size", width: 10, numeric: true, get: (f) => f.size_bytes,
+              render: (f) => fmtBytes(f.size_bytes) },
+            { key: "sha", label: "sha256", width: 14, className: "mono dim", get: (f) => shortSha(f.sha256),
+              title: (f) => f.sha256 },
+            { key: "prev", label: "vs previous", width: 26,
+              get: (f) => (f.previous == null ? "new" : f.previous.same ? `same as ${f.previous.label}` : `changed since ${f.previous.label}`),
+              render: (f) => (f.previous == null ? (
+                <span className="pill info">new</span>
+              ) : f.previous.same ? (
+                <span className="muted dim">same as {f.previous.label}</span>
+              ) : (
+                <span className="pill warn" title={`differs from the copy in ${f.previous.label}`}>
+                  changed since {f.previous.label}
+                </span>
+              )) },
+            { key: "act", label: "", width: 12, interactive: false, className: "ctr", get: () => "",
+              render: (f) => (
+                <span className="btn-row">
+                  <EyeButton title={`Preview ${f.filename}`} onClick={() => onPreview(set, f)} />
+                  <a className="btn btn-sm" href={fileSetFilePath(set.id, f.filename)} download={f.filename}
+                    title="Download this file's bytes">
+                    ↓
+                  </a>
+                </span>
+              ) },
+          ]}
+        />
       </div>
     </div>
   );
@@ -726,7 +714,7 @@ function DeriveDialog({
             {busy ? "Working…" : "Make the release"}
           </button>
           <span className="muted">
-            {changed.length ? `${changed.length} change${changed.length === 1 ? "" : "s"}` : "no changes yet"}
+            {changed.length ? `${plural(changed.length, "change")}` : "no changes yet"}
           </span>
         </div>
       </div>

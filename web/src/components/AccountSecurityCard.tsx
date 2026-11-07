@@ -20,9 +20,11 @@ import {
   revokeOwnToken,
   type PlatformUser,
 } from "../api";
+import DataTable from "./DataTable";
 import Field from "./Field";
 import { useDialog } from "./Dialog";
 import { ErrorBanner, Spinner } from "./Ui";
+import { localDate } from "../format";
 
 /** `me` is owned by the Account page, because the MCP card shows the same
  *  tokens: a token made here must appear there without a reload. */
@@ -126,55 +128,39 @@ export default function AccountSecurityCard({
       ) : me.tokens.length === 0 ? (
         <p className="muted">No token yet — create one to get your personal KiCad links.</p>
       ) : (
-        <table className="data data-fixed account-tokens">
-          <colgroup>
-            <col style={{ width: "24%" }} />
-            <col style={{ width: "44%" }} />
-            <col style={{ width: "20%" }} />
-            <col style={{ width: "12%" }} />
-          </colgroup>
-          <thead>
-            <tr>
-              <th>Label</th>
-              <th>Token</th>
-              <th>Last used</th>
-              <th className="ctr">Revoke</th>
-            </tr>
-          </thead>
-          <tbody>
-            {me.tokens.map((t) => (
-              <tr key={t.id}>
-                <td>{t.label || <span className="muted">—</span>}</td>
-                <td className="mono" title={t.token || t.prefix}>
-                  {t.token || `${t.prefix}…`}
-                </td>
-                <td className="muted">
-                  {t.last_used_at ? t.last_used_at.slice(0, 10) : "never"}
-                </td>
-                <td className="ctr">
-                  <button
-                    type="button"
-                    className="row-del"
-                    title="Revoke this token"
-                    onClick={() =>
-                      void run(async () => {
-                        const ok = await dialog.confirm(
-                          "Revoke this token? Anything using it — KiCad, the sync plugin, " +
-                            "the MCP server — stops working until you paste a new one.",
-                          { title: "Revoke token", confirmLabel: "Revoke", tone: "danger" },
-                        );
-                        if (!ok) return;
-                        setMe(await revokeOwnToken(t.id));
-                      })
-                    }
-                  >
-                    ✕
-                  </button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        <DataTable
+          rows={me.tokens}
+          rowKey={(t) => t.id}
+          columns={[
+            { key: "label", label: "Label", width: 24, get: (t) => t.label,
+              render: (t) => t.label || <span className="muted">—</span> },
+            { key: "token", label: "Token", width: 44, className: "mono", get: (t) => t.token || `${t.prefix}…`,
+              title: (t) => t.token || t.prefix },
+            { key: "used", label: "Last used", width: 20, className: "muted",
+              get: (t) => (t.last_used_at ? localDate(t.last_used_at) : "never") },
+            { key: "revoke", label: "Revoke", width: 12, interactive: false, className: "ctr", get: () => "",
+              render: (t) => (
+                <button
+                  type="button"
+                  className="row-del"
+                  title="Revoke this token"
+                  onClick={() =>
+                    void run(async () => {
+                      const ok = await dialog.confirm(
+                        "Revoke this token? Anything using it — KiCad, the sync plugin, " +
+                          "the MCP server — stops working until you paste a new one.",
+                        { title: "Revoke token", confirmLabel: "Revoke", tone: "danger" },
+                      );
+                      if (!ok) return;
+                      setMe(await revokeOwnToken(t.id));
+                    })
+                  }
+                >
+                  ✕
+                </button>
+              ) },
+          ]}
+        />
       )}
       <div className="field-row">
         <Field label="New token label">

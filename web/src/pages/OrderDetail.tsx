@@ -2,25 +2,26 @@
  *  that fulfil it, and what it earned once every shipped device — replacements
  *  included — carries its batch's real cost (decision 0003 §9).
  *
- *  The Ship dialog takes SERIALS ONLY — there is no quantity and no batch
- *  picker, because a number with no device behind it is a guess (decisions
- *  0032, 0049). Returns, repairs and disposals live on the device page,
- *  because they are events in a device's history.
+ *  Shipping is Pack, then Send (decision 0103): "Pack…" opens a shipment, and a
+ *  shipment takes SERIALS ONLY, because a number with no device behind it is a
+ *  guess (decisions 0032, 0049). Returns, repairs and disposals live on the
+ *  device page, because they are events in a device's history.
  */
 import { useCallback, useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import {
   addOrderInvoice,
   addOrderLine,
-  createShipment,
+  allocateOrderDevices,
+  releaseOrderDevices,
   openShipment,
   reverseShipment,
+  deleteOrder,
   deleteOrderInvoice,
   deleteOrderLine,
   deleteShipment,
   errorMessage,
   getOrder,
-  getOrderStockOptions,
   isAbortError,
   getProjects,
   listCustomers,
@@ -28,23 +29,26 @@ import {
   updateOrderInvoice,
   updateOrderLine,
   type CustomerRow,
-  type FinishedStockRow,
   type InvoiceIn,
   type OrderInvoiceRow,
   type OrderLineRow,
   type OrderPatchBody,
   type OrderRow,
   type ProjectInfo,
-  type ShipmentLineIn,
   type ShipmentRow,
 } from "../api";
-import { useDialog } from "../components/Dialog";
-import { BackLink, ErrorBanner, Spinner, StatusPill } from "../components/Ui";
 import AutoTextarea from "../components/AutoTextarea";
-import Field from "../components/Field";
-import { parseScanSheet } from "./Orders";
+import DataTable, { type Column } from "../components/DataTable";
+import { useDialog } from "../components/Dialog";
+import FoldSection, { StatChip } from "../components/FoldSection";
+import { useModal } from "../components/modal";
+import RowChangesCard from "../components/RowChangesCard";
+import { BackLink, ErrorBanner, Spinner, StatusPill } from "../components/Ui";
+import Field, { FieldGrid } from "../components/Field";
 import { useAuth } from "../auth";
-import { amount, plain, usd } from "../format";
+import { amount, plain, plnAmount, today, plural } from "../format";
+import { parseScanSheet } from "../scanSheet";
+import { SerialsField } from "../components/ScanList";
 
 const INVOICE_KINDS: OrderInvoiceRow["kind"][] = ["advance", "final", "proforma", "correction"];
 
@@ -54,7 +58,6 @@ export default function OrderDetail() {
   const [order, setOrder] = useState<OrderRow | null>(null);
   const [projects, setProjects] = useState<ProjectInfo[]>([]);
   const [error, setError] = useState<string | null>(null);
-  const [shipping, setShipping] = useState(false);
   const dialog = useDialog();
   const navigate = useNavigate();
 
@@ -100,7 +103,7 @@ export default function OrderDetail() {
     <div className="main-solo">
       <div className="page">
         <div className="toolbar">
-          <BackLink to="/production/orders">← Orders</BackLink>
+          <BackLink to="/sales/orders">← Orders</BackLink>
           <h1>
             {order.customer}
             {order.order_ref ? <span className="mono"> · {order.order_ref}</span> : null}
@@ -112,21 +115,13 @@ export default function OrderDetail() {
           </span>
           <button
             type="button"
-            className="btn btn-primary btn-sm"
-            disabled={order.cancelled}
-            onClick={() => setShipping((v) => !v)}
-          >
-            {shipping ? "Close" : "Ship…"}
-          </button>
-          <button
-            type="button"
             className="btn btn-sm"
             disabled={order.cancelled}
             title="Open a shipment for this order and scan devices into it as they are packed"
             onClick={async () => {
               try {
                 const sh = await openShipment({ order_id: order.id });
-                navigate(`/production/shipments/${sh.id}`);
+                navigate(`/sales/shipments/${sh.id}`);
               } catch (err) {
                 setError(errorMessage(err));
               }
@@ -137,21 +132,12 @@ export default function OrderDetail() {
         </div>
         {error ? <ErrorBanner message={error} /> : null}
 
-        {shipping ? (
-          <ShipCard
-            order={order}
-            onDone={(o) => {
-              setOrder(o);
-              setShipping(false);
-            }}
-          />
-        ) : null}
-
         <div className="detail-page order-page">
           <div className="detail-left">
             <LinesCard order={order} projects={projects} apply={apply} />
             <InvoicesCard order={order} apply={apply} />
             <ShipmentsCard order={order} apply={apply} />
+            <RowChangesCard table="sales_orders" id={order.id} />
           </div>
           <div className="detail-right">
             <div className="card pad">
@@ -161,21 +147,21 @@ export default function OrderDetail() {
                   <dt>Revenue (net)</dt>
                   <dd title={eco.revenue_basis === "invoices" ? "sum of advance, final and correction invoices" : "no money invoice yet — the order's line totals"}>
                     {amount(eco.revenue_net, eco.currency)}
-                    <span className="muted"> · {usd(eco.revenue_usd, 0)}</span>
+                    {eco.currency !== "PLN" ? <span className="muted"> · {plnAmount(eco.revenue_pln, 0)}</span> : null}
                     {eco.revenue_basis === "order" ? <span className="muted"> (not invoiced yet)</span> : null}
                   </dd>
                   <dt>Devices shipped</dt>
                   <dd>
                     {eco.shipped_devices.toLocaleString()}
-                    {eco.replacements ? <span className="muted"> · {eco.replacements} replacement{eco.replacements === 1 ? "" : "s"}</span> : null}
+                    {eco.replacements ? <span className="muted"> · {plural(eco.replacements, "replacement")}</span> : null}
                   </dd>
                   <dt>Cost of devices</dt>
-                  <dd>{usd(eco.devices_cost_usd, 0)}</dd>
+                  <dd>{plnAmount(eco.devices_cost_pln, 0)}</dd>
                   <dt>Repairs</dt>
-                  <dd>{usd(eco.repair_cost_usd, 0)}</dd>
+                  <dd>{plnAmount(eco.repair_cost_pln, 0)}</dd>
                   <dt>Margin</dt>
-                  <dd className={(eco.margin_usd ?? 0) < 0 ? "err-text" : undefined}>
-                    {usd(eco.margin_usd, 0)}
+                  <dd className={(eco.margin_pln ?? 0) < 0 ? "err-text" : undefined}>
+                    {plnAmount(eco.margin_pln, 0)}
                     {eco.margin_pct != null ? <span className="muted"> · {eco.margin_pct.toFixed(1)}%</span> : null}
                   </dd>
                 </dl>
@@ -184,14 +170,14 @@ export default function OrderDetail() {
               )}
               {eco && eco.uncosted_units ? (
                 <div className="banner-warn">
-                  {eco.uncosted_units} shipped unit{eco.uncosted_units === 1 ? "" : "s"} carry no batch cost
+                  {plural(eco.uncosted_units, "shipped unit")} carry no batch cost
                   yet — their batch has no priced actuals.
                 </div>
               ) : null}
               {eco && eco.unknown_currencies.length ? (
                 <div className="banner-warn">
                   No exchange rate stored for {eco.unknown_currencies.join(", ")}; those amounts are
-                  not converted. Add it under <Link to="/admin?tab=rates">Admin → Exchange rates</Link>.
+                  not converted. Add it under <Link to="/finance/rates">Finance → Exchange rates</Link>.
                 </div>
               ) : null}
               <p className="muted">
@@ -216,6 +202,7 @@ function HeaderCard({ order, apply }: { order: OrderRow; apply: (w: () => Promis
   const [vat, setVat] = useState(String(order.vat_pct));
   const [notes, setNotes] = useState(order.notes);
   const { companies } = useAuth();
+  const navigate = useNavigate();
   const [companyId, setCompanyId] = useState(order.company_id);
   const dialog = useDialog();
   useEffect(() => {
@@ -257,16 +244,15 @@ function HeaderCard({ order, apply }: { order: OrderRow; apply: (w: () => Promis
   return (
     <div className="card pad edit-card">
       <h2 className="card-title">Order</h2>
-      <div className="field-grid">
-        <label className="fw-wide">
-          Customer
+      <FieldGrid>
+        <Field label="Customer" wide>
           <input className="text" list="order-customer-names" value={customer} onChange={(e) => setCustomer(e.target.value)} />
           <datalist id="order-customer-names">
             {customers.map((c) => (
               <option key={c.id} value={c.name} />
             ))}
           </datalist>
-        </label>
+        </Field>
         <Field label="Seller">
           <select className="text" value={companyId ?? ""} onChange={(e) => setCompanyId(Number(e.target.value))}>
             {companyId === null ? <option value="">—</option> : null}
@@ -275,27 +261,22 @@ function HeaderCard({ order, apply }: { order: OrderRow; apply: (w: () => Promis
             ))}
           </select>
         </Field>
-        <label>
-          Reference
+        <Field label="Reference">
           <input className="text" value={ref} onChange={(e) => setRef(e.target.value)} />
-        </label>
-        <label>
-          Order date
+        </Field>
+        <Field label="Order date">
           <input className="text" value={date} onChange={(e) => setDate(e.target.value)} />
-        </label>
-        <label>
-          Currency
+        </Field>
+        <Field label="Currency">
           <input className="text" value={currency} maxLength={3} onChange={(e) => setCurrency(e.target.value)} />
-        </label>
-        <label>
-          VAT %
+        </Field>
+        <Field label="VAT %">
           <input className="text" value={vat} inputMode="decimal" onChange={(e) => setVat(e.target.value)} />
-        </label>
-        <label className="fw-wide">
-          Notes
-          <textarea className="note-textarea" value={notes} onChange={(e) => setNotes(e.target.value)} />
-        </label>
-      </div>
+        </Field>
+        <Field label="Notes" wide>
+          <AutoTextarea className="text" value={notes} onChange={(e) => setNotes(e.target.value)} />
+        </Field>
+      </FieldGrid>
       <div className="btn-row">
         <button type="button" className="btn btn-primary btn-sm" disabled={!canSave} onClick={save}>
           Save
@@ -321,11 +302,145 @@ function HeaderCard({ order, apply }: { order: OrderRow; apply: (w: () => Promis
         >
           {order.cancelled ? "Reopen" : "Cancel order"}
         </button>
+        <button
+          type="button"
+          className="btn btn-sm btn-danger"
+          title="Only an order no device event names can be deleted. Cancel it otherwise."
+          onClick={async () => {
+            const ok = await dialog.confirm(`Delete this order for ${order.customer}? It cannot be undone here.`, {
+              title: "Delete order",
+              confirmLabel: "Delete order",
+              tone: "danger",
+            });
+            if (!ok) return;
+            try {
+              await deleteOrder(order.id);
+              navigate("/sales/orders");
+            } catch (err) {
+              await dialog.alert(errorMessage(err), { title: "Could not delete the order" });
+            }
+          }}
+        >
+          Delete order…
+        </button>
       </div>
       <p className="muted">
         A new customer name creates the customer. The seller is the company that issues the invoices.
         VAT is printed only; every figure here is net.
       </p>
+    </div>
+  );
+}
+
+/** Reserve devices for one line: reserved, not shipped (decision 0003). The route
+ *  has no dry run, and it writes all of them or none, so a refusal names the
+ *  device and the list stays here to correct. */
+function ReserveDialog({ order, line, onClose }: {
+  order: OrderRow;
+  line: OrderLineRow;
+  onClose: (updated: OrderRow | null) => void;
+}) {
+  const modal = useModal(() => onClose(null));
+  const [text, setText] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const serials = parseScanSheet(text);
+  const reserve = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      onClose(await allocateOrderDevices(order.id, line.id, serials));
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="modal-backdrop" {...modal.backdropProps}>
+      <div className="card pad modal-card modal-card-mid" {...modal.cardProps}>
+        <h2 className="card-title">Reserve devices for {line.product || line.project}</h2>
+        <p className="muted dim">
+          A reserved device stays on the shelf and leaves stock for this line. It must be in stock
+          and belong to {line.project}. A shipment of this order can still take it, and Release…
+          under the list of products gives it back to stock.
+        </p>
+        {error ? <ErrorBanner message={error} /> : null}
+        <SerialsField value={text} onChange={setText} />
+        <div className="btn-row modal-actions">
+          {busy ? <Spinner /> : null}
+          <button type="button" className="btn" onClick={() => onClose(null)}>Cancel</button>
+          <button type="button" className="btn btn-primary" disabled={busy || !serials.length} onClick={() => void reserve()}>
+            Reserve {serials.length || ""}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** Give reserved devices back to stock. The same form as `ReserveDialog`: the
+ *  route writes all of them or none, so a refusal names the device and the list
+ *  stays here to correct. The serials are printed here because no other place on
+ *  this page names them, and "Release all" sends ids, because a scan list drops a
+ *  serial with a dash. */
+function ReleaseDialog({ order, line, onClose }: {
+  order: OrderRow;
+  line: OrderLineRow;
+  onClose: (updated: OrderRow | null) => void;
+}) {
+  const modal = useModal(() => onClose(null));
+  const dialog = useDialog();
+  const [text, setText] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const serials = parseScanSheet(text);
+  const reserved = line.reserved_devices;
+  const nameOf = (d: { device_id: number; serial: string }) => d.serial || `#${d.device_id}`;
+  const listed = (names: string[], limit: number) =>
+    names.length > limit ? `${names.slice(0, limit).join(", ")} and ${names.length - limit} more` : names.join(", ");
+  const release = async (devices: { serials?: string[]; device_ids?: number[] }, names: string[]) => {
+    const ok = await dialog.confirm(
+      `Release ${listed(names, 12)} from ${line.product || line.project}? ${names.length === 1 ? "It goes" : "They go"} back to stock. The device history keeps the reservation and the release.`,
+      { title: "Release reservation", confirmLabel: "Release", tone: "danger" },
+    );
+    if (!ok) return;
+    setBusy(true);
+    setError(null);
+    try {
+      onClose(await releaseOrderDevices(order.id, line.id, devices));
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="modal-backdrop" {...modal.backdropProps}>
+      <div className="card pad modal-card modal-card-mid" {...modal.cardProps}>
+        <h2 className="card-title">Release devices reserved for {line.product || line.project}</h2>
+        <p className="muted dim">
+          A released device goes back to stock. A device packed in a shipment is not released here:
+          take it out on the page of that shipment.
+        </p>
+        <p className="muted dim">
+          Reserved now: <span className="mono">{listed(reserved.map(nameOf), 40)}</span>
+        </p>
+        {error ? <ErrorBanner message={error} /> : null}
+        <SerialsField value={text} onChange={setText} />
+        <div className="btn-row modal-actions">
+          {busy ? <Spinner /> : null}
+          <button type="button" className="btn" onClick={() => onClose(null)}>Cancel</button>
+          <button type="button" className="btn" disabled={busy}
+            onClick={() => void release({ device_ids: reserved.map((d) => d.device_id) }, reserved.map(nameOf))}>
+            Release all {reserved.length}
+          </button>
+          <button type="button" className="btn btn-danger" disabled={busy || !serials.length}
+            onClick={() => void release({ serials }, serials)}>
+            Release {serials.length || ""}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -340,6 +455,8 @@ function LinesCard({
   apply: (w: () => Promise<OrderRow>) => Promise<void>;
 }) {
   const dialog = useDialog();
+  const [reserving, setReserving] = useState<OrderLineRow | null>(null);
+  const [releasing, setReleasing] = useState<OrderLineRow | null>(null);
   const [adding, setAdding] = useState(false);
   const [pid, setPid] = useState(String(projects[0]?.id ?? ""));
   const [product, setProduct] = useState("");
@@ -370,6 +487,118 @@ function LinesCard({
     await apply(() => updateOrderLine(li.id, { unit_price: n }));
   };
 
+  const lineCols: Column<OrderLineRow>[] = [
+    { key: "product", label: "Product", width: 16, className: "mono", get: (li) => li.product || "—" },
+    {
+      key: "project",
+      label: "Project",
+      width: 16,
+      get: (li) => [li.project, li.board, li.variant].filter(Boolean).join(" / "),
+      render: (li) => (
+        <>
+          <Link className="val-link" to={`/projects/${li.project_id}`}>{li.project}</Link>
+          {li.board && li.board !== li.project ? <span className="muted"> {li.board}</span> : null}
+          {li.variant ? <span className="muted"> / {li.variant}</span> : null}
+        </>
+      ),
+    },
+    {
+      key: "ordered",
+      label: "Ordered",
+      width: 10,
+      numeric: true,
+      get: (li) => li.qty_ordered,
+      title: () => "Click to change the quantity ordered",
+      render: (li) => (
+        <button type="button" className="linklike" onClick={() => editQty(li)}>
+          {li.qty_ordered.toLocaleString()}
+        </button>
+      ),
+    },
+    {
+      key: "unit",
+      label: "Unit net",
+      width: 13,
+      numeric: true,
+      get: (li) => li.unit_price,
+      title: () => "Click to change the net unit price",
+      render: (li) => (
+        <button type="button" className="linklike" onClick={() => editPrice(li)}>
+          {plain(li.unit_price)}
+        </button>
+      ),
+    },
+    { key: "net", label: "Net total", width: 16, numeric: true, get: (li) => li.net_total, render: (li) => <>{plain(li.net_total)}</> },
+    {
+      key: "shipped",
+      label: "Shipped",
+      width: 10,
+      numeric: true,
+      get: (li) => li.qty_shipped,
+      title: (li) => `${plural(li.qty_shipped, "device")} delivered${li.qty_replacements ? ` · ${li.qty_replacements} replacement(s) not counted` : ""}`,
+      render: (li) => (
+        <>
+          {li.qty_shipped.toLocaleString()}
+          {li.qty_replacements ? <span className="muted"> +{li.qty_replacements}</span> : null}
+        </>
+      ),
+    },
+    {
+      key: "open",
+      label: "Open",
+      width: 11,
+      numeric: true,
+      get: (li) => li.qty_open,
+      title: () => undefined,
+      render: (li) => <span className={li.qty_open ? "warn-text" : undefined}>{li.qty_open.toLocaleString()}</span>,
+    },
+    {
+      key: "back",
+      label: "Back",
+      width: 8,
+      numeric: true,
+      interactive: false,
+      sortable: true,
+      get: (li) => li.qty_returned || "—",
+      title: () => "devices returned from this line",
+    },
+    {
+      key: "act",
+      label: "",
+      // Two buttons, and no line of it may be cut.
+      width: "150px",
+      interactive: false,
+      get: () => "",
+      title: () => undefined,
+      render: (li) => (
+        <>
+          <button
+            type="button"
+            className="btn btn-sm"
+            disabled={order.cancelled}
+            title="Reserve devices from the shelf for this line"
+            onClick={() => setReserving(li)}
+          >
+            Reserve…
+          </button>{" "}
+          <button
+            type="button"
+            className="btn btn-sm"
+            title="remove this line (only while nothing was shipped against it)"
+            disabled={li.qty_shipped > 0 || li.qty_replacements > 0}
+            onClick={async () => {
+              if (await dialog.confirm(`Remove ${li.product || li.project} from the order?`, { tone: "danger" })) {
+                await apply(() => deleteOrderLine(li.id));
+              }
+            }}
+          >
+            ×
+          </button>
+        </>
+      ),
+    },
+  ];
+
   return (
     <div className="card pad">
       <div className="toolbar">
@@ -379,92 +608,46 @@ function LinesCard({
           {adding ? "Close" : "Add a product"}
         </button>
       </div>
-      <div className="table-wrap">
-        <table className="data order-table order-lines-table">
-          <thead>
-            <tr>
-              <th>Product</th>
-              <th>Project</th>
-              <th className="num">Ordered</th>
-              <th className="num">Unit net</th>
-              <th className="num">Net total</th>
-              <th className="num">Shipped</th>
-              <th className="num">Open</th>
-              <th className="num">Back</th>
-              <th />
-            </tr>
-          </thead>
-          <tbody>
-            {order.lines.map((li) => (
-              <tr key={li.id}>
-                <td className="mono" title={li.product}>{li.product || "—"}</td>
-                <td className="project" title={[li.project, li.board, li.variant].filter(Boolean).join(" / ")}>
-                  <Link className="val-link" to={`/projects/${li.project_id}`}>{li.project}</Link>
-                  {li.board && li.board !== li.project ? <span className="muted"> {li.board}</span> : null}
-                  {li.variant ? <span className="muted"> / {li.variant}</span> : null}
-                </td>
-                <td className="num">
-                  <button type="button" className="val-link" onClick={() => editQty(li)}>
-                    {li.qty_ordered.toLocaleString()}
-                  </button>
-                </td>
-                <td className="num">
-                  <button type="button" className="val-link" onClick={() => editPrice(li)}>
-                    {plain(li.unit_price)}
-                  </button>
-                </td>
-                <td className="num">{plain(li.net_total)}</td>
-                <td
-                  className="num"
-                  title={`${li.qty_shipped} device${li.qty_shipped === 1 ? "" : "s"} delivered${li.qty_replacements ? ` · ${li.qty_replacements} replacement(s) not counted` : ""}`}
-                >
-                  {li.qty_shipped.toLocaleString()}
-                  {li.qty_replacements ? <span className="muted"> +{li.qty_replacements}</span> : null}
-                </td>
-                <td className={"num" + (li.qty_open ? " warn-text" : "")}>{li.qty_open.toLocaleString()}</td>
-                <td className="num" title="devices returned from this line">{li.qty_returned || "—"}</td>
-                <td>
-                  <button
-                    type="button"
-                    className="btn btn-sm"
-                    title="remove this line (only while nothing was shipped against it)"
-                    disabled={li.qty_shipped > 0 || li.qty_replacements > 0}
-                    onClick={async () => {
-                      if (await dialog.confirm(`Remove ${li.product || li.project} from the order?`, { tone: "danger" })) {
-                        await apply(() => deleteOrderLine(li.id));
-                      }
-                    }}
-                  >
-                    ×
-                  </button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      <DataTable rows={order.lines} rowKey={(li) => li.id} columns={lineCols} empty="No products on this order." />
+      {/* Under the table, not in it. On a wide window the page has two columns, this
+          card gets the narrow one (812 px), and a third button in the row cut the
+          numbers. A line can also hold devices in a box, which only count here. */}
+      {order.lines.filter((li) => li.qty_allocated).map((li) => {
+        const reserved = li.reserved_devices.length;
+        const packed = li.qty_allocated - reserved;
+        return (
+          <div className="toolbar" key={li.id}>
+            <span className="muted">
+              {li.product || li.project}:{" "}
+              {[reserved ? `${reserved} reserved` : "", packed ? `${packed} packed in an open shipment` : ""].filter(Boolean).join(", ")}
+            </span>
+            {reserved ? (
+              <button type="button" className="btn btn-sm" title="Give devices reserved on this line back to stock"
+                onClick={() => setReleasing(li)}>
+                Release…
+              </button>
+            ) : null}
+          </div>
+        );
+      })}
       {adding ? (
-        <div className="field-grid">
-          <label>
-            Project
+        <FieldGrid>
+          <Field label="Project">
             <select className="text" value={pid} onChange={(e) => setPid(e.target.value)}>
               {projects.map((p) => (
                 <option key={p.id} value={p.id}>{p.name}</option>
               ))}
             </select>
-          </label>
-          <label>
-            Product (as invoiced)
+          </Field>
+          <Field label="Product (as invoiced)">
             <input className="text" value={product} onChange={(e) => setProduct(e.target.value)} />
-          </label>
-          <label>
-            Quantity
+          </Field>
+          <Field label="Quantity">
             <input className="text num" inputMode="numeric" value={qty} onChange={(e) => setQty(e.target.value)} />
-          </label>
-          <label>
-            Net unit price
+          </Field>
+          <Field label="Net unit price">
             <input className="text num" inputMode="decimal" value={price} onChange={(e) => setPrice(e.target.value)} />
-          </label>
+          </Field>
           <div className="btn-row">
             <button
               type="button"
@@ -483,7 +666,19 @@ function LinesCard({
               Add
             </button>
           </div>
-        </div>
+        </FieldGrid>
+      ) : null}
+      {reserving ? (
+        <ReserveDialog order={order} line={reserving} onClose={(updated) => {
+          setReserving(null);
+          if (updated) void apply(async () => updated);
+        }} />
+      ) : null}
+      {releasing ? (
+        <ReleaseDialog order={order} line={releasing} onClose={(updated) => {
+          setReleasing(null);
+          if (updated) void apply(async () => updated);
+        }} />
       ) : null}
     </div>
   );
@@ -494,7 +689,7 @@ function InvoicesCard({ order, apply }: { order: OrderRow; apply: (w: () => Prom
   const [adding, setAdding] = useState(false);
   const [kind, setKind] = useState<OrderInvoiceRow["kind"]>(order.invoices?.length ? "final" : "advance");
   const [number, setNumber] = useState("");
-  const [issue, setIssue] = useState(new Date().toISOString().slice(0, 10));
+  const [issue, setIssue] = useState(today);
   const [due, setDue] = useState("");
   const [net, setNet] = useState("");
   const [paid, setPaid] = useState("");
@@ -516,11 +711,66 @@ function InvoicesCard({ order, apply }: { order: OrderRow; apply: (w: () => Prom
   const markPaid = async (inv: OrderInvoiceRow) => {
     const v = await dialog.prompt(`Paid on (date) — ${inv.number}:`, {
       title: "Mark paid",
-      initial: inv.paid_at || new Date().toISOString().slice(0, 10),
+      initial: inv.paid_at || today(),
     });
     if (v == null) return;
     await apply(() => updateOrderInvoice(inv.id, { paid_at: v.trim() }));
   };
+
+  const overdue = (inv: OrderInvoiceRow) =>
+    !inv.paid_at && !!inv.due_date && inv.due_date < today() && inv.kind !== "proforma";
+  const invoiceCols: Column<OrderInvoiceRow>[] = [
+    { key: "kind", label: "Kind", width: 10, get: (inv) => inv.kind },
+    { key: "number", label: "Number", width: 24, className: "mono", get: (inv) => inv.number },
+    { key: "issued", label: "Issued", width: 12, className: "mono", get: (inv) => inv.issue_date || "—" },
+    {
+      key: "due",
+      label: "Due",
+      width: 12,
+      className: "mono",
+      get: (inv) => inv.due_date || "—",
+      title: (inv) => (overdue(inv) ? "overdue" : undefined),
+      render: (inv) => <span className={overdue(inv) ? "err-text" : undefined}>{inv.due_date || "—"}</span>,
+    },
+    { key: "net", label: "Net", width: 16, numeric: true, get: (inv) => inv.net_amount, render: (inv) => <>{amount(inv.net_amount, inv.currency)}</> },
+    {
+      key: "paid",
+      label: "Paid",
+      width: 14,
+      get: (inv) => (inv.kind === "proforma" ? "n/a" : inv.paid_at || "not paid"),
+      title: () => undefined,
+      render: (inv) => (inv.kind === "proforma" ? (
+        <span className="muted">n/a</span>
+      ) : inv.paid_at ? (
+        <button type="button" className="linklike mono" title="Change the date" onClick={() => markPaid(inv)}>{inv.paid_at}</button>
+      ) : (
+        <button type="button" className="btn btn-sm" onClick={() => markPaid(inv)}>mark paid</button>
+      )),
+    },
+    {
+      key: "act",
+      label: "",
+      width: 12,
+      interactive: false,
+      className: "ctr",
+      get: () => "",
+      title: () => undefined,
+      render: (inv) => (
+        <button
+          type="button"
+          className="btn btn-sm"
+          title={`Delete invoice ${inv.number}`}
+          onClick={async () => {
+            if (await dialog.confirm(`Delete invoice ${inv.number} from the order?`, { tone: "danger" })) {
+              await apply(() => deleteOrderInvoice(inv.id));
+            }
+          }}
+        >
+          ×
+        </button>
+      ),
+    },
+  ];
 
   return (
     <div className="card pad">
@@ -543,82 +793,32 @@ function InvoicesCard({ order, apply }: { order: OrderRow; apply: (w: () => Prom
       {invoices.length === 0 ? (
         <p className="muted">Nothing issued yet.</p>
       ) : (
-        <div className="table-wrap">
-          <table className="data order-table order-invoices-table">
-            <thead>
-              <tr>
-                <th>Kind</th>
-                <th>Number</th>
-                <th>Issued</th>
-                <th>Due</th>
-                <th className="num">Net</th>
-                <th>Paid</th>
-                <th />
-              </tr>
-            </thead>
-            <tbody>
-              {invoices.map((inv) => {
-                const overdue = !inv.paid_at && inv.due_date && inv.due_date < new Date().toISOString().slice(0, 10) && inv.kind !== "proforma";
-                return (
-                  <tr key={inv.id} className={inv.kind === "proforma" ? "dim" : undefined}>
-                    <td>{inv.kind}</td>
-                    <td className="mono" title={inv.number}>{inv.number}</td>
-                    <td className="mono">{inv.issue_date || "—"}</td>
-                    <td className={"mono" + (overdue ? " err-text" : "")} title={overdue ? "overdue" : undefined}>{inv.due_date || "—"}</td>
-                    <td className="num">{amount(inv.net_amount, inv.currency)}</td>
-                    <td>
-                      {inv.kind === "proforma" ? (
-                        <span className="muted">n/a</span>
-                      ) : inv.paid_at ? (
-                        <button type="button" className="val-link mono" onClick={() => markPaid(inv)}>{inv.paid_at}</button>
-                      ) : (
-                        <button type="button" className="btn btn-sm" onClick={() => markPaid(inv)}>mark paid</button>
-                      )}
-                    </td>
-                    <td>
-                      <button
-                        type="button"
-                        className="btn btn-sm"
-                        onClick={async () => {
-                          if (await dialog.confirm(`Delete invoice ${inv.number} from the order?`, { tone: "danger" })) {
-                            await apply(() => deleteOrderInvoice(inv.id));
-                          }
-                        }}
-                      >
-                        ×
-                      </button>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
+        <DataTable
+          rows={invoices}
+          rowKey={(inv) => inv.id}
+          rowClass={(inv) => (inv.kind === "proforma" ? "dim" : "")}
+          columns={invoiceCols}
+        />
       )}
       {adding ? (
-        <div className="field-grid">
-          <label>
-            Kind
+        <FieldGrid>
+          <Field label="Kind">
             <select className="text" value={kind} onChange={(e) => setKind(e.target.value as OrderInvoiceRow["kind"])}>
               {INVOICE_KINDS.map((k) => (
                 <option key={k} value={k}>{k}</option>
               ))}
             </select>
-          </label>
-          <label>
-            Number
+          </Field>
+          <Field label="Number">
             <input className="text" value={number} placeholder="ZAL 00001/03/2026" onChange={(e) => setNumber(e.target.value)} />
-          </label>
-          <label>
-            Issued
+          </Field>
+          <Field label="Issued">
             <input className="text" value={issue} onChange={(e) => setIssue(e.target.value)} />
-          </label>
-          <label>
-            Due (blank = issue + terms)
+          </Field>
+          <Field label="Due (blank = issue + terms)">
             <input className="text" value={due} onChange={(e) => setDue(e.target.value)} />
-          </label>
-          <label>
-            Net amount ({order.currency})
+          </Field>
+          <Field label={`Net amount (${order.currency})`}>
             <input
               className="text num"
               inputMode="decimal"
@@ -626,15 +826,14 @@ function InvoicesCard({ order, apply }: { order: OrderRow; apply: (w: () => Prom
               placeholder={kind === "advance" && order.total_net ? plain(order.total_net * 0.6) : ""}
               onChange={(e) => setNet(e.target.value)}
             />
-          </label>
-          <label>
-            Paid on (optional)
+          </Field>
+          <Field label="Paid on (optional)">
             <input className="text" value={paid} onChange={(e) => setPaid(e.target.value)} />
-          </label>
+          </Field>
           <div className="btn-row">
             <button type="button" className="btn btn-primary btn-sm" onClick={submit}>Add</button>
           </div>
-        </div>
+        </FieldGrid>
       ) : null}
     </div>
   );
@@ -642,320 +841,180 @@ function InvoicesCard({ order, apply }: { order: OrderRow; apply: (w: () => Prom
 
 function ShipmentsCard({ order, apply }: { order: OrderRow; apply: (w: () => Promise<OrderRow>) => Promise<void> }) {
   const dialog = useDialog();
-  const [open, setOpen] = useState<number | null>(null);
   const shipments = order.shipments ?? [];
   const lineName = (id: number) => {
     const li = order.lines.find((l) => l.id === id);
     return li ? li.product || li.project : `line ${id}`;
   };
+  const contentOf = (sh: ShipmentRow) =>
+    Object.entries(sh.per_line).map(([lid, n]) => `${n} × ${lineName(Number(lid))}`).join(", ");
+  const remove = async (sh: ShipmentRow) => {
+    if (await dialog.confirm("Delete this shipment? Only possible while no device is recorded on it.", { tone: "danger" })) {
+      await apply(() => deleteShipment(sh.id));
+    }
+  };
+  const takeBack = async (sh: ShipmentRow) => {
+    const plan = await reverseShipment(sh.id, { dry_run: true });
+    const what = plan.devices.length
+      ? `${plural(plan.devices.length, "device")}`
+      : "";
+    if (
+      await dialog.confirm(
+        `Take this shipment back? ${what} return to stock and the order stops counting them as delivered. ` +
+          "Use this only for a delivery recorded in error — a shipment the customer received comes back as a return, on the device.",
+        { tone: "danger", confirmLabel: "Take it back" },
+      )
+    ) {
+      await apply(async () => {
+        await reverseShipment(sh.id, { dry_run: false, note: "" });
+        return await getOrder(order.id);
+      });
+    }
+  };
+  const columns: Column<ShipmentRow>[] = [
+    { key: "date", label: "Date", width: 11, className: "mono", get: (sh) => sh.shipped_at || "—" },
+    {
+      key: "kind",
+      label: "Kind",
+      width: 11,
+      get: (sh) => (sh.kind === "return" ? "return" : sh.status !== "sent" ? sh.status : "delivery"),
+      render: (sh) => (sh.kind === "return" ? (
+        <span className="pill warn">return</span>
+      ) : sh.status !== "sent" ? (
+        <Link to={`/sales/shipments/${sh.id}`} onClick={(e) => e.stopPropagation()} title="Open the packing page">
+          <StatusPill status={sh.status} />
+        </Link>
+      ) : (
+        "delivery"
+      )),
+    },
+    {
+      key: "content",
+      label: "Content",
+      width: 39,
+      get: (sh) => contentOf(sh),
+      // The row is one line, so what it cuts stays readable on the hover.
+      title: (sh) => [
+        contentOf(sh),
+        sh.devices.length ? `${plural(sh.devices.length, "serial")}` : "",
+        sh.reversed ? `${sh.reversed} taken back` : "",
+      ].filter(Boolean).join(" · "),
+      render: (sh) => (
+        <>
+          {contentOf(sh) || <span className="muted">nothing</span>}
+          {sh.devices.length ? <span className="muted"> · {plural(sh.devices.length, "serial")}</span> : null}
+          {sh.reversed ? <span className="muted"> · {sh.reversed} taken back</span> : null}
+        </>
+      ),
+    },
+    { key: "note", label: "Delivery note", width: 17, get: (sh) => sh.delivery_note || "—" },
+    { key: "tracking", label: "Tracking", width: 11, get: (sh) => sh.tracking || "—" },
+    {
+      key: "act",
+      label: "",
+      width: 11,
+      interactive: false,
+      className: "ctr",
+      get: () => "",
+      title: () => undefined,
+      // A reversed shipment carries no device but still carries EVENTS, and
+      // `delete_shipment` refuses those — so `deletable` decides the button,
+      // never `devices.length`, which would offer a delete the API answers 409 to.
+      render: (sh) => (sh.kind === "delivery" && sh.status === "sent" && sh.devices.length > 0 ? (
+        <button
+          type="button"
+          className="btn btn-sm"
+          title="Take back a delivery recorded in error"
+          onClick={(e) => {
+            e.stopPropagation();
+            void takeBack(sh);
+          }}
+        >
+          Take back
+        </button>
+      ) : sh.deletable && sh.status !== "open" ? (
+        <button
+          type="button"
+          className="btn btn-sm"
+          title="Delete this shipment"
+          onClick={(e) => {
+            e.stopPropagation();
+            void remove(sh);
+          }}
+        >
+          ×
+        </button>
+      ) : null),
+    },
+  ];
+  const sent = shipments.filter((s) => s.kind === "delivery" && s.status === "sent").length;
+  const boxes = shipments.filter((s) => s.status === "open").length;
+  const returns = shipments.filter((s) => s.kind === "return").length;
+  const serials = shipments.reduce((a, s) => a + s.devices.length, 0);
   return (
-    <div className="card pad">
-      <h2 className="card-title">Shipments</h2>
+    <FoldSection
+      title="Shipments"
+      count={shipments.length}
+      foldKey={`order:${order.id}:shipments`}
+      chips={
+        <>
+          {boxes ? <StatChip n={boxes} tone="warn" title="Boxes being packed, not sent">open</StatChip> : null}
+          {returns ? <StatChip n={returns} tone="warn">returned</StatChip> : null}
+          {sent ? <StatChip n={sent} tone="ok">sent</StatChip> : null}
+          {serials ? <StatChip n={serials.toLocaleString()}>serials</StatChip> : null}
+        </>
+      }
+    >
       {shipments.length === 0 ? (
         <p className="muted">Nothing shipped yet.</p>
       ) : (
-        <div className="table-wrap">
-          <table className="data order-table order-shipments-table">
-            <thead>
-              <tr>
-                <th>Date</th>
-                <th>Kind</th>
-                <th>Content</th>
-                <th>Delivery note</th>
-                <th>Tracking</th>
-                <th />
-              </tr>
-            </thead>
-            <tbody>
-              {shipments.map((sh) => (
-                <ShipmentRows
-                  key={sh.id}
-                  sh={sh}
-                  open={open === sh.id}
-                  onToggle={() => setOpen((v) => (v === sh.id ? null : sh.id))}
-                  lineName={lineName}
-                  onDelete={async () => {
-                    if (await dialog.confirm("Delete this shipment? Only possible while no device is recorded on it.", { tone: "danger" })) {
-                      await apply(() => deleteShipment(sh.id));
-                    }
-                  }}
-                  onReverse={async () => {
-                    const plan = await reverseShipment(sh.id, { dry_run: true });
-                    const what = plan.devices.length
-                      ? `${plan.devices.length} device${plan.devices.length === 1 ? "" : "s"}`
-                      : "";
-                    if (
-                      await dialog.confirm(
-                        `Take this shipment back? ${what} return to stock and the order stops counting them as delivered. ` +
-                          "Use this only for a delivery recorded in error — a shipment the customer received comes back as a return, on the device.",
-                        { tone: "danger", confirmLabel: "Take it back" },
-                      )
-                    ) {
-                      await apply(async () => {
-                        await reverseShipment(sh.id, { dry_run: false, note: "" });
-                        return await getOrder(order.id);
-                      });
-                    }
-                  }}
-                />
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <DataTable
+          rows={shipments}
+          rowKey={(sh) => sh.id}
+          columns={columns}
+          expand={(sh) => <ShipmentSerials sh={sh} />}
+        />
       )}
-    </div>
+    </FoldSection>
   );
 }
 
-function ShipmentRows({
-  sh,
-  open,
-  onToggle,
-  lineName,
-  onDelete,
-  onReverse,
-}: {
-  sh: ShipmentRow;
-  open: boolean;
-  onToggle: () => void;
-  lineName: (id: number) => string;
-  onDelete: () => void;
-  onReverse: () => void;
-}) {
-  const content = Object.entries(sh.per_line)
-    .map(([lid, n]) => `${n} × ${lineName(Number(lid))}`)
-    .join(", ");
+/** What one shipment carried, opened under its row. */
+function ShipmentSerials({ sh }: { sh: ShipmentRow }) {
+  const returned = sh.devices.filter((d) => d.state === "returned").length;
+  const disposed = sh.devices.filter((d) => d.state === "disposed").length;
+  const replacements = sh.devices.filter((d) => d.replaces_device_id).length;
   return (
     <>
-      <tr onClick={onToggle} className="clickable">
-        <td className="mono">{sh.shipped_at || "—"}</td>
-        <td>
-          {sh.kind === "return" ? (
-            <span className="pill warn">return</span>
-          ) : sh.status !== "sent" ? (
-            <Link to={`/production/shipments/${sh.id}`} onClick={(e) => e.stopPropagation()} title="Open the packing page">
-              <StatusPill status={sh.status} />
-            </Link>
-          ) : (
-            "delivery"
-          )}
-        </td>
-        <td title={content}>
-          {content || <span className="muted">nothing</span>}
-          {sh.devices.length ? <span className="muted"> · {sh.devices.length} serial{sh.devices.length === 1 ? "" : "s"}</span> : null}
-          {sh.reversed ? <span className="muted"> · {sh.reversed} taken back</span> : null}
-        </td>
-        <td title={sh.delivery_note}>{sh.delivery_note || "—"}</td>
-        <td title={sh.tracking}>{sh.tracking || "—"}</td>
-        <td>
-          {/* A reversed shipment carries no device but still carries EVENTS,
-              and `delete_shipment` refuses those — so `deletable` decides the
-              button, never `devices.length`, which would offer a delete the
-              API answers 409 to. */}
-          {sh.kind === "delivery" && sh.status === "sent" && sh.devices.length > 0 ? (
-            <button
-              type="button"
-              className="btn btn-sm"
-              title="Take back a delivery recorded in error"
-              onClick={(e) => {
-                e.stopPropagation();
-                onReverse();
-              }}
-            >
-              Take back
-            </button>
-          ) : sh.deletable && sh.status !== "open" ? (
-            <button
-              type="button"
-              className="btn btn-sm"
-              title="Delete this shipment"
-              onClick={(e) => {
-                e.stopPropagation();
-                onDelete();
-              }}
-            >
-              ×
-            </button>
-          ) : null}
-        </td>
-      </tr>
-      {open ? (
-        <tr>
-          <td colSpan={6} className="expand-cell">
-            {sh.devices.length ? (
-              <div className="serial-cloud">
-                {sh.devices.map((d) => (
-                  <Link
-                    key={d.device_id}
-                    className={"pill mono " + (d.state === "returned" ? "warn" : d.state === "disposed" ? "err" : "neutral")}
-                    to={`/production/devices/${d.device_id}`}
-                    title={`${d.state}${d.auto ? " · picked FIFO" : ""}${d.replaces_device_id ? " · replacement" : ""}`}
-                  >
-                    {d.serial || d.mac}
-                  </Link>
-                ))}
-              </div>
-            ) : null}
-            {sh.notes ? <p className="muted">{sh.notes}</p> : null}
-          </td>
-        </tr>
-      ) : null}
-    </>
-  );
-}
-
-/** The Ship dialog: per open line, the serials that physically left.
- *
- *  There is no quantity and no batch picker. A shipment is a SET OF SERIALS —
- *  a quantity with no device behind it is a guess, and a guess cannot be told
- *  from an observation once it is written. The batch table below is read-only,
- *  there to show what is on the shelf while you scan. */
-function ShipCard({ order, onDone }: { order: OrderRow; onDone: (o: OrderRow) => void }) {
-  const [options, setOptions] = useState<Record<string, FinishedStockRow[]> | null>(null);
-  const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
-  const [note, setNote] = useState("");
-  const [tracking, setTracking] = useState("");
-  const [rows, setRows] = useState<Record<number, { serials: string }>>({});
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    const ac = new AbortController();
-    getOrderStockOptions(order.id, ac.signal)
-      .then((o) => {
-        setOptions(o);
-        const init: typeof rows = {};
-        for (const li of order.lines) init[li.id] = { serials: "" };
-        setRows(init);
-      })
-      .catch((err) => {
-        if (!isAbortError(err)) setError(errorMessage(err));
-      });
-    return () => ac.abort();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [order.id]);
-
-  const submit = async () => {
-    const lines: ShipmentLineIn[] = [];
-    for (const li of order.lines) {
-      const r = rows[li.id];
-      if (!r) continue;
-      const serials = parseScanSheet(r.serials);
-      if (!serials.length) continue;
-      // A scan sheet carries the string on the label; a person reading the
-      // device list has the row id. The endpoint resolves both, and names any
-      // serial it does not know rather than shipping a short list.
-      const ids = serials.filter((x) => /^\d+$/.test(x)).map(Number);
-      const labels = serials.filter((x) => !/^\d+$/.test(x));
-      lines.push({ order_line_id: li.id, device_ids: ids, serials: labels, note: "" });
-    }
-    if (!lines.length) {
-      setError("Nothing to ship: scan or paste the serials that left, on at least one line.");
-      return;
-    }
-    setBusy(true);
-    setError(null);
-    try {
-      onDone(await createShipment(order.id, { shipped_at: date.trim(), delivery_note: note.trim(), tracking: tracking.trim(), lines }));
-    } catch (err) {
-      setError(errorMessage(err));
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const set = (lid: number, patch: Partial<(typeof rows)[number]>) =>
-    setRows((rs) => ({ ...rs, [lid]: { ...rs[lid], ...patch } }));
-
-  return (
-    <div className="card pad edit-card">
-      <h2 className="card-title">Ship</h2>
-      <p className="card-subtitle">
-        Scan or paste the serials that physically left. A shipment names its devices — there is no
-        quantity to type, because a number with no device behind it is a guess. A device that is
-        faulty or is not in stock is refused by name rather than silently skipped.
-      </p>
-      {error ? <ErrorBanner message={error} /> : null}
-      <div className="field-grid">
-        <label>
-          Shipped on
-          <input className="text" value={date} onChange={(e) => setDate(e.target.value)} />
-        </label>
-        <label>
-          Delivery note
-          <input className="text" value={note} onChange={(e) => setNote(e.target.value)} />
-        </label>
-        <label>
-          Tracking
-          <input className="text" value={tracking} onChange={(e) => setTracking(e.target.value)} />
-        </label>
-      </div>
-      {!options ? (
-        <Spinner label="Counting stock…" />
-      ) : (
-        order.lines.map((li) => {
-          const opts = options[String(li.id)] ?? [];
-          const r = rows[li.id];
-          if (!r) return null;
-          const scanned = parseScanSheet(r.serials).length;
-          return (
-            <div key={li.id} className="ship-line">
-              <h3 className="card-subtitle">
-                {li.product || li.project} — {li.qty_open.toLocaleString()} open of {li.qty_ordered.toLocaleString()}
-              </h3>
-              {opts.length === 0 ? (
-                <p className="muted">No stock in {li.project}.</p>
-              ) : (
-                <div className="table-wrap">
-                  <table className="data order-table ship-batches-table">
-                    <thead>
-                      <tr>
-                        <th>Batch</th>
-                        <th className="num">Available</th>
-                        <th className="num">Held back</th>
-                        <th className="num">Unit cost</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {opts.map((o) => {
-                        const held = Object.values(o.devices_held ?? {}).reduce((a, b) => a + b, 0);
-                        return (
-                          <tr key={o.run_id}>
-                            <td title={o.label}>{o.label} <span className="muted">{o.run_date}</span></td>
-                            <td className="num">{(o.devices_available ?? o.devices_in_stock).toLocaleString()}</td>
-                            <td className={"num" + (held ? " warn-text" : "")}>
-                              {held ? Object.entries(o.devices_held ?? {}).map(([k, v]) => `${v} ${k}`).join(", ") : "—"}
-                            </td>
-                            <td className="num">{usd(o.unit_cost_usd)}</td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-              <Field
-                label="Serials that left"
-                hint={scanned ? `${scanned} scanned` : "One per line, or paste the scanner's CSV export whole."}
+      {sh.devices.length ? (
+        <FoldSection
+          bare
+          title="Serials"
+          count={sh.devices.length}
+          foldKey={`shipment:${sh.id}:serials`}
+          chips={
+            <>
+              {returned ? <StatChip n={returned} tone="warn">returned</StatChip> : null}
+              {disposed ? <StatChip n={disposed} tone="err">disposed</StatChip> : null}
+              {replacements ? <StatChip n={replacements}>replacements</StatChip> : null}
+            </>
+          }
+        >
+          <div className="serial-cloud">
+            {sh.devices.map((d) => (
+              <Link
+                key={d.device_id}
+                className={"pill mono " + (d.state === "returned" ? "warn" : d.state === "disposed" ? "err" : "neutral")}
+                to={`/production/devices/${d.device_id}`}
+                title={`${d.state}${d.auto ? " · picked FIFO" : ""}${d.replaces_device_id ? " · replacement" : ""}`}
               >
-                <AutoTextarea
-                  className="text mono"
-                  rows={3}
-                  maxRows={14}
-                  value={r.serials}
-                  placeholder={"D4E9F4F56838\n20E7C8929814\n…"}
-                  onChange={(e) => set(li.id, { serials: e.target.value })}
-                />
-              </Field>
-            </div>
-          );
-        })
-      )}
-      <div className="btn-row">
-        <button type="button" className="btn btn-primary" disabled={busy || !options} onClick={submit}>
-          {busy ? "Shipping…" : "Record shipment"}
-        </button>
-      </div>
-    </div>
+                {d.serial || d.mac}
+              </Link>
+            ))}
+          </div>
+        </FoldSection>
+      ) : null}
+      {sh.notes ? <p className="muted">{sh.notes}</p> : null}
+    </>
   );
 }

@@ -111,7 +111,7 @@ export default function ComponentPickDialog({
     <div className="modal-backdrop" {...modal.backdropProps}>
       <div className="card pad modal-card" {...modal.cardProps}>
         <h2 className="card-title">{title ?? "Link to a library component"}</h2>
-        <p className="card-subtitle">
+        <p className="muted dim">
           “{line.label || line.kind}”
           {line.mpn ? <> — MPN <span className="mono">{line.mpn}</span></> : null}
           {line.component_name ? <> · linked to <strong>{line.component_name}</strong></> : null}

@@ -11,6 +11,7 @@
 import { useState, type FormEvent } from "react";
 
 import { errorMessage, type AuthUser } from "../api";
+import Field from "../components/Field";
 import { ErrorBanner } from "../components/Ui";
 
 interface Props {
@@ -47,8 +48,7 @@ export default function Login({ signIn, onSignedIn }: Props) {
 
         <ErrorBanner message={error} />
 
-        <label className="login-field">
-          <span className="login-label">Username</span>
+        <Field label="Username">
           <input
             className="text"
             value={username}
@@ -57,10 +57,9 @@ export default function Login({ signIn, onSignedIn }: Props) {
             autoFocus
             required
           />
-        </label>
+        </Field>
 
-        <label className="login-field">
-          <span className="login-label">Password</span>
+        <Field label="Password">
           <input
             className="text"
             type="password"
@@ -69,7 +68,7 @@ export default function Login({ signIn, onSignedIn }: Props) {
             autoComplete="current-password"
             required
           />
-        </label>
+        </Field>
 
         <button className="btn btn-primary login-submit" type="submit" disabled={busy}>
           {busy ? "Signing in…" : "Sign in"}

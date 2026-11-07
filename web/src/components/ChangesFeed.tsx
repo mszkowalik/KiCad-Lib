@@ -10,8 +10,11 @@ import {
 } from "../api";
 import ChangeDetail from "./ChangeDetail";
 import DataTable, { type Column } from "./DataTable";
+import { StatChip } from "./FoldSection";
 import { ErrorBanner, Spinner } from "./Ui";
+import { useDebounced } from "./useDebounced";
 import { useInfiniteScroll } from "./useInfiniteScroll";
+import { localWhen } from "../format";
 
 /** Recent edits, newest first, across everything the library versions.
  *
@@ -47,6 +50,28 @@ export function when(iso: string): string {
   return days < 30 ? `${days} d ago` : then.toLocaleDateString();
 }
 
+
+/** The chips that narrow a feed the server pages: one toggle per kind. */
+export function KindChips<K extends string>({ options, on, onChange }: {
+  options: { key: K; label: string }[];
+  on: K[];
+  onChange: (next: K[]) => void;
+}) {
+  return (
+    <nav className="chip-row" aria-label="Filter by kind">
+      {options.map((k) => (
+        <button
+          key={k.key}
+          type="button"
+          className={"topbar-link" + (on.includes(k.key) ? " active" : "")}
+          onClick={() => onChange(on.includes(k.key) ? on.filter((x) => x !== k.key) : [...on, k.key])}
+        >
+          {k.label}
+        </button>
+      ))}
+    </nav>
+  );
+}
 
 /** One subject's changes, merged.
  *
@@ -111,7 +136,7 @@ function groupRows(rows: ChangeRow[]): FeedGroup[] {
 }
 
 /** The page a change is about. Every kind but a 3D upload has one. */
-export function subjectHref(r: ChangeRow | null): string | null {
+function subjectHref(r: ChangeRow | null): string | null {
   if (r === null || r.subject_kind === null || r.subject_id === null) return null;
   if (r.subject_kind === "component") return `/library/components/${r.subject_id}`;
   if (r.subject_kind === "skill") return `/library/skills/${r.subject_id}`;
@@ -139,7 +164,7 @@ function GroupDetail({ group }: { group: FeedGroup }) {
                 e.stopPropagation();
                 setSel(r.key);
               }}
-              title={new Date(r.ts).toLocaleString()}
+              title={localWhen(r.ts)}
             >
               <span className={`change-kind ${r.kind}`}>{r.kind}</span>{" "}
               {r.action_label ?? r.action}
@@ -165,13 +190,7 @@ export default function ChangesFeed() {
   // table's own filter boxes so the feed looks and works like every other list.
   const [kinds, setKinds] = useState<ChangeKind[]>([]);
   const [typed, setTyped] = useState({ name: "", actor: "" });
-  const [applied, setApplied] = useState({ name: "", actor: "" });
-
-  useEffect(() => {
-    if (typed.name === applied.name && typed.actor === applied.actor) return;
-    const t = window.setTimeout(() => setApplied(typed), DEBOUNCE_MS);
-    return () => window.clearTimeout(t);
-  }, [typed, applied]);
+  const applied = useDebounced(typed, DEBOUNCE_MS);
 
   // A filter change is a different feed: drop what is loaded and start again,
   // or the new first page would be appended under stale rows.
@@ -217,9 +236,6 @@ export default function ChangesFeed() {
   }, [busy, hasMore, cursor, kinds, applied]);
 
   const sentinel = useInfiniteScroll(loadMore, hasMore, busy);
-
-  const toggleKind = (k: ChangeKind) =>
-    setKinds((prev) => (prev.includes(k) ? prev.filter((x) => x !== k) : [...prev, k]));
 
   const groups = useMemo(() => groupRows(rows), [rows]);
 
@@ -291,25 +307,14 @@ export default function ChangesFeed() {
       width: 22,
       interactive: false,
       get: (g) => g.ts,
-      render: (g) => <span title={new Date(g.ts).toLocaleString()}>{when(g.ts)}</span>,
+      render: (g) => <span title={localWhen(g.ts)}>{when(g.ts)}</span>,
     },
   ];
 
   return (
     <div className="page">
       <div className="toolbar">
-        <nav className="chip-row" aria-label="Filter by kind">
-          {KINDS.map((k) => (
-            <button
-              key={k.key}
-              type="button"
-              className={"topbar-link" + (kinds.includes(k.key) ? " active" : "")}
-              onClick={() => toggleKind(k.key)}
-            >
-              {k.label}
-            </button>
-          ))}
-        </nav>
+        <KindChips options={KINDS} on={kinds} onChange={setKinds} />
         {kinds.length > 0 ? (
           <button type="button" className="btn btn-sm" onClick={() => setKinds([])}>
             All kinds
@@ -318,6 +323,15 @@ export default function ChangesFeed() {
       </div>
 
       {error !== null ? <ErrorBanner message={error} /> : null}
+
+      {/* The feed is paged on a cursor and the server sends no total, so these
+          count what is loaded and say so. */}
+      {rows.length ? (
+        <div className="stat-row">
+          <StatChip n={`${rows.length.toLocaleString()}${hasMore ? "+" : ""}`}>{hasMore ? "changes loaded" : "changes"}</StatChip>
+          <StatChip n={`${groups.length.toLocaleString()}${hasMore ? "+" : ""}`}>{hasMore ? "subjects loaded" : "subjects"}</StatChip>
+        </div>
+      ) : null}
 
       <div className="table-wrap">
         <DataTable

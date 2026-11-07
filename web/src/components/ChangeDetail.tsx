@@ -9,6 +9,8 @@ import {
   type ChangeKind,
   type ChangeRowDiff,
 } from "../api";
+import DataTable from "./DataTable";
+import { fmtBytes } from "./flasher/common";
 import GeometryDiff from "./GeometryDiff";
 import { ErrorBanner, Spinner } from "./Ui";
 
@@ -24,45 +26,29 @@ import { ErrorBanner, Spinner } from "./Ui";
 
 export function KeyValueDiff({ rows }: { rows: { key: string; before?: string; after?: string }[] }) {
   return (
-    <table className="data data-fixed">
-      <colgroup>
-        <col style={{ width: "26%" }} />
-        <col style={{ width: "37%" }} />
-        <col style={{ width: "37%" }} />
-      </colgroup>
-      <thead>
-        <tr>
-          <th>Key</th>
-          <th>Before</th>
-          <th>After</th>
-        </tr>
-      </thead>
-      <tbody>
-        {rows.map((r) => (
-          <tr key={r.key}>
-            <td className="mono" title={r.key}>
-              {r.key}
-            </td>
-            <td title={r.before}>{r.before ?? <span className="dim">—</span>}</td>
-            <td title={r.after}>{r.after ?? <span className="dim">—</span>}</td>
-          </tr>
-        ))}
-      </tbody>
-    </table>
+    <DataTable
+      rows={rows}
+      rowKey={(r) => r.key}
+      columns={[
+        { key: "key", label: "Key", width: 26, className: "mono", get: (r) => r.key },
+        { key: "before", label: "Before", width: 37, get: (r) => r.before,
+          render: (r) => r.before ?? <span className="dim">—</span> },
+        { key: "after", label: "After", width: 37, get: (r) => r.after,
+          render: (r) => r.after ?? <span className="dim">—</span> },
+      ]}
+    />
   );
 }
 
 /** Pins or pads, keyed by the number that identifies them. */
 function RowDiffTable({ diff }: { diff: ChangeRowDiff }) {
   const cells = (v: Record<string, string> | undefined) =>
-    v === undefined ? (
-      <span className="dim">—</span>
-    ) : (
-      Object.entries(v)
-        .filter(([, val]) => val !== "")
-        .map(([k, val]) => `${k} ${val}`)
-        .join(", ")
-    );
+    v === undefined
+      ? ""
+      : Object.entries(v)
+          .filter(([, val]) => val !== "")
+          .map(([k, val]) => `${k} ${val}`)
+          .join(", ");
   const rows = [
     ...diff.changed.map((r) => ({ id: r.id, before: r.before, after: r.after, what: "changed" })),
     ...diff.added.map((r) => ({ id: r.id, before: undefined, after: r.after, what: "added" })),
@@ -80,32 +66,18 @@ function RowDiffTable({ diff }: { diff: ChangeRowDiff }) {
       <div className="change-section-title">
         {diff.label} — {rows.length} changed, {diff.unchanged} unchanged
       </div>
-      <table className="data data-fixed">
-        <colgroup>
-          <col style={{ width: "14%" }} />
-          <col style={{ width: "12%" }} />
-          <col style={{ width: "37%" }} />
-          <col style={{ width: "37%" }} />
-        </colgroup>
-        <thead>
-          <tr>
-            <th>#</th>
-            <th />
-            <th>Before</th>
-            <th>After</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((r) => (
-            <tr key={`${r.what}-${r.id}`}>
-              <td className="mono">{r.id}</td>
-              <td className="muted">{r.what}</td>
-              <td>{cells(r.before)}</td>
-              <td>{cells(r.after)}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      <DataTable
+        rows={rows}
+        rowKey={(r) => `${r.what}-${r.id}`}
+        columns={[
+          { key: "id", label: "#", width: 14, className: "mono", get: (r) => r.id },
+          { key: "what", label: "", width: 12, className: "muted", get: (r) => r.what },
+          { key: "before", label: "Before", width: 37, get: (r) => cells(r.before),
+            render: (r) => (r.before === undefined ? <span className="dim">—</span> : cells(r.before)) },
+          { key: "after", label: "After", width: 37, get: (r) => cells(r.after),
+            render: (r) => (r.after === undefined ? <span className="dim">—</span> : cells(r.after)) },
+        ]}
+      />
     </>
   );
 }
@@ -140,9 +112,9 @@ function TextDiff({ lines, truncated }: { lines: string[]; truncated: boolean })
 /** Where this change lives, so a reader can go and act on it. */
 function subjectLink(d: ChangeDetailPayload) {
   if (d.kind === "component") return <Link to={`/library/components/${d.id}`}>Open component</Link>;
-  if (d.kind === "symbol") return <Link to={`/library/templates/symbol/${d.id}`}>Open symbol</Link>;
+  if (d.kind === "symbol") return <Link to={`/library/templates/symbols/${d.id}`}>Open symbol</Link>;
   if (d.kind === "footprint")
-    return <Link to={`/library/templates/footprint/${d.id}`}>Open footprint</Link>;
+    return <Link to={`/library/templates/footprints/${d.id}`}>Open footprint</Link>;
   if (d.kind === "skill") return <Link to={`/library/skills/${d.id}`}>Open skill</Link>;
   return null;
 }
@@ -249,7 +221,7 @@ export default function ChangeDetail({ kind, id }: { kind: ChangeKind; id: numbe
         <KeyValueDiff
           rows={[
             { key: "Path", after: data.name },
-            { key: "Size", after: `${((data.size_bytes ?? 0) / 1024).toFixed(1)} kB` },
+            { key: "Size", after: fmtBytes(data.size_bytes ?? 0) },
             { key: "SHA-256", after: data.sha256 },
           ]}
         />

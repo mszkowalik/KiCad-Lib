@@ -9,12 +9,104 @@ import {
   patchDevice,
   type DeviceDetailPayload,
 } from "../api";
+import DataTable, { type Column } from "../components/DataTable";
+import AutoTextarea from "../components/AutoTextarea";
+import Field, { CheckField } from "../components/Field";
+import FoldSection, { StatChip } from "../components/FoldSection";
 import { BackLink, ErrorBanner, Spinner, StatusPill } from "../components/Ui";
 import DeviceHistoryCard from "../components/DeviceHistoryCard";
 import TwinCard from "../components/TwinCard";
 import DevicePresenceCard from "../components/DevicePresenceCard";
 import CheckGrid from "../components/flasher/CheckGrid";
-import { fmtDuration, fmtWhen } from "../components/flasher/common";
+import { fmtDuration } from "../components/flasher/common";
+import { localWhen } from "../format";
+
+const ACT_WORD: Record<string, string> = {
+  flash: "programming run", test: "test", mark: "marking job", erase: "erase",
+};
+
+const CONFIG_COLS: Column<DeviceDetailPayload["configs"][number]>[] = [
+  // `current` can still be false when a LATER run changed one key only — then
+  // that key's live value came from a different run and this one is stale.
+  { key: "key", label: "Key", width: 26, className: "mono", get: (c) => `${c.key}${c.current ? "" : " (superseded)"}` },
+  { key: "value", label: "Value", width: 38, className: "mono", get: (c) => c.value },
+  {
+    key: "by",
+    label: "Set by",
+    width: 16,
+    get: (c) => c.set_by_run_id ?? "",
+    render: (c) => (c.set_by_run_id ? (
+      <Link className="val-link" to={`/production/flash-runs/${c.set_by_run_id}`}>run #{c.set_by_run_id}</Link>
+    ) : "—"),
+  },
+  { key: "when", label: "When", width: 20, className: "muted", get: (c) => c.set_at ?? "", render: (c) => localWhen(c.set_at) },
+];
+
+/* The card sits in the narrow column, and a filter box needs 76 px with its cell,
+   so only the two columns that can hold one take one. STARTED is a LENGTH, not a
+   share: a timestamp has a fixed width and "2026-09-16 20:…" is not a time (same
+   rule as the device list's serial). Batch, Procedure and By are the ones that
+   truncate, and each carries a title. */
+const RUN_COLS: Column<DeviceDetailPayload["runs"][number]>[] = [
+  {
+    key: "run",
+    label: "Run",
+    width: 24,
+    interactive: false,
+    sortable: true,
+    get: (r) => r.id,
+    title: (r) => `attempt ${r.attempt_no}`,
+    // "#6345 (attempt 3)" clipped to "#6345 …", which hid the attempt it was
+    // spelling out, so the attempt is a dot and a number.
+    render: (r) => (
+      <>
+        <Link className="comp-link" to={`/production/flash-runs/${r.id}`}>#{r.id}</Link>
+        {r.attempt_no > 1 ? <span className="muted dim"> ·{r.attempt_no}</span> : null}
+      </>
+    ),
+  },
+  { key: "result", label: "Result", width: 20, get: (r) => r.status, render: (r) => <StatusPill status={r.status} /> },
+  {
+    key: "batch",
+    label: "Batch",
+    width: 9,
+    interactive: false,
+    sortable: true,
+    get: (r) => r.production_run?.label ?? "",
+    render: (r) => (r.production_run ? (
+      <Link className="val-link" to={`/production/batches/${r.production_run.id}`}>{r.production_run.label}</Link>
+    ) : "—"),
+  },
+  {
+    key: "procedure",
+    label: "Procedure",
+    width: 18,
+    get: (r) => (r.deployment ? `${r.deployment.name} v${r.deployment.version_no}` : "—"),
+  },
+  // "By", not "Operator": the header was the widest thing in a column that
+  // prints a name or a dash.
+  { key: "by", label: "By", width: 9, interactive: false, sortable: true, get: (r) => r.operator || "—" },
+  {
+    key: "took",
+    label: "Took",
+    width: 20,
+    numeric: true,
+    interactive: false,
+    sortable: true,
+    get: (r) => r.duration_ms ?? "",
+    render: (r) => fmtDuration(r.duration_ms),
+  },
+  {
+    key: "started",
+    label: "Started",
+    width: "150px",
+    className: "muted",
+    interactive: false,
+    sortable: true,
+    get: (r) => r.started_at ?? "",
+    render: (r) => localWhen(r.started_at),
+  },
+];
 
 export default function DeviceDetail() {
   const { id } = useParams();
@@ -65,9 +157,6 @@ export default function DeviceDetail() {
   // then an ACTIVE test after it, then no erase since. The page only prints it,
   // so the device list and any later reader cannot drift from this answer.
   const v = device.verdict;
-  const ACT_WORD: Record<string, string> = {
-    flash: "programming run", test: "test", mark: "marking job", erase: "erase",
-  };
 
   const runLink = (r: NonNullable<typeof v.config_run>) => (
     <Link className="val-link" to={`/production/flash-runs/${r.id}`}>
@@ -83,7 +172,7 @@ export default function DeviceDetail() {
           <h1 className="mono">{device.serial || device.mac}</h1>
           {device.last_status ? <StatusPill status={device.last_status} /> : null}
           <span className="toolbar-total">
-            {device.project.name} · first seen {fmtWhen(device.first_seen)} · last seen {fmtWhen(device.last_seen)}
+            {device.project.name} · first seen {localWhen(device.first_seen)} · last seen {localWhen(device.last_seen)}
           </span>
         </div>
 
@@ -93,26 +182,24 @@ export default function DeviceDetail() {
               <h2 className="card-title">What this device is proven to do</h2>
               {/* The verdict is a sentence the server wrote, plus the runs it
                   rests on. Marking never appears here: it changes nothing. */}
-              <p className="card-subtitle">
-                <span className={`pill ${v.programmed ? "ok" : "err"}`}>
-                  {v.programmed ? "programmed" : "not programmed"}
-                </span>{" "}
+              <p>
+                <StatusPill status={v.programmed ? "programmed" : "not programmed"} />{" "}
                 {v.reason}
                 {v.requires_test ? " — this project's test must pass after every programming run." : ""}
               </p>
               <p className="muted dim">
                 {v.config_run ? (
                   <>
-                    config {runLink(v.config_run)} ({v.config_run.status}) {fmtWhen(v.config_run.at)}
+                    config {runLink(v.config_run)} ({v.config_run.status}) {localWhen(v.config_run.at)}
                   </>
                 ) : (
                   <>no programming run</>
                 )}
                 {v.test_run ? (
-                  <> · test {runLink(v.test_run)} ({v.test_run.status}) {fmtWhen(v.test_run.at)}</>
+                  <> · test {runLink(v.test_run)} ({v.test_run.status}) {localWhen(v.test_run.at)}</>
                 ) : null}
                 {v.erased_after ? (
-                  <> · erased {runLink(v.erased_after)} {fmtWhen(v.erased_after.at)}</>
+                  <> · erased {runLink(v.erased_after)} {localWhen(v.erased_after.at)}</>
                 ) : null}
               </p>
               {device.checks_run ? (
@@ -144,14 +231,15 @@ export default function DeviceDetail() {
               </table>
             </div>
 
-            <div className="card pad">
-              <div className="toolbar">
-                <h2 className="card-title">Configuration</h2>
-                <label className="muted">
-                  <input type="checkbox" checked={reveal} onChange={(e) => setReveal(e.target.checked)} />{" "}
-                  reveal secrets
-                </label>
-              </div>
+            <FoldSection
+              title="Configuration"
+              count={device.configs.length}
+              foldKey={`device:${deviceId}:config`}
+              chips={device.config_superseded > 0 ? <StatChip n={device.config_superseded}>earlier values</StatChip> : undefined}
+              actions={
+                <CheckField checked={reveal} onChange={setReveal}>reveal secrets</CheckField>
+              }
+            >
               {device.config_run_id ? (
                 <p className="muted dim">
                   What is on the device now — written by run{" "}
@@ -167,49 +255,28 @@ export default function DeviceDetail() {
                 <p className="muted">Nothing applied yet.</p>
               ) : (
                 <div className="table-wrap">
-                  <table className="data data-fixed device-config-table">
-                    <thead>
-                      <tr>
-                        <th>Key</th>
-                        <th>Value</th>
-                        <th>Set by</th>
-                        <th>When</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {device.configs.map((c, i) => (
-                        <tr key={i} className={c.current ? "" : "dim"}>
-                          {/* `current` can still be false when a LATER run
-                              changed one key only — then that key's live value
-                              came from a different run and this one is stale. */}
-                          <td className="mono">{c.key}{c.current ? "" : " (superseded)"}</td>
-                          <td className="mono" title={c.value}>{c.value}</td>
-                          <td>
-                            {c.set_by_run_id ? (
-                              <Link className="val-link" to={`/production/flash-runs/${c.set_by_run_id}`}>
-                                run #{c.set_by_run_id}
-                              </Link>
-                            ) : "—"}
-                          </td>
-                          <td className="muted">{fmtWhen(c.set_at)}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                  <DataTable
+                    rows={device.configs}
+                    rowKey={(c) => `${c.key}:${c.set_by_run_id ?? ""}:${c.set_at ?? ""}`}
+                    rowClass={(c) => (c.current ? "" : "dim")}
+                    columns={CONFIG_COLS}
+                  />
                 </div>
               )}
-            </div>
+            </FoldSection>
 
             <div className="card pad">
               <h2 className="card-title">Notes</h2>
-              <textarea
-                className="note-textarea"
-                value={notes}
-                onChange={(e) => {
-                  setNotes(e.target.value);
-                  setNotesDirty(true);
-                }}
-              />
+              <Field>
+                <AutoTextarea
+                  className="text"
+                  value={notes}
+                  onChange={(e) => {
+                    setNotes(e.target.value);
+                    setNotesDirty(true);
+                  }}
+                />
+              </Field>
               {notesDirty ? (
                 <div className="btn-row">
                   <button type="button" className="btn btn-primary btn-sm" onClick={saveNotes}>
@@ -229,9 +296,19 @@ export default function DeviceDetail() {
                 grid or the identity table: those are what the bench proved and
                 they never change, this is a cache that can be stale or absent. */}
             <DevicePresenceCard presence={device.presence} mac={device.mac} />
-            <div className="card pad">
-              <h2 className="card-title">Programming history</h2>
-              <p className="card-subtitle">
+            <FoldSection
+              title="Programming history"
+              count={device.runs.length}
+              foldKey={`device:${deviceId}:runs`}
+              chips={
+                <>
+                  {device.runs.some((r) => r.status === "fail") ? <StatChip n={device.runs.filter((r) => r.status === "fail").length} tone="err">fail</StatChip> : null}
+                  {device.runs.some((r) => r.status === "aborted") ? <StatChip n={device.runs.filter((r) => r.status === "aborted").length} tone="warn">aborted</StatChip> : null}
+                  <StatChip n={device.runs.filter((r) => r.status === "pass").length} tone="ok">pass</StatChip>
+                </>
+              }
+            >
+              <p className="muted dim">
                 Every attempt, pass or fail — click through for the step timeline and the full
                 serial log.
               </p>
@@ -239,53 +316,15 @@ export default function DeviceDetail() {
                 <p className="muted">No runs.</p>
               ) : (
                 <div className="table-wrap">
-                  <table className="data data-fixed device-runs-table">
-                    <thead>
-                      <tr>
-                        <th>Run</th>
-                        <th>Result</th>
-                        <th>Batch</th>
-                        <th>Deployment</th>
-                        {/* "By", not "Operator": the header was the widest
-                            thing in a column that prints a name or a dash. */}
-                        <th>By</th>
-                        <th className="num">Took</th>
-                        <th>Started</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {device.runs.map((r) => (
-                        <tr key={r.id}>
-                          {/* The card sits in the narrow column: "#6345
-                              (attempt 3)" clipped to "#6345 …", which hid the
-                              attempt it was spelling out. */}
-                          <td title={`attempt ${r.attempt_no}`}>
-                            <Link className="comp-link" to={`/production/flash-runs/${r.id}`}>
-                              #{r.id}
-                            </Link>
-                            {r.attempt_no > 1 ? <span className="muted dim"> ·{r.attempt_no}</span> : null}
-                          </td>
-                          <td><StatusPill status={r.status} /></td>
-                          <td title={r.production_run?.label ?? ""}>
-                            {r.production_run ? (
-                              <Link className="val-link" to={`/runs/${r.production_run.id}`}>
-                                {r.production_run.label}
-                              </Link>
-                            ) : "—"}
-                          </td>
-                          <td title={r.deployment ? `${r.deployment.name} v${r.deployment.version_no}` : ""}>
-                            {r.deployment ? `${r.deployment.name} v${r.deployment.version_no}` : "—"}
-                          </td>
-                          <td title={r.operator}>{r.operator || "—"}</td>
-                          <td className="num">{fmtDuration(r.duration_ms)}</td>
-                          <td className="muted">{fmtWhen(r.started_at)}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                  <DataTable
+                    rows={device.runs}
+                    rowKey={(r) => r.id}
+                    columns={RUN_COLS}
+                    defaultSort={{ key: "started", dir: "desc" }}
+                  />
                 </div>
               )}
-            </div>
+            </FoldSection>
           </div>
         </div>
       </div>

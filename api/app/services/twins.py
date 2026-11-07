@@ -44,7 +44,8 @@ from sqlalchemy.orm import Session
 
 from .. import models as M
 from ..models import utcnow
-from . import cost_steps, run_actuals
+from . import cost_steps, fx, run_actuals
+from .project_bom import run_pricing_date
 from . import process as P
 from .material_ledger import core as _ledger
 
@@ -257,10 +258,23 @@ def _take_stack(db: Session, project_id: int, stack: str, qty: int) -> list[M.Un
     return twins
 
 
-def _resolve_devices(db: Session, run: M.ProductionRun, device_ids: list[int] | None,
-                     codes: list[str] | None) -> list[M.DeviceUnit]:
+def _device_of_code(db: Session, code: str) -> M.DeviceUnit | None:
+    """A scanned code to a device: the serial, then the MAC with or without its
+    separators, in any case."""
     from .orders import find_device
 
+    d = find_device(db, code)
+    if d is not None:
+        return d
+    norm = (code or "").strip().lower().replace(":", "").replace("-", "")
+    if not norm:
+        return None
+    return (db.query(M.DeviceUnit)
+            .filter(func.lower(func.replace(func.replace(M.DeviceUnit.mac, ":", ""), "-", "")) == norm).first())
+
+
+def _resolve_devices(db: Session, run: M.ProductionRun, device_ids: list[int] | None,
+                     codes: list[str] | None) -> list[M.DeviceUnit]:
     devices: list[M.DeviceUnit] = []
     missing: list[str] = []
     for did in device_ids or []:
@@ -270,10 +284,7 @@ def _resolve_devices(db: Session, run: M.ProductionRun, device_ids: list[int] | 
         else:
             devices.append(d)
     for code in codes or []:
-        d = find_device(db, code)
-        if d is None:
-            d = (db.query(M.DeviceUnit)
-                 .filter(func.lower(M.DeviceUnit.mac) == (code or "").strip().lower()).first())
+        d = _device_of_code(db, code)
         if d is None:
             missing.append(code)
         else:
@@ -410,11 +421,6 @@ def _plan_draws(db: Session, run: M.ProductionRun, step: dict, n: int, made_at: 
             draws.append({"component_id": cid, "mpn": "" if cid else mpn, "name": name, "qty": need,
                           "unit_cost_usd": round(avg, 8), "value_usd": round(need * avg, 4),
                           "lot_adjustment_id": None, "internal": False})
-    # Decision 0073: a bought part is taken from its lots, oldest first, at
-    # their cost; what no lot holds is refused with the other problems.
-    from . import lots as _lots
-
-    problems += _lots.fifo_price(db, [d for d in draws if not d["internal"]], as_of=made_at, company_id=scope)
     return draws, problems, tokens
 
 
@@ -424,14 +430,11 @@ def write_draws(db: Session, run: M.ProductionRun, sr: M.Click, draws: list[dict
     lot closes (decision 0058 §3). Every path that draws for a step goes
     through here — the batch screen, the benches, a rebuild. A plan names a
     stored lot by the API's key, `lot_adjustment_id`."""
-    from . import lots as _lots
     from .material_ledger import core as _ledger
 
     for d in draws:
         c = _ledger.draw(db, event=sr, component_id=d["component_id"], mpn=d.get("mpn", ""), taken=d["qty"],
                          unit_cost_usd=d["unit_cost_usd"], basis=BASIS_STEP, at=sr.at, run_id=run.id, note=note)
-        if d.get("bindings"):
-            _lots.bind(db, c, d)
         if d.get("lot_adjustment_id"):
             _ledger.bind(db, c, qty=d["qty"], unit_cost_usd=d["unit_cost_usd"], lot_id=d["lot_adjustment_id"],
                          source="manual", note=f"step click #{sr.id}")
@@ -490,7 +493,7 @@ def apply_step(db: Session, run: M.ProductionRun, *, step_key: str, stack: str =
         raise HTTPException(422, f"{step.get('label') or step_key!r} is a {kind!r} step — "
                                  + ("use receive" if kind == "receive" else
                                     "use finish" if kind == "finish" else
-                                    "it is recorded with \"Record assembly\" on the batch's Process tab "
+                                    "it is recorded with \"Record assembly\" on the batch's Floor tab "
                                     "(decision 0072)" if kind == "assembly" else
                                     f"it is done at the {where}" + (", or stated on named devices with the reason"
                                                                      if kind in STATABLE_KINDS else "")))
@@ -568,6 +571,213 @@ def apply_step(db: Session, run: M.ProductionRun, *, step_key: str, stack: str =
         # mark before the enclosure) is recorded now, from the bench's own run.
         plan["caught_up"] = catch_up(db, twins)
     return plan
+
+
+def _finish_part(db: Session, run: M.ProductionRun, graph: dict, step: dict, devices: list[M.DeviceUnit],
+                 chosen: str, note: str, actor: str) -> dict:
+    """The finish step of a group run: the devices that can finish do, and the
+    others are named. `finish` itself refuses the whole selection."""
+    ready: list[M.DeviceUnit] = []
+    refused: list[dict] = []
+    pairs = []
+    for d in devices:
+        tw, why = _twin_of_device(db, run, d)
+        if why:
+            refused.append({"unit": d.serial or d.mac, "why": [f"it {why}"]})
+        else:
+            pairs.append((d, tw))
+    done = done_steps(db, [tw.id for _d, tw in pairs])
+    again = since_reopen(db, [tw.id for _d, tw in pairs])
+    for d, tw in pairs:
+        if why := needs_met(graph, step, done[tw.id], again.get(tw.id)):
+            refused.append({"unit": d.serial or d.mac, "why": why})
+        else:
+            ready.append(d)
+    plan = {"step": step["key"], "label": step.get("label") or step["key"], "units": len(ready),
+            "selected": len(devices), "chosen": chosen, "refused": refused, "draws": [], "value_usd": 0.0,
+            "per_unit_usd": 0.0, "shortages": [], "problems": []}
+    if ready:
+        finish(db, run, device_ids=[d.id for d in ready], chosen=chosen, note=note, actor=actor, dry_run=False)
+    return plan
+
+
+def apply_steps(db: Session, run: M.ProductionRun, *, step_keys: list[str], device_ids: list[int] | None = None,
+                codes: list[str] | None = None, chosen: str = "", made_at: str = "", lots: dict | None = None,
+                note: str = "", actor: str = "", dry_run: bool = True, stated: str = "") -> dict:
+    """One or more steps on one group of named devices, in route order (decision
+    0103): the scan group's "Run". Each step is judged on each device as
+    `apply_step` does with `skip_refused`, and writes its own click.
+
+    An earlier step counts for a later one, because Instruction leaflet needs
+    Pack into carton. So a dry run writes too, inside a savepoint it rolls back:
+    the plan of the later step is the plan it would really get. A step no device
+    can take is reported and skipped. A shortage stops a real run with a 409, and
+    the caller's journal batch then writes nothing."""
+    v = crafted_version(db, run)
+    graph = P._graph(v)
+    order = {k: i for i, k in enumerate(graph["route"])}
+    keys = sorted(dict.fromkeys(step_keys), key=lambda k: (order.get(k, len(order)), k))
+    if not keys:
+        raise HTTPException(422, "tick at least one step")
+    if chosen not in ("scanned", "list"):
+        raise HTTPException(422, "say how the devices were chosen: scanned or list")
+    devices = _resolve_devices(db, run, device_ids, codes)
+    ids = [d.id for d in devices]
+    plans: list[dict] = []
+    sp = db.begin_nested() if dry_run else None
+    try:
+        for key in keys:
+            step = _step(graph, key)
+            kind = step.get("kind") or "step"
+            if kind == "finish":
+                plans.append(_finish_part(db, run, graph, step, devices, chosen, note, actor))
+                continue
+            try:
+                plan = apply_step(db, run, step_key=key, device_ids=ids, chosen=chosen, made_at=made_at, lots=lots,
+                                  note=note, actor=actor, dry_run=False, skip_refused=True,
+                                  stated=stated if kind in STATABLE_KINDS else "")
+            except HTTPException as e:
+                # The refusal carries the plan: no device can take the step, or
+                # stock is short. Nothing of this step was written.
+                plan = e.detail.get("plan") if isinstance(e.detail, dict) else None
+                if plan is None or (plan["units"] and not dry_run):
+                    raise
+            plan.pop("step_run_id", None)
+            plans.append(plan)
+    finally:
+        if sp is not None:
+            sp.rollback()
+    if not dry_run and not any(p["units"] for p in plans):
+        raise HTTPException(409, {"error": "none of these devices can take these steps — see the plan",
+                                  "plan": {"steps": plans}})
+    return {"dry_run": dry_run, "selected": len(devices), "chosen": chosen, "steps": plans}
+
+
+def check_codes(db: Session, run: M.ProductionRun, codes: list[str]) -> list[dict]:
+    """What each scanned code is to this batch, for the scan group (decision
+    0103): the device, the steps it has done and the steps it can take, or why
+    it cannot be crafted here. The server answers, because the page's list is
+    as old as the page: a device programmed after it opened would read as "not
+    a device of this batch", and a gap is not on that list at all."""
+    v = crafted_version(db, run)
+    graph = P._graph(v)
+    order = {k: i for i, k in enumerate(graph["route"])}
+    offered = [s for s in graph["steps"] if (s.get("kind") or "step") in ("step", "finish", *STATABLE_KINDS)]
+    out: list[dict] = []
+    for code in codes:
+        row = {"code": code, "device_id": None, "serial": None, "mac": None, "ok": False, "why": "",
+               "status": None, "done": [], "can": []}
+        d = _device_of_code(db, code)
+        if d is None:
+            out.append({**row, "why": "matches no device"})
+            continue
+        row.update(device_id=d.id, serial=d.serial, mac=d.mac)
+        if d.project_id != run.project_id:
+            out.append({**row, "why": "belongs to another project"})
+            continue
+        tw, why = _twin_of_device(db, run, d)
+        if tw is None:
+            out.append({**row, "why": why})
+            continue
+        done = done_steps(db, [tw.id])[tw.id]
+        since = since_reopen(db, [tw.id]).get(tw.id)
+        out.append({**row, "ok": True, "status": tw.status,
+                    "done": sorted(done, key=lambda k: (order.get(k, len(order)), k)),
+                    "can": [s["key"] for s in offered if not needs_met(graph, s, done, since)]})
+    return out
+
+
+#: A status that says a batch's work is over: no board to draw.
+BATCH_OVER = ("completed", "done", "cancelled")
+
+
+def board(db: Session, run: M.ProductionRun, *, pool: dict | None = None) -> list[dict]:
+    """The batch's process as figures, one row per step, route first (decision
+    0103). `done` units have the step, `waiting` active units meet its needs and
+    do not have it, `still_to_do` active units lack it plus the boards not
+    received yet, and `can_go` is `waiting` limited by the stock of its parts.
+
+    `state` is the field's colour: `done`, `blocked` (units wait and stock covers
+    none), `short` (a required step whose stock does not cover what is still to
+    do), `ready`, or `idle`. The figures come from here, not from the page,
+    because the pool, the company and the lots decide the stock."""
+    v = crafted_version(db, run)
+    graph = P._graph(v)
+    units = (db.query(M.Unit.id, M.Unit.device_unit_id, M.Unit.status, M.Unit.stack_key)
+             .filter(M.Unit.run_id == run.id, M.Unit.status != "scrapped").all())
+    named = [u.id for u in units if u.device_unit_id is not None]
+    done_by = done_steps(db, named)
+    again = since_reopen(db, named)
+    # Units with the same history answer the same: judge each history once.
+    kinds: dict[tuple, int] = defaultdict(int)
+    for u in units:
+        is_named = u.device_unit_id is not None
+        done = frozenset(done_by[u.id]) if is_named else frozenset(done_of_key(u.stack_key))
+        since = again.get(u.id) if is_named else None
+        kinds[(done, frozenset(since) if since is not None else None, is_named, u.status)] += 1
+    received = (db.query(func.count(M.Unit.id)).filter(M.Unit.origin_run_id == run.id,
+                                                       M.Unit.found.is_(False)).scalar() or 0)
+    unreceived = max((run.qty or 0) - received, 0)
+    total = len(units) + unreceived
+    stock = P.input_stock(db, graph, run_actuals.run_scope(db, run), pool=pool)
+    names = P._part_names(db, {c for s in graph["steps"] for c, _m in map(P.input_ref, s.get("inputs") or []) if c})
+    deployments = {d["id"]: d for d in P.deployments_for(db, run.project_id)}
+    groups = P.groups_of(graph)
+    route = [k for k in graph["route"]]
+    smap = P.step_map(graph)
+    ordered = [smap[k] for k in route if k in smap] + [s for s in graph["steps"] if s["key"] not in route]
+    out = []
+    for step in ordered:
+        key, kind = step["key"], step.get("kind") or "step"
+        siblings = set(groups.get(step.get("group") or "", []))
+        n_done = waiting_named = waiting_unnamed = to_do = 0
+        for (done, since, is_named, status), n in kinds.items():
+            fresh = done if since is None else since
+            if key in fresh:
+                n_done += n
+            if status != "active":
+                continue
+            if key not in fresh and not (siblings & fresh):
+                to_do += n
+            if not needs_met(graph, step, set(done), None if since is None else set(since)):
+                if is_named:
+                    waiting_named += n
+                else:
+                    waiting_unnamed += n
+        if kind == "receive":
+            # Every unit was received: what waits is the boards not here yet.
+            waiting_named, waiting_unnamed, to_do = 0, unreceived, unreceived
+        else:
+            to_do += unreceived
+        waiting = waiting_named + waiting_unnamed
+        inputs = []
+        for inp in step.get("inputs") or []:
+            per_unit = float(inp.get("qty") or 0)
+            on_hand = stock.get(P.input_key(inp), 0.0)
+            inputs.append({"key": P.input_key(inp), "name": P.input_label(inp, names), "per_unit": per_unit,
+                           "on_hand": on_hand, "covers": int(on_hand // per_unit) if per_unit > 0 else None})
+        covers = [i["covers"] for i in inputs if i["covers"] is not None]
+        cover = min(covers) if covers else None
+        can_go = waiting if cover is None else min(waiting, cover)
+        required = bool(step.get("required")) or kind == "finish"
+        if total and not to_do:
+            state = "done"
+        elif waiting and not can_go:
+            state = "blocked"
+        elif required and cover is not None and cover < to_do:
+            state = "short"
+        elif can_go:
+            state = "ready"
+        else:
+            state = "idle"
+        dep = deployments.get(step.get("deployment_id"))
+        out.append({"key": key, "label": step.get("label") or key, "kind": kind, "required": required,
+                    "on_route": key in route, "needs": step.get("needs") or [], "total": total, "done": n_done,
+                    "waiting": waiting, "waiting_named": waiting_named, "waiting_unnamed": waiting_unnamed,
+                    "still_to_do": to_do, "can_go": can_go, "state": state, "inputs": inputs,
+                    "procedure": {"id": dep["id"], "name": dep["name"], "version_no": dep["current_version_no"]}
+                    if dep else None})
+    return out
 
 
 def scrap(db: Session, run: M.ProductionRun, *, stack: str = "", qty: int = 0,
@@ -1142,13 +1352,6 @@ def apply_assembly(db: Session, run: M.ProductionRun, *, made_at: str = "", asse
                         "name": p.get("name") or entry.get("mpn") or ""})
     if problems:
         raise HTTPException(422, f"no stock ever held of: {', '.join(map(str, problems))}")
-    from . import lots as _lots
-
-    uncovered = _lots.fifo_price(db, planned, as_of=day, company_id=scope)
-    if uncovered:
-        raise HTTPException(409, {"error": "these parts are in no lot on " + day + ": "
-                                           + "; ".join(f"{u['label']} {u['problem']}" for u in uncovered[:6]),
-                                  "uncovered": uncovered})
     short = run_actuals.check_shortages(db, [
         {"component_id": d["component_id"], "mpn": d["mpn"], "lcsc": d["lcsc"], "qty": d["qty"],
          "date": day, "label": d["name"]} for d in planned], company_id=scope)
@@ -2217,6 +2420,9 @@ def twin_json(db: Session, tw: M.Unit, price: dict | None = None) -> dict:
         "named_at": tw.named_at.isoformat() if tw.named_at else None,
         "finished_at": tw.finished_at.isoformat() if tw.finished_at else None,
         "price": price,
+        # What this twin's USD figures read in PLN: the rate at its batch's date
+        # (decision 0103).
+        "pln_per_usd": fx.pln_per_usd(db, run_pricing_date(db.get(M.ProductionRun, tw.run_id))),
         "steps": [{"step": sr.step_key, "label": sr.step_label, "kind": sr.step_kind,
                    "process_version_id": sr.process_version_id, "batch": runs.get(sr.run_id),
                    "chosen": sr.chosen, "made_at": sr.at, "actor": sr.actor, "note": sr.note,
@@ -2306,6 +2512,7 @@ def craft_view(db: Session, run: M.ProductionRun) -> dict:
     undo = click_batches(db, run, [sr.id for sr in recent])
     return {
         "run_id": run.id, "process_version_id": v.id, "version_no": v.version_no,
+        "pln_per_usd": fx.pln_per_usd(db, run_pricing_date(run)),
         "graph": graph, "parts": {str(k): p for k, p in P._part_names(db, {
             c for s in graph["steps"] for c, _m in map(P.input_ref, s.get("inputs") or []) if c}).items()},
         "stacks": st, "devices": devices,
@@ -2319,6 +2526,7 @@ def craft_view(db: Session, run: M.ProductionRun) -> dict:
                     "note": sr.note, "costs_usd": round(line_click.get(sr.id, 0.0), 4),
                     "parts_usd": round(draw_click.get(sr.id, 0.0), 4), "batch_id": undo.get(sr.id)}
                    for sr in recent],
+        "board": board(db, run),
         "assembly": _assembly_view(db, run),
         "unlinked": unlinked(db, run),
         "linked": linked_positions(db, run),

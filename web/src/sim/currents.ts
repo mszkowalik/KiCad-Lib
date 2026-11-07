@@ -15,6 +15,7 @@
  *     cannot be separated, and that net is left unanimated.
  */
 import type { SimGeometry, SimPin } from "../api";
+import { pointKey } from "./draw/geom";
 import { plotReader, type SampleReader, type SimPlot } from "./payload";
 
 export interface NetCurrents {
@@ -25,8 +26,6 @@ export interface NetCurrents {
   /** Nets that could not be resolved, and why — shown, never hidden. */
   unresolved: { net: string; reason: string }[];
 }
-
-const key = (x: number, y: number) => `${Math.round(x * 1000)},${Math.round(y * 1000)}`;
 
 /** What the RUN calls each drawn part. A switch drawn `SW1` is `rsw1` in the
  *  netlist (`Sim.Device` prefixes the reference), and the run reports currents
@@ -88,8 +87,8 @@ export function solveSegmentCurrents(geom: SimGeometry, reader: SampleReader): N
       if (!wire) continue;
       segments.set(wireId, new Array(Math.max(0, wire.pts.length - 1)).fill(0));
       for (let i = 0; i + 1 < wire.pts.length; i += 1) {
-        const a = key(wire.pts[i][0], wire.pts[i][1]);
-        const b = key(wire.pts[i + 1][0], wire.pts[i + 1][1]);
+        const a = pointKey(wire.pts[i][0], wire.pts[i][1]);
+        const b = pointKey(wire.pts[i + 1][0], wire.pts[i + 1][1]);
         addNode(a);
         addNode(b);
         const index = edges.length;
@@ -109,7 +108,7 @@ export function solveSegmentCurrents(geom: SimGeometry, reader: SampleReader): N
     let known = 0;
     for (const pin of geom.pins) {
       if (pin.group !== group.id) continue;
-      const node = key(pin.at[0], pin.at[1]);
+      const node = pointKey(pin.at[0], pin.at[1]);
       addNode(node);
       const sign = pinInjection(pin, reader, pinsOfRef, el);
       if (sign === null) {

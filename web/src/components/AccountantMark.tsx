@@ -4,6 +4,7 @@
  *  never get is "not for the accountant", with the reason. */
 import { useState } from "react";
 import { errorMessage, markAccountant, type AccountantState } from "../api";
+import { today } from "../format";
 import { useDialog, type DialogApi } from "./Dialog";
 
 const VIA_TEXT: Record<string, string> = {
@@ -59,7 +60,7 @@ export default function AccountantMark({ companyId, kind, id, state, onChange }:
       {open ? (
         <button type="button" className="btn btn-sm" disabled={busy} onClick={async () => {
           const day = await dialog.prompt("Sent to the accountant on (YYYY-MM-DD):", {
-            title: "Mark as sent", initial: new Date().toISOString().slice(0, 10),
+            title: "Mark as sent", initial: today(),
           });
           if (day) await record(day);
         }}>Mark sent…</button>
@@ -67,7 +68,7 @@ export default function AccountantMark({ companyId, kind, id, state, onChange }:
       {open ? (
         <button type="button" className="btn btn-sm" disabled={busy} onClick={async () => {
           const reason = await askNotSentReason(dialog);
-          if (reason) await record(new Date().toISOString().slice(0, 10), "not_sent", reason);
+          if (reason) await record(today(), "not_sent", reason);
         }}>Not for the accountant…</button>
       ) : null}
       {(state.sent && state.via !== "ksef" || notSent) && companyId ? (

@@ -10,6 +10,7 @@ from __future__ import annotations
 import logging
 import threading
 from bisect import bisect_right
+from datetime import datetime, timezone
 
 import httpx
 from sqlalchemy.orm import Session
@@ -73,6 +74,14 @@ def rates_at(db: Session, at) -> dict[str, float]:
         rates[cur] = values[i - 1] if i else values[0]
     rates["USD"] = 1.0
     return rates
+
+
+def pln_per_usd(db: Session, at=None) -> float | None:
+    """How many PLN one USD buys: at a batch's pricing date, or now. The figure
+    a screen multiplies a stored USD amount by (decision 0103). None when no PLN
+    rate is stored, and then the screen prints USD rather than a wrong PLN."""
+    rate = rates_at(db, at or datetime.now(timezone.utc)).get("PLN")
+    return 1.0 / rate if rate else None
 
 
 def convert(amount: float, currency: str, target: str, rates: dict[str, float]) -> tuple[float, bool]:

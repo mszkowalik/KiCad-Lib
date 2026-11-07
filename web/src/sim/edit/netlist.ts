@@ -20,6 +20,7 @@
  *  cap be unwired, dragged elsewhere, rewired, and still be charged: the state
  *  is keyed to the REFERENCE, not to the node it used to sit on.
  */
+import { pointKey } from "../draw/geom";
 import type { LibSymbol } from "../draw/types";
 import { symbolPins, spiceName, type SchDoc } from "./doc";
 
@@ -41,8 +42,6 @@ export interface DocNetlist {
  *  know — a browser has no business carrying server filesystem layout, and a
  *  netlist that names an arbitrary path is refused there anyway. */
 export const SIM_LIB_TOKEN = "%SIGMA_SIM_LIB%";
-
-const keyOf = (x: number, y: number) => `${Math.round(x * 1000)},${Math.round(y * 1000)}`;
 
 class Union {
   private parent = new Map<string, string>();
@@ -95,7 +94,7 @@ export function netlistDoc(
   // points share coordinates, so coordinate identity is connectivity.
   for (const w of doc.wires) {
     for (let i = 0; i + 1 < w.pts.length; i += 1) {
-      dsu.join(keyOf(w.pts[i][0], w.pts[i][1]), keyOf(w.pts[i + 1][0], w.pts[i + 1][1]));
+      dsu.join(pointKey(w.pts[i][0], w.pts[i][1]), pointKey(w.pts[i + 1][0], w.pts[i + 1][1]));
     }
   }
   /** Join a point to every segment that passes THROUGH it, endpoint or not.
@@ -105,7 +104,7 @@ export function netlistDoc(
    *  end. Missing that renamed `/in` to `net-_u1-pad1_` silently, measured on
    *  the worked example's own labels. */
   const attach = (x: number, y: number) => {
-    const k = keyOf(x, y);
+    const k = pointKey(x, y);
     for (const w of doc.wires) {
       for (let i = 0; i + 1 < w.pts.length; i += 1) {
         const [a, b] = [w.pts[i], w.pts[i + 1]];
@@ -113,7 +112,7 @@ export function netlistDoc(
           Math.abs((b[0] - a[0]) * (y - a[1]) - (b[1] - a[1]) * (x - a[0])) < 1e-6 &&
           x >= Math.min(a[0], b[0]) - 1e-6 && x <= Math.max(a[0], b[0]) + 1e-6 &&
           y >= Math.min(a[1], b[1]) - 1e-6 && y <= Math.max(a[1], b[1]) + 1e-6;
-        if (within) dsu.join(k, keyOf(a[0], a[1]));
+        if (within) dsu.join(k, pointKey(a[0], a[1]));
       }
     }
     return k;
@@ -128,7 +127,7 @@ export function netlistDoc(
     const power = !!lib?.power;
     const powerName = power ? (fieldOf(sym, lib, "Value") || "0") : "";
     for (const p of symbolPins(sym, libs)) {
-      // attach(), not keyOf() alone: a pin dropped onto the MIDDLE of a wire
+      // attach(), not pointKey() alone: a pin dropped onto the MIDDLE of a wire
       // is connected — that is how dragging a part onto a live circuit joins
       // it, mid-drag, the way Falstad joins posts that meet.
       pinsAt.push({ ref, pin: p.n, node: dsu.find(attach(p.at[0], p.at[1])), power, powerName });

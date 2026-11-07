@@ -25,6 +25,14 @@ token injected per-invocation via `http.extraheader` — never written to disk),
   the OLD head's sha until the mirror is fetched. Use
   `POST /api/projects/{id}/fetch` instead: it fetches, then ingests every new
   tag and the default-branch head (`project_ingest.fetch_and_autoingest`).
+- **`GET /api/projects/{id}/files?sha=` and `/file?sha=&path=` read the mirror, not
+  a snapshot,** so Project → History lists the files of any commit that was fetched.
+  A project with no mirror answers 409 with a sentence, because `subprocess` answers
+  a missing directory with an exception and a 500. `/file` is `inline` under the
+  file's own name. A file with no known type is text, unless it holds a NUL. A
+  repository's SVG carries `Content-Security-Policy: sandbox`, so it cannot run as a
+  page of this origin. `gitrepo.list_files` uses `ls-tree -z`, because git otherwise
+  quotes a non-ASCII path and that string names no file.
 - **`routers/account.py` is the self-service twin of `routers/users.py`.** It
   takes NO user id — the subject is always `request.state.user` — so no endpoint
   on it can be aimed at somebody else by changing a number in a URL, and it

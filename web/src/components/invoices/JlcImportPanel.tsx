@@ -15,7 +15,10 @@ import {
   type JlcQueueOrder,
   type RunInfo,
 } from "../../api";
+import { usd } from "../../format";
+import DataTable from "../DataTable";
 import { useDialog } from "../Dialog";
+import { CheckField } from "../Field";
 import { ErrorBanner, Spinner } from "../Ui";
 
 /**
@@ -165,7 +168,7 @@ export default function JlcImportPanel({ onApplied }: { onApplied?: () => void }
         return;
       }
       const ok = await dialog.confirm(
-        `Void ${dry.would_void.length} draw(s) worth $${dry.value_usd} on run ${dry.run_id} — ` +
+        `Void ${dry.would_void.length} draw(s) worth ${usd(dry.value_usd)} on run ${dry.run_id} — ` +
           `parts JLC supplied itself (${(dry.shop_parts ?? []).join(", ")})? ` +
           `One reversible batch.`,
         { title: "Void shop draws", confirmLabel: "Void", tone: "danger" },
@@ -173,7 +176,7 @@ export default function JlcImportPanel({ onApplied }: { onApplied?: () => void }
       if (!ok) return;
       const res = await voidJlcShopDraws(o.smt_order_code, false);
       await dialog.alert(
-        `Voided — write batch ${res.batch_id}, undoable in the Write log.`,
+        `Voided — write batch ${res.batch_id}, undoable on History → Write batches.`,
         { title: "Shop draws voided" },
       );
       load();
@@ -186,6 +189,9 @@ export default function JlcImportPanel({ onApplied }: { onApplied?: () => void }
   }
 
   async function undo(o: JlcQueueOrder) {
+    const ok = await dialog.confirm(`Clear the decision on order ${o.smt_order_code}?`,
+      { title: "Clear decision", confirmLabel: "Clear", tone: "danger" });
+    if (!ok) return;
     setBusy(o.smt_order_code);
     try {
       await clearJlcDecision(o.smt_order_code);
@@ -257,7 +263,7 @@ export default function JlcImportPanel({ onApplied }: { onApplied?: () => void }
 
   return (
     <div className="card pad">
-      <div className="card-title">JLC assembly orders</div>
+      <h2 className="card-title">JLC assembly orders</h2>
       {/* `.card-subtitle` is 11px uppercase mono — a LABEL, not a paragraph.
           Two sentences in it rendered as two lines of shouting across the whole
           card (user report 2026-09-22); the rule is in components/CLAUDE.md and
@@ -274,14 +280,7 @@ export default function JlcImportPanel({ onApplied }: { onApplied?: () => void }
         <button className="btn btn-primary" onClick={runSync} disabled={syncing}>
           {syncing ? "Syncing…" : "Sync from JLCPCB"}
         </button>
-        <label className="muted">
-          <input
-            type="checkbox"
-            checked={onlyPending}
-            onChange={(e) => setOnlyPending(e.target.checked)}
-          />{" "}
-          only unfinished
-        </label>
+        <CheckField checked={onlyPending} onChange={setOnlyPending}>only unfinished</CheckField>
         {syncMsg && <span className="muted">{syncMsg}</span>}
       </div>
 
@@ -307,10 +306,10 @@ export default function JlcImportPanel({ onApplied }: { onApplied?: () => void }
             </span>
           )}
           <span className="muted">
-            awaiting a decision: ${c.pending_invoiced_usd.toLocaleString()} invoiced ·{" "}
-            ${c.pending_stock_value_usd.toLocaleString()} of stock drawn
+            awaiting a decision: {usd(c.pending_invoiced_usd)} invoiced ·{" "}
+            {usd(c.pending_stock_value_usd)} of stock drawn
             {c.stranded > 0
-              ? ` · decided but unwritten: $${c.stranded_stock_value_usd.toLocaleString()} of stock`
+              ? ` · decided but unwritten: ${usd(c.stranded_stock_value_usd)} of stock`
               : ""}
           </span>
         </div>
@@ -337,7 +336,7 @@ export default function JlcImportPanel({ onApplied }: { onApplied?: () => void }
                 </span>
               ))}
               <span className="muted">{o.invoice_date}</span>
-              <span className="mono num">${(o.money_usd ?? 0).toLocaleString()}</span>
+              <span className="mono num">{usd(o.money_usd ?? 0)}</span>
               <ConfidencePill order={o} />
               {decided && (
                 <span className="pill ok">
@@ -418,8 +417,7 @@ export default function JlcImportPanel({ onApplied }: { onApplied?: () => void }
               )}
               {o.part_count > 0 && (
                 <span className="muted">
-                  {o.part_count} parts from stock · $
-                  {(o.consumed_value_usd ?? 0).toLocaleString()} · {o.lot_count} lots
+                  {o.part_count} parts from stock · {usd(o.consumed_value_usd ?? 0)} · {o.lot_count} lots
                 </span>
               )}
             </div>
@@ -457,13 +455,13 @@ export default function JlcImportPanel({ onApplied }: { onApplied?: () => void }
                   onClick={() => decide(o, "external")}
                   title={
                     o.consumed_value_usd
-                      ? `Removes $${o.consumed_value_usd} of stock value from batch costing`
+                      ? `Removes ${usd(o.consumed_value_usd)} of stock value from batch costing`
                       : "No stock was drawn by this order"
                   }
                 >
                   External project
                   {o.consumed_value_usd
-                    ? ` (−$${(o.consumed_value_usd ?? 0).toLocaleString()} from batch costs)`
+                    ? ` (−${usd(o.consumed_value_usd)} from batch costs)`
                     : ""}
                 </button>
                 <RunPicker
@@ -524,7 +522,7 @@ export default function JlcImportPanel({ onApplied }: { onApplied?: () => void }
                     onClick={() => undo(o)}
                     title={
                       o.decision?.applied_at
-                        ? "Already applied — undo its write batch in the Write log first"
+                        ? "Already applied — undo its write batch on History → Write batches first"
                         : "Clear this decision"
                     }
                   >
@@ -552,7 +550,7 @@ export default function JlcImportPanel({ onApplied }: { onApplied?: () => void }
  *
  * A batch link moves the order's invoice lines and measured draws onto the
  * batch and records NO assembly step (decision 0072): the person records that
- * from the batch's Process tab, so the sentence says so rather than letting
+ * from the batch's Floor tab, so the sentence says so rather than letting
  * "link" read as "done".
  *
  * `rebucketed` and `reason_only` are kept apart deliberately: filling in an
@@ -565,7 +563,7 @@ function describe(r: JlcDecisionApplyResult): string {
   const L = r.lines;
   if (L?.rebucketed_count)
     parts.push(
-      `move $${L.rebucketed_value_usd.toLocaleString()} across ${L.rebucketed_count} line(s)`,
+      `move ${usd(L.rebucketed_value_usd)} across ${L.rebucketed_count} line(s)`,
     );
   if (L?.reason_only_count)
     parts.push(`label ${L.reason_only_count} exclusion(s) with a reason (no money moves)`);
@@ -578,7 +576,7 @@ function describe(r: JlcDecisionApplyResult): string {
     );
   const act = parts.join(", ") || "change nothing";
   return r.outcome === "link_run"
-    ? `${act}. Record the assembly on the batch's Process tab afterwards`
+    ? `${act}. Record the assembly on the batch's Floor tab afterwards`
     : act;
 }
 
@@ -672,64 +670,40 @@ function Evidence({ order }: { order: JlcQueueOrder }) {
   return (
     <div className="table-wrap">
       {order.per_device.length > 0 && (
-        <table className="data">
-          <thead>
-            <tr>
-              <th>LCSC</th>
-              <th>MPN</th>
-              <th className="num">consumed</th>
-              <th className="num">per device</th>
-              <th className="num">value</th>
-            </tr>
-          </thead>
-          <tbody>
-            {order.per_device.map((p) => (
-              <tr key={p.lcsc + p.mpn}>
-                <td className="mono">{p.lcsc}</td>
-                <td>{p.mpn}</td>
-                <td className="num">{p.qty.toLocaleString()}</td>
-                <td className="num">
-                  {p.per_device == null ? <span className="dim">—</span> : p.per_device}
-                </td>
-                <td className="num">${p.money.toLocaleString()}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        <DataTable
+          rows={order.per_device}
+          rowKey={(p) => p.lcsc + p.mpn}
+          columns={[
+            { key: "lcsc", label: "LCSC", width: 16, className: "mono", get: (p) => p.lcsc },
+            { key: "mpn", label: "MPN", width: 36, get: (p) => p.mpn },
+            { key: "qty", label: "Consumed", width: 16, numeric: true, get: (p) => p.qty,
+              render: (p) => p.qty.toLocaleString() },
+            { key: "per", label: "Per device", width: 16, numeric: true, get: (p) => p.per_device,
+              render: (p) => (p.per_device == null ? <span className="dim">—</span> : p.per_device) },
+            { key: "money", label: "Value", width: 16, numeric: true, get: (p) => p.money, render: (p) => usd(p.money) },
+          ]}
+        />
       )}
       {order.candidates.length > 0 && (
-        <table className="data">
-          <thead>
-            <tr>
-              <th>candidate batch</th>
-              <th className="num">batch qty</th>
-              <th className="num">k</th>
-              <th className="num">agree</th>
-              <th className="num">implied devices</th>
-              <th className="num">days apart</th>
-              <th>qty fits</th>
-            </tr>
-          </thead>
-          <tbody>
-            {order.candidates.map((k) => (
-              <tr key={k.run_id}>
-                <td>{k.run_label}</td>
-                <td className="num">{k.run_qty ?? "—"}</td>
-                <td className="num">{k.panel_factor}</td>
-                <td className="num">
-                  {k.agree}/{k.voted}
-                </td>
-                <td className="num">{k.implied_devices}</td>
-                <td className="num">{k.date_gap_days ?? "—"}</td>
-                <td>
-                  <span className={`pill ${k.qty_matches ? "ok" : "neutral"}`}>
-                    {k.qty_matches ? "yes" : `off by ${k.qty_delta ?? "?"}`}
-                  </span>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        <DataTable
+          rows={order.candidates}
+          rowKey={(k) => k.run_id}
+          columns={[
+            { key: "run", label: "Candidate batch", width: 30, get: (k) => k.run_label },
+            { key: "qty", label: "Batch qty", width: 10, numeric: true, get: (k) => k.run_qty ?? "—" },
+            { key: "k", label: "k", width: 8, numeric: true, get: (k) => k.panel_factor },
+            { key: "agree", label: "Agree", width: 10, numeric: true, get: (k) => k.agree,
+              render: (k) => `${k.agree}/${k.voted}` },
+            { key: "implied", label: "Implied devices", width: 14, numeric: true, get: (k) => k.implied_devices },
+            { key: "gap", label: "Days apart", width: 12, numeric: true, get: (k) => k.date_gap_days ?? "—" },
+            { key: "fits", label: "Qty fits", width: 16, get: (k) => (k.qty_matches ? "yes" : `off by ${k.qty_delta ?? "?"}`),
+              render: (k) => (
+                <span className={`pill ${k.qty_matches ? "ok" : "neutral"}`}>
+                  {k.qty_matches ? "yes" : `off by ${k.qty_delta ?? "?"}`}
+                </span>
+              ) },
+          ]}
+        />
       )}
     </div>
   );

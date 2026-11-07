@@ -23,7 +23,7 @@ from .util import acting_name, audit, content_disposition
 router = APIRouter(prefix="/api", tags=["companies"])
 
 
-@router.get("/companies")
+@router.get("/companies", openapi_extra={"x-agent-tool": "list_companies"})
 def list_companies(request: Request, db: Session = Depends(get_db)):
     """The companies the caller may see, with their seller data for an admin."""
     user = getattr(request.state, "user", None)
@@ -98,28 +98,6 @@ class StockBackfillIn(BaseModel):
     # Ask JLC for the billing data of parts orders with no stored payload, through
     # the stored session (a read; user approval 2026-10-04).
     fetch_jlc: bool = False
-
-
-class LotHistoryIn(BaseModel):
-    dry_run: bool = True
-
-
-@router.post("/companies/lot-history")
-def lot_history(body: LotHistoryIn, db: Session = Depends(get_db), admin: M.User = Depends(require_admin)):
-    """Bind every live draw to its lots, oldest first, and price it at their
-    cost — closed batches included, as one journalled correction (decision
-    0073). Dry run by default; the report lists every draw no lot covers."""
-    from ..services import journal, lots
-
-    if body.dry_run:
-        return lots.bind_history(db, dry_run=True)
-    with journal.batch(db, kind="lots.history", source_ref="", actor=acting_name()) as h:
-        res = lots.bind_history(db, actor=acting_name(), dry_run=False)
-    audit(db, "lots.history", "company", None,
-          {"draws_bound": res["draws_bound"], "uncovered": len(res["uncovered"]),
-           "change_usd": res["change_usd"], "batch_id": h["batch_id"]})
-    db.commit()
-    return {**res, "batch_id": h["batch_id"]}
 
 
 @router.post("/companies/stock-backfill")

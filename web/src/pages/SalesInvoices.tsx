@@ -40,19 +40,23 @@ import {
 import { useAuth } from "../auth";
 import AutoTextarea from "../components/AutoTextarea";
 import DataTable, { type Column } from "../components/DataTable";
+import FoldSection, { StatChip, NarrowChip } from "../components/FoldSection";
 import { useDialog } from "../components/Dialog";
 import Field, { CheckField, FieldGrid, FieldRow } from "../components/Field";
 import FilePick from "../components/FilePick";
-import { INVOICE_LINE_COLUMNS, pl } from "../components/PrintedInvoice";
+import { blankLine, CustomerSelect, linesBody, linesReady, SalesLinesEditor, type DraftLine } from "../components/invoices/SalesLines";
+import { ImportRegisterDialog, RecordHistoryDialog } from "../components/invoices/SalesRegisterDialogs";
+import SalesTemplateDialog from "../components/invoices/SalesTemplateDialog";
+import { INVOICE_LINE_COLUMNS as LINE_COLUMNS } from "../components/PrintedInvoice";
 import RecordFiles from "../components/RecordFiles";
 import AccountantMark from "../components/AccountantMark";
-import { ErrorBanner, Spinner } from "../components/Ui";
+import { ErrorBanner, Spinner, StatusPill } from "../components/Ui";
+import { pl, today } from "../format";
 import { absoluteFileUrl, fileHref } from "../viewkind";
 
 const KIND_TEXT: Record<string, string> = {
   vat: "VAT", proforma: "proforma", correction: "correction", advance: "advance", settlement: "settlement",
 };
-const RATES = ["23", "8", "5", "0 KR", "0 WDT", "0 EX", "zw", "oo", "np I", "np II"];
 
 /** An imported document's payment is what the old register said, and it
  *  rarely said: "payment not recorded" is the honest word, never "overdue". */
@@ -67,32 +71,23 @@ function stateOf(r: SalesInvoiceRow): string {
   return r.overdue ? "overdue" : "unpaid";
 }
 
-const STATE_TONE: Record<string, string> = {
-  draft: "warn", cancelled: "neutral", proforma: "neutral", paid: "ok", overdue: "err", unpaid: "warn",
-  "not recorded": "neutral",
-};
-
 const COLUMNS: Column<SalesInvoiceRow>[] = [
   { key: "date", label: "Date", width: 9, className: "mono", get: (r) => r.issue_date },
   { key: "number", label: "Number", width: 13, className: "mono", get: (r) => r.number },
   { key: "kind", label: "Kind", width: 8, get: (r) => KIND_TEXT[r.kind] ?? r.kind },
-  { key: "buyer", label: "Buyer", width: 26, get: (r) => r.buyer_name },
+  { key: "buyer", label: "Buyer", width: 21, get: (r) => r.buyer_name },
   { key: "net", label: "Net (PLN)", width: 10, numeric: true, get: (r) => Number(r.net_total),
     render: (r) => <>{pl(r.net_total)}</> },
   { key: "gross", label: "Gross (PLN)", width: 10, numeric: true, get: (r) => Number(r.gross_total),
     render: (r) => <>{pl(r.gross_total)}</> },
   { key: "due", label: "Due", width: 9, className: "mono", get: (r) => (r.paid ? r.paid_date : r.due_date) || "" },
-  { key: "state", label: "State", width: 9, get: stateOf,
+  { key: "state", label: "State", width: 14, get: stateOf,
     title: (r) => (stateOf(r) === "not recorded" ? "Imported from the old register, which did not record the payment" : stateOf(r)),
-    render: (r) => <span className={`pill ${STATE_TONE[stateOf(r)] ?? "neutral"}`}>{stateOf(r)}</span> },
+    render: (r) => <StatusPill status={stateOf(r)} /> },
   { key: "ksef", label: "KSeF", width: 6, get: (r) => (r.ksef_number ? (r.has_qr ? "QR" : "yes") : ""),
     title: (r) => r.ksef_number || "not in KSeF" },
 ];
 
-// Shared with the supplier document's printed invoice (decision 0084).
-const LINE_COLUMNS = INVOICE_LINE_COLUMNS;
-
-/** One invoice, opened under its row. */
 /** The printed documents filed with an invoice (decision 0077). */
 function InvoiceFiles({ id }: { id: number }) {
   const list = useCallback((signal?: AbortSignal) => listSalesInvoiceFiles(id, signal), [id]);
@@ -100,6 +95,8 @@ function InvoiceFiles({ id }: { id: number }) {
   return <RecordFiles list={list} upload={upload} pathOf={(fileId) => salesInvoiceFilePath(id, fileId)} label="Documents" />;
 }
 
+/** One invoice, opened under its row. Its positions use the columns of the
+ *  supplier document's printed invoice (decision 0084). */
 function InvoicePanel({ id, onChanged }: { id: number; onChanged: () => void }) {
   const dialog = useDialog();
   const [inv, setInv] = useState<SalesInvoiceRow | null>(null);
@@ -213,7 +210,7 @@ function InvoicePanel({ id, onChanged }: { id: number; onChanged: () => void }) 
             <input className="text mono" value={ksef} onChange={(e) => setKsef(e.target.value.trim())}
                    placeholder="8513262910-20261004-0123456789AB-CD" />
           </Field>
-          <Field label="Official XML from KSeF" hint="Optional. Its hash puts the QR code on the PDF.">
+          <Field group label="Official XML from KSeF" hint="Optional. Its hash puts the QR code on the PDF.">
             <FilePick accept=".xml" onPick={(files) => setXml(files[0] ?? null)}>
               {xml ? xml.name : "Choose the XML…"}
             </FilePick>
@@ -230,6 +227,23 @@ function InvoicePanel({ id, onChanged }: { id: number; onChanged: () => void }) 
           KSeF marks it as an offline invoice.
         </p>
       ) : null}
+      {inv.status === "draft" && b?.lines.some((l) => l.vat_rate === "zw") ? (
+        <div className="btn-row">
+          {b.exemption?.basis ? (
+            <span className="muted dim">Legal basis of the exemption: {b.exemption.basis}.</span>
+          ) : (
+            <span className="pill warn">KSeF refuses a zw position with no legal basis</span>
+          )}
+          <button type="button" className="btn btn-sm" disabled={busy} onClick={async () => {
+            const basis = await dialog.prompt("The legal basis of the exemption, e.g. art. 113 ust. 1 ustawy o VAT:", {
+              title: "Legal basis of the exemption", initial: b.exemption?.basis ?? "", maxLength: 240,
+            });
+            if (basis?.trim()) await act(() => updateSalesInvoice(inv.id, { exemption_basis: basis.trim() }));
+          }}>
+            {b.exemption?.basis ? "Change basis…" : "Set basis…"}
+          </button>
+        </div>
+      ) : null}
       {inv.status === "draft" ? (
         <button type="button" className="btn btn-sm" disabled={busy} onClick={async () => {
           const day = await dialog.prompt("New issue date (YYYY-MM-DD):", { title: "Re-date the draft" });
@@ -245,9 +259,6 @@ function InvoicePanel({ id, onChanged }: { id: number; onChanged: () => void }) 
   );
 }
 
-interface DraftLine { name: string; qty: string; unit_net: string; vat_rate: string; unit: string }
-const blank = (): DraftLine => ({ name: "", qty: "1", unit_net: "", vat_rate: "23", unit: "szt." });
-
 function NewInvoiceCard({ customers, products, onDone, version }: {
   customers: CustomerRow[]; products: SalesProductRow[]; onDone: () => void; version: number;
 }) {
@@ -256,10 +267,9 @@ function NewInvoiceCard({ customers, products, onDone, version }: {
   const [companyId, setCompanyId] = useState<number | "">(sellers[0]?.id ?? "");
   const [kind, setKind] = useState<"vat" | "proforma" | "advance">("vat");
   const [customerId, setCustomerId] = useState<number | "">("");
-  const today = new Date().toISOString().slice(0, 10);
   const [issue, setIssue] = useState(today);
   const [sale, setSale] = useState(today);
-  const [lines, setLines] = useState<DraftLine[]>([blank()]);
+  const [lines, setLines] = useState<DraftLine[]>([blankLine()]);
   const [advance, setAdvance] = useState("");
   const [paid, setPaid] = useState(false);
   const [extra, setExtra] = useState("");
@@ -274,24 +284,16 @@ function NewInvoiceCard({ customers, products, onDone, version }: {
   }, [companyId, kind, issue, version]);
 
   if (!sellers.length) return null;
-  const setLine = (i: number, patch: Partial<DraftLine>) =>
-    setLines(lines.map((l, j) => {
-      if (j !== i) return l;
-      const next = { ...l, ...patch };
-      const p = patch.name !== undefined ? products.find((x) => x.name === patch.name) : undefined;
-      return p ? { ...next, unit_net: p.unit_net, vat_rate: p.vat_rate, unit: p.unit } : next;
-    }));
-  const typed = lines.filter((l) => l.name.trim() && l.unit_net !== "");
+  const body = linesBody(lines);
   // An exempt position (zw) names the legal basis; FA(3) refuses it without.
-  const exempt = typed.some((l) => l.vat_rate === "zw");
-  const ready = companyId !== "" && customerId !== "" && typed.length > 0 && (kind !== "advance" || advance !== "")
+  const exempt = body.some((l) => l.vat_rate === "zw");
+  const ready = companyId !== "" && customerId !== "" && linesReady(lines) && (kind !== "advance" || advance !== "")
     && (!exempt || exemption.trim() !== "");
 
   const save = async () => {
     setBusy(true);
     setErr("");
     try {
-      const body = typed.map((l) => ({ ...l, qty: l.qty || "1" }));
       await createSalesInvoice({
         company_id: Number(companyId), kind, customer_id: Number(customerId), issue_date: issue, sale_date: sale,
         ...(kind === "advance" ? { order_lines: body, advance_gross: advance } : { lines: body }),
@@ -299,7 +301,7 @@ function NewInvoiceCard({ customers, products, onDone, version }: {
         extra_info: extra.split("\n").map((x) => x.trim()).filter(Boolean),
         ...(exempt ? { exemption_basis: exemption.trim() } : {}),
       });
-      setLines([blank()]);
+      setLines([blankLine()]);
       setAdvance("");
       setExtra("");
       onDone();
@@ -334,12 +336,7 @@ function NewInvoiceCard({ customers, products, onDone, version }: {
           </select>
         </Field>
         <Field label="Buyer">
-          <select className="text" value={customerId} onChange={(e) => setCustomerId(e.target.value === "" ? "" : Number(e.target.value))}>
-            <option value="">—</option>
-            {customers.map((c) => (
-              <option key={c.id} value={c.id}>{c.legal_name || c.name}{c.tax_id ? ` · ${c.tax_id}` : ""}</option>
-            ))}
-          </select>
+          <CustomerSelect customers={customers} value={customerId} onChange={setCustomerId} />
         </Field>
         <Field label="Issue date" hint="Upload the VAT XML to KSeF on this day.">
           <input className="text" type="date" value={issue} onChange={(e) => setIssue(e.target.value)} />
@@ -354,35 +351,7 @@ function NewInvoiceCard({ customers, products, onDone, version }: {
         ) : null}
       </FieldGrid>
       <p className="muted dim">{kind === "advance" ? "The order the advance is paid against:" : "Positions:"}</p>
-      <datalist id="sales-products">
-        {products.map((p) => <option key={p.id} value={p.name} />)}
-      </datalist>
-      {lines.map((l, i) => (
-        <FieldRow key={i}>
-          <Field label={i === 0 ? "Name" : undefined} wide>
-            <input className="text" list="sales-products" value={l.name} onChange={(e) => setLine(i, { name: e.target.value })} />
-          </Field>
-          <Field label={i === 0 ? "Qty" : undefined}>
-            <input className="text num-input" value={l.qty} inputMode="decimal" onChange={(e) => setLine(i, { qty: e.target.value })} />
-          </Field>
-          <Field label={i === 0 ? "Unit net (PLN)" : undefined}>
-            <input className="text num-input" value={l.unit_net} inputMode="decimal" onChange={(e) => setLine(i, { unit_net: e.target.value })} />
-          </Field>
-          <Field label={i === 0 ? "VAT" : undefined}>
-            <select className="text" value={l.vat_rate} onChange={(e) => setLine(i, { vat_rate: e.target.value })}>
-              {RATES.map((r) => <option key={r} value={r}>{/^\d+$/.test(r) ? `${r}%` : r}</option>)}
-            </select>
-          </Field>
-          <Field label={i === 0 ? "Unit" : undefined}>
-            <input className="text num-input" value={l.unit} onChange={(e) => setLine(i, { unit: e.target.value })} />
-          </Field>
-          {lines.length > 1 ? (
-            <button type="button" className="btn btn-sm" onClick={() => setLines(lines.filter((_x, j) => j !== i))}>
-              Remove
-            </button>
-          ) : null}
-        </FieldRow>
-      ))}
+      <SalesLinesEditor lines={lines} products={products} onChange={setLines} />
       <FieldGrid>
         {exempt ? (
           <Field label="Legal basis of the exemption" hint="Printed for a zw position, e.g. art. 113 ust. 1 ustawy o VAT." wide>
@@ -394,7 +363,7 @@ function NewInvoiceCard({ customers, products, onDone, version }: {
         </Field>
       </FieldGrid>
       <div className="btn-row">
-        <button type="button" className="btn btn-sm" onClick={() => setLines([...lines, blank()])}>Add a position</button>
+        <button type="button" className="btn btn-sm" onClick={() => setLines([...lines, blankLine()])}>Add a position</button>
         {kind !== "advance" ? (
           <CheckField checked={paid} onChange={setPaid}>Already paid</CheckField>
         ) : null}
@@ -406,51 +375,81 @@ function NewInvoiceCard({ customers, products, onDone, version }: {
   );
 }
 
-function RecurringCard({ templates, customers, onDone }: {
-  templates: SalesTemplate[]; customers: CustomerRow[]; onDone: () => void;
+function RecurringCard({ templates, customers, products, onDone }: {
+  templates: SalesTemplate[]; customers: CustomerRow[]; products: SalesProductRow[]; onDone: () => void;
 }) {
-  const [month, setMonth] = useState(new Date().toISOString().slice(0, 7));
+  const { companies } = useAuth();
+  const [month, setMonth] = useState(() => today().slice(0, 7));
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState<number | null>(null);
+  const [writing, setWriting] = useState<SalesTemplate | "new" | null>(null);
   const name = (id: number | null) => customers.find((c) => c.id === id)?.name ?? "—";
   const cols: Column<SalesTemplate>[] = [
     { key: "key", label: "Key", width: 12, className: "mono", get: (t) => t.key },
     { key: "buyer", label: "Buyer", width: 22, get: (t) => name(t.customer_id) },
-    { key: "what", label: "Positions", width: 34, get: (t) => t.lines.map((l) => `${l.name} × ${l.qty}`).join("; ") },
+    { key: "what", label: "Positions", width: 30, get: (t) => t.lines.map((l) => `${l.name} × ${l.qty}`).join("; ") },
     { key: "day", label: "Day", width: 8, get: (t) => t.day },
     { key: "active", label: "Active", width: 8, get: (t) => (t.active ? "yes" : "no") },
-    { key: "go", label: "", width: 16, interactive: false, get: () => "",
-      render: (t) => t.active ? (
-        <button type="button" className="btn btn-sm" disabled={busy !== null} onClick={async (e) => {
-          e.stopPropagation();
-          setBusy(t.id);
-          setErr("");
-          try {
-            await generateFromTemplate(t.id, month);
-            onDone();
-          } catch (ex) {
-            setErr(errorMessage(ex));
-          } finally {
-            setBusy(null);
-          }
-        }}>
-          {busy === t.id ? "…" : `Draft for ${month}`}
-        </button>
-      ) : null },
+    { key: "go", label: "", width: 20, interactive: false, get: () => "",
+      render: (t) => (
+        <>
+          {t.active ? (
+            <button type="button" className="btn btn-sm" disabled={busy !== null} onClick={async (e) => {
+              e.stopPropagation();
+              setBusy(t.id);
+              setErr("");
+              try {
+                await generateFromTemplate(t.id, month);
+                onDone();
+              } catch (ex) {
+                setErr(errorMessage(ex));
+              } finally {
+                setBusy(null);
+              }
+            }}>
+              {busy === t.id ? "…" : `Draft for ${month}`}
+            </button>
+          ) : null}
+          {" "}
+          <button type="button" className="btn btn-sm" onClick={() => setWriting(t)}>Edit</button>
+        </>
+      ) },
   ];
-  if (!templates.length) return null;
+  // A company that issues nothing here has no recurring invoices either.
+  const canWrite = companies.some((c) => c.issues_invoices);
+  if (!templates.length && !canWrite) return null;
   return (
-    <div className="card pad">
-      <h2 className="card-title">Recurring invoices</h2>
-      <p className="muted dim">A draft dated the template's day of the month, with the next number.</p>
-      <ErrorBanner message={err} />
-      <FieldRow>
-        <Field label="Month">
-          <input className="text" type="month" value={month} onChange={(e) => setMonth(e.target.value)} />
-        </Field>
-      </FieldRow>
-      <DataTable rows={templates} rowKey={(t) => t.id} columns={cols} empty="No recurring invoices." />
-    </div>
+    <>
+      <FoldSection
+        title="Recurring invoices"
+        count={templates.length}
+        foldKey="sales:recurring"
+        chips={<StatChip n={templates.filter((t) => t.active).length} tone="ok">active</StatChip>}
+        actions={canWrite ? (
+          <button type="button" className="btn btn-sm" onClick={() => setWriting("new")}>New template…</button>
+        ) : null}
+      >
+        <p className="muted dim">A draft dated the template's day of the month, with the next number.</p>
+        <ErrorBanner message={err} />
+        <FieldRow>
+          <Field label="Month">
+            <input className="text" type="month" value={month} onChange={(e) => setMonth(e.target.value)} />
+          </Field>
+        </FieldRow>
+        <DataTable rows={templates} rowKey={(t) => t.id} columns={cols} empty="No recurring invoices." />
+      </FoldSection>
+      {writing ? (
+        <SalesTemplateDialog
+          template={writing === "new" ? null : writing}
+          customers={customers}
+          products={products}
+          onClose={(changed) => {
+            setWriting(null);
+            if (changed) onDone();
+          }}
+        />
+      ) : null}
+    </>
   );
 }
 
@@ -461,6 +460,9 @@ export default function SalesInvoices() {
   const [templates, setTemplates] = useState<SalesTemplate[]>([]);
   const [error, setError] = useState("");
   const [version, setVersion] = useState(0);
+  const [narrow, setNarrow] = useState("");
+  const { isAdmin } = useAuth();
+  const [writing, setWriting] = useState<"history" | "import" | null>(null);
 
   const load = useCallback((signal?: AbortSignal) => {
     setVersion((v) => v + 1);
@@ -487,29 +489,56 @@ export default function SalesInvoices() {
     <div className="main-solo">
       <div className="page">
         <div className="toolbar">
-          <h1 className="page-title">Sales invoices</h1>
+          <h1>Sales invoices</h1>
           {rows ? (
             <span className="toolbar-total">
               {rows.length} documents · {totals.drafts} draft(s) · {pl(totals.open)} PLN unpaid on the platform
             </span>
           ) : null}
+          {isAdmin ? (
+            <>
+              <button type="button" className="btn btn-sm" onClick={() => setWriting("history")}
+                title="A document a company issued before the platform or KSeF wrote its invoices">
+                Record issued elsewhere…
+              </button>
+              <button type="button" className="btn btn-sm" onClick={() => setWriting("import")}
+                title="The files of the old invoicing script">
+                Import register…
+              </button>
+            </>
+          ) : null}
         </div>
         <ErrorBanner message={error} />
+        {writing === "history" ? (
+          <RecordHistoryDialog customers={customers}
+            onClose={(c) => { setWriting(null); if (c) load(); }} />
+        ) : null}
+        {writing === "import" ? (
+          <ImportRegisterDialog onClose={(c) => { setWriting(null); if (c) load(); }} />
+        ) : null}
         <NewInvoiceCard customers={customers} products={products} onDone={() => load()} version={version} />
-        <RecurringCard templates={templates} customers={customers} onDone={() => load()} />
+        <RecurringCard templates={templates} customers={customers} products={products} onDone={() => load()} />
         <div className="card pad">
           <h2 className="card-title">Register</h2>
           {rows === null ? (
             <Spinner label="Loading invoices…" />
           ) : (
-            <DataTable
-              rows={rows}
-              rowKey={(r) => r.id}
-              columns={COLUMNS}
-              empty="No invoices."
-              defaultSort={{ key: "date", dir: "desc" }}
-              expand={(r) => <InvoicePanel id={r.id} onChanged={() => load()} />}
-            />
+            <>
+              <div className="stat-row">
+                {([["overdue", "err"], ["unpaid", "warn"], ["draft", "warn"], ["paid", "ok"]] as const).map(([word, tone]) => (
+                  <NarrowChip key={word} n={rows.filter((r) => stateOf(r) === word).length}
+                    tone={tone} value={word} current={narrow} onNarrow={setNarrow}>{word}</NarrowChip>
+                ))}
+              </div>
+              <DataTable
+                rows={narrow ? rows.filter((r) => stateOf(r) === narrow) : rows}
+                rowKey={(r) => r.id}
+                columns={COLUMNS}
+                empty={narrow ? "No invoice in this state." : "No invoices."}
+                defaultSort={{ key: "date", dir: "desc" }}
+                expand={(r) => <InvoicePanel id={r.id} onChanged={() => load()} />}
+              />
+            </>
           )}
         </div>
       </div>

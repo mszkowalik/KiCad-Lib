@@ -16,6 +16,7 @@ import {
   type SnapshotInfo,
 } from "../api";
 import { BackLink, ErrorBanner, Spinner } from "../components/Ui";
+import Field, { FieldGrid } from "../components/Field";
 import { useStickyState } from "../useStickyState";
 import BomTab from "../components/project/BomTab";
 import BoardTab from "../components/project/BoardTab";
@@ -30,12 +31,28 @@ import DevicesTab from "../components/project/DevicesTab";
 import ReviewTab from "../components/project/ReviewTab";
 import SchematicTab from "../components/project/SchematicTab";
 import OwnershipCard from "../components/project/OwnershipCard";
+import TabStrip, { type TabDef } from "../components/TabStrip";
 
 const TABS = ["BOM", "Board", "Schematic", "Stackup", "History", "Review", "Costs", "Process", "Runs", "Orders", "Devices", "Notes", "Settings"] as const;
 type Tab = (typeof TABS)[number];
 
-/** Visible labels; the keys stay stable so sticky tab state survives. */
-const TAB_LABEL: Partial<Record<Tab, string>> = { Costs: "Cost plan", Runs: "Batches" };
+/** The strip, by job. The ids stay stable, so `?tab=` links and the sticky tab
+ *  survive, and `Costs` and `Runs` only read differently. */
+const TAB_STRIP: TabDef<Tab>[] = [
+  { id: "BOM", label: "BOM", group: "Design" },
+  { id: "Board", label: "Board" },
+  { id: "Schematic", label: "Schematic" },
+  { id: "Stackup", label: "Stackup" },
+  { id: "Review", label: "Review" },
+  { id: "History", label: "History" },
+  { id: "Process", label: "Process", group: "Make" },
+  { id: "Runs", label: "Batches" },
+  { id: "Devices", label: "Devices" },
+  { id: "Costs", label: "Cost plan" },
+  { id: "Orders", label: "Orders", group: "Sell" },
+  { id: "Notes", label: "Notes", group: "Project" },
+  { id: "Settings", label: "Settings" },
+];
 
 export default function ProjectDetail() {
   const { id } = useParams();
@@ -47,7 +64,7 @@ export default function ProjectDetail() {
   // THE URL WINS, and the sticky value is the fallback for a bare visit — the
   // rule every other tabbed page here follows. It had no URL form at all, so a
   // link from elsewhere could not say which tab it meant: the finished-stock
-  // card on Production -> Stock links straight at this project's Devices tab
+  // card on Stock → Finished devices links straight at this project's Devices tab
   // with the condition it was counting.
   const [searchParams, setSearchParams] = useSearchParams();
   const [stickyTab, setStickyTab] = useStickyState<Tab>(`project:${projectId}:tab`, "BOM");
@@ -85,7 +102,7 @@ export default function ProjectDetail() {
   // Settings tab state
   const [settingsDraft, setSettingsDraft] = useState<{
     name: string; git_url: string; default_branch: string;
-    display_currency: string; description: string; token: string;
+    description: string; token: string;
     credId: number | "";
   } | null>(null);
   const [creds, setCreds] = useState<GitCredential[]>([]);
@@ -223,8 +240,7 @@ export default function ProjectDetail() {
         {error ? <ErrorBanner message={error} /> : null}
 
         <div className="toolbar">
-          <label className="proj-inline-field">
-            Snapshot
+          <Field inline label="Snapshot">
             <select
               className="text"
               value={snapshotId ?? ""}
@@ -237,30 +253,28 @@ export default function ProjectDetail() {
                 </option>
               ))}
             </select>
-          </label>
+          </Field>
           {/* Design boards only. A repository also carries one simulation
               harness per block (CP_sim, TEMP_sim, …); those are projects too,
               but they are the Simulator's to list, not a board to build. */}
           {snapshot && boards.length > 1 ? (
-            <label className="proj-inline-field">
-              Board
+            <Field inline label="Board">
               <select className="text" value={boardName} onChange={(e) => setBoardName(e.target.value)}>
                 {boards.map((b) => (
                   <option key={b.name} value={b.name}>{b.name}</option>
                 ))}
               </select>
-            </label>
+            </Field>
           ) : null}
           {board && board.variants.length > 0 ? (
-            <label className="proj-inline-field">
-              Variant
+            <Field inline label="Variant">
               <select className="text" value={variant} onChange={(e) => setVariant(e.target.value)}>
                 <option value="">default</option>
                 {board.variants.map((v) => (
                   <option key={v.name} value={v.name} title={v.description}>{v.name}</option>
                 ))}
               </select>
-            </label>
+            </Field>
           ) : null}
           {snapshot ? (
             <span className="muted">
@@ -271,20 +285,7 @@ export default function ProjectDetail() {
           {anyBusy ? <Spinner label="ingesting" /> : null}
         </div>
 
-        <div className="seg proj-tabs" role="tablist" aria-label="Project sections">
-          {TABS.map((t) => (
-            <button
-              key={t}
-              type="button"
-              role="tab"
-              aria-selected={tab === t}
-              className={tab === t ? "on" : ""}
-              onClick={() => setTab(t)}
-            >
-              {TAB_LABEL[t] ?? t}
-            </button>
-          ))}
-        </div>
+        <TabStrip tabs={TAB_STRIP} value={tab} onChange={setTab} label="Project sections" />
 
         {tab === "BOM" ? (
           snapshot && board ? (
@@ -347,7 +348,6 @@ export default function ProjectDetail() {
                       name: project.name,
                       git_url: project.git_url,
                       default_branch: project.default_branch,
-                      display_currency: project.display_currency ?? "",
                       description: project.description,
                       token: "",
                       credId: project.git_credential_id ?? "",
@@ -358,7 +358,6 @@ export default function ProjectDetail() {
                 </button>
                 <dl className="kv">
                   <dt>Default branch</dt><dd className="mono">{project.default_branch}</dd>
-                  <dt>Display currency</dt><dd>{project.effective_currency}</dd>
                   <dt>Git account</dt>
                   <dd>
                     {project.git_credential ? (
@@ -384,19 +383,16 @@ export default function ProjectDetail() {
               </div>
             ) : (
               <>
-                <div className="field-grid">
-                  <label>
-                    Name
+                <FieldGrid>
+                  <Field label="Name">
                     <input className="text" value={settingsDraft.name}
                       onChange={(e) => setSettingsDraft({ ...settingsDraft, name: e.target.value })} />
-                  </label>
-                  <label>
-                    Git URL
+                  </Field>
+                  <Field label="Git URL">
                     <input className="text" value={settingsDraft.git_url}
                       onChange={(e) => setSettingsDraft({ ...settingsDraft, git_url: e.target.value })} />
-                  </label>
-                  <label>
-                    Git account
+                  </Field>
+                  <Field label="Git account">
                     <select
                       className="text"
                       value={settingsDraft.credId}
@@ -412,29 +408,21 @@ export default function ProjectDetail() {
                         <option key={c.id} value={c.id}>{c.name}</option>
                       ))}
                     </select>
-                  </label>
-                  <label>
-                    Access token <span className="muted">(blank = keep; "clear" to remove)</span>
+                  </Field>
+                  <Field label={'Access token (blank = keep; "clear" to remove)'}>
                     <input className="text" type="password" autoComplete="new-password"
                       value={settingsDraft.token}
                       onChange={(e) => setSettingsDraft({ ...settingsDraft, token: e.target.value })} />
-                  </label>
-                  <label>
-                    Default branch
+                  </Field>
+                  <Field label="Default branch">
                     <input className="text" value={settingsDraft.default_branch}
                       onChange={(e) => setSettingsDraft({ ...settingsDraft, default_branch: e.target.value })} />
-                  </label>
-                  <label>
-                    Display currency
-                    <input className="text" value={settingsDraft.display_currency} maxLength={3}
-                      onChange={(e) => setSettingsDraft({ ...settingsDraft, display_currency: e.target.value.toUpperCase() })} />
-                  </label>
-                  <label>
-                    Description
+                  </Field>
+                  <Field label="Description">
                     <input className="text" value={settingsDraft.description}
                       onChange={(e) => setSettingsDraft({ ...settingsDraft, description: e.target.value })} />
-                  </label>
-                </div>
+                  </Field>
+                </FieldGrid>
                 {settingsMsg ? <div className="banner-ok">{settingsMsg}</div> : null}
                 <div className="btn-row">
                   <button className="btn btn-primary"
@@ -443,7 +431,6 @@ export default function ProjectDetail() {
                         name: settingsDraft.name,
                         git_url: settingsDraft.git_url,
                         default_branch: settingsDraft.default_branch,
-                        display_currency: settingsDraft.display_currency,
                         description: settingsDraft.description,
                       };
                       // 0 unassigns; the API leaves it alone when absent.

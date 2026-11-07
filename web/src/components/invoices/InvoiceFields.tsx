@@ -62,7 +62,7 @@ export const EMPTY_TAX = {
 
 /** The two vocabularies, fetched once for every form on the page. */
 let kindsCache: Promise<DocumentKinds> | null = null;
-function useDocumentKinds(): DocumentKinds | null {
+export function useDocumentKinds(): DocumentKinds | null {
   const [kinds, setKinds] = useState<DocumentKinds | null>(null);
   useEffect(() => {
     let live = true;
@@ -95,7 +95,7 @@ export function taxSummary(d: {
   return parts.filter(Boolean).join(" · ");
 }
 
-export const DOC_TYPES = [
+const DOC_TYPES = [
   ["invoice", "invoice"],
   ["proforma", "proforma (not money)"],
   ["receipt", "receipt"],
@@ -143,11 +143,10 @@ export default function InvoiceFields({
   return (
     <>
       <div className="field-grid">
-        <label>
-          Supplier
+        <Field label="Supplier">
           <input className="text" value={value.supplier} disabled={disabled}
                  onChange={(e) => set({ supplier: e.target.value })} />
-        </label>
+        </Field>
         <Field label="Buyer">
           <select
             className="text"
@@ -161,25 +160,21 @@ export default function InvoiceFields({
             ))}
           </select>
         </Field>
-        <label>
-          Document number
+        <Field label="Document number">
           <input className="text" value={value.doc_number} disabled={disabled}
                  onChange={(e) => set({ doc_number: e.target.value })} />
-        </label>
-        <label>
-          Supplier order id
+        </Field>
+        <Field label="Supplier order id">
           <input className="text" value={value.external_id} disabled={disabled}
                  placeholder="JLC Batch No, POB0…"
                  onChange={(e) => set({ external_id: e.target.value })} />
-        </label>
-        <label>
-          Date
+        </Field>
+        <Field label="Date">
           <input className="text" value={value.doc_date} disabled={disabled}
                  placeholder="2025-04-13"
                  onChange={(e) => set({ doc_date: e.target.value })} />
-        </label>
-        <label>
-          Currency
+        </Field>
+        <Field label="Currency">
           <input className="text" value={value.currency} disabled={disabled}
                  onChange={(e) => set({ currency: e.target.value })} />
           {foreign && value.doc_date.trim() ? (
@@ -190,12 +185,11 @@ export default function InvoiceFields({
               {nbp ? <span className="muted">{nbp}</span> : null}
             </span>
           ) : null}
-        </label>
-        <label>
-          Printed total
+        </Field>
+        <Field label="Printed total">
           <input className="text num" value={value.total} disabled={disabled}
                  onChange={(e) => set({ total: e.target.value })} />
-        </label>
+        </Field>
         {/* Decision 0084. The books deduct a purchase's VAT in PLN, in the
             month of the later of the sale date and the receipt date. */}
         <Field label={<>VAT <InfoTip label="About VAT">The printed VAT, in the document's currency. Empty when the invoice charges no Polish VAT (an import, reverse charge).</InfoTip></>}>
@@ -242,19 +236,17 @@ export default function InvoiceFields({
             ))}
           </select>
         </Field>
-        <label>
-          Type
+        <Field label="Type">
           <select className="text" value={value.doc_type} disabled={disabled}
                   onChange={(e) => set({ doc_type: e.target.value })}>
             {DOC_TYPES.map(([v, label]) => <option key={v} value={v}>{label}</option>)}
           </select>
-        </label>
+        </Field>
         {withDest ? (
-          <label>
+          <Field label="Every position goes to">
             {/* The DOCUMENT's default, applied to any position that names no
                 destination of its own. Worded like the per-line control it
                 backstops (decision 0045). */}
-            Every position goes to
             <ChargeToSelect
               className="text"
               runs={runs}
@@ -265,7 +257,7 @@ export default function InvoiceFields({
               emptyLabel="— each position decides —"
               withExcluded={false}
             />
-          </label>
+          </Field>
         ) : null}
       </div>
       {/* `note-textarea` is `flex: 1` and belongs to `.note-form`; inside a

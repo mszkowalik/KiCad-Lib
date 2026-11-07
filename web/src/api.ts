@@ -307,61 +307,6 @@ export interface VersionCreateResponse extends VersionSummary {
 
 // -------------------------------------------------------------------- import
 
-export interface MirrorSummary {
-  symbol_libs: number;
-  components_in_libs: number;
-  footprints: number;
-  models3d: number;
-  warnings: string[];
-}
-
-export interface ImportReport {
-  warnings?: string[];
-  libraries?: number;
-  categories?: number;
-  rules?: number;
-  skills?: number;
-  symbols?: number;
-  footprints?: number;
-  models3d?: number;
-  components?: number;
-  properties?: number;
-  duration_s?: number;
-  mirror?: MirrorSummary;
-  // Sync-mode fields (POST /api/import/sync): diff YAML against the DB and
-  // create draft proposals. `mode === "sync"` selects the sync report view.
-  mode?: string;
-  yaml_components?: number;
-  new_proposals?: string[];
-  edit_proposals?: string[];
-  already_pending?: string[];
-  skipped?: Array<{ name: string; reason: string }>;
-  only_in_db?: string[];
-  unchanged?: number;
-  proposals_created?: number;
-  /** Present on failed runs persisted by the importer. */
-  error?: string;
-  partial?: ImportReport;
-}
-
-export interface ImportLastRun {
-  id: number;
-  started_at: string | null;
-  finished_at: string | null;
-  status: string;
-  duration_s: number | null;
-  report: ImportReport | null;
-}
-
-export interface ImportStatus {
-  running: boolean;
-  stage: string;
-  started_at: string | null;
-  error: string | null;
-  report: ImportReport | null;
-  last_run: ImportLastRun | null;
-}
-
 // -------------------------------------------------------------------- client
 
 export class ApiError extends Error {
@@ -1071,10 +1016,6 @@ export function datasheetFileUrl(id: number): string {
   return `${API_URL}/api/datasheets/${id}/file`;
 }
 
-export function datasheetVersionFileUrl(id: number, versionNo: number): string {
-  return `${API_URL}/api/datasheets/${id}/versions/${versionNo}/file`;
-}
-
 // ------------------------------------------------------------ kicad / sync
 
 export interface KicadConfig {
@@ -1241,10 +1182,6 @@ export interface HistoryPlan {
   refused?: { batch: string | null; date: string; why: unknown }[];
 }
 
-export function getHistoryPlan(signal?: AbortSignal): Promise<HistoryPlan> {
-  return request("/api/transfers/history", { signal });
-}
-
 export function applyHistory(dryRun: boolean): Promise<HistoryPlan> {
   return request("/api/transfers/history", jsonBody("POST", { dry_run: dryRun }));
 }
@@ -1271,6 +1208,62 @@ export function setDrawCompany(consId: number, companyId: number, dryRun = true)
                  jsonBody("PATCH", { company_id: companyId, dry_run: dryRun }));
 }
 
+/** What the one-time company backfill gives a company (decision 0063). */
+export interface CompanyBackfillResult {
+  dry_run: boolean;
+  ownership: { project: string; company: string; from: string }[];
+  runs: { run_id: number; run: string; date: string | null; company: string; evidence: string }[];
+  orders: { order_id: number; ref: string; company: string; evidence: string }[];
+  memberships: { user: string; companies: string[] }[];
+  unresolved: { run?: string; order_id?: number; why: string }[];
+}
+
+export function companyBackfill(dryRun: boolean): Promise<CompanyBackfillResult> {
+  return request("/api/companies/backfill", jsonBody("POST", { dry_run: dryRun }));
+}
+
+/** The material ledger's size (decisions 0097, 0098). Admin only. */
+export interface MaterialLedgerSummary {
+  /** row count per table */
+  rows: Record<string, number>;
+  /** items per tracking level */
+  tracking: Record<string, number>;
+}
+
+export function getMaterialLedgerSummary(signal?: AbortSignal): Promise<MaterialLedgerSummary> {
+  return request("/api/material-ledger/summary", { signal });
+}
+
+/** A person's statement that an internal part is a state of another item. */
+export interface MaterialStateMapRow {
+  component_id: number;
+  component: string | null;
+  item_component_id: number;
+  item: string | null;
+  properties: Record<string, unknown>;
+  note: string;
+  decided_by: string;
+  created_at: string | null;
+}
+
+export function getMaterialStateMaps(signal?: AbortSignal): Promise<MaterialStateMapRow[]> {
+  return request("/api/material-ledger/state-maps", { signal });
+}
+
+/** One map per internal part: a second PUT for a part replaces its map. */
+export function putMaterialStateMap(body: {
+  component_id: number;
+  item_component_id: number;
+  properties: Record<string, unknown>;
+  note: string;
+}): Promise<{ component_id: number; item_component_id: number; properties: Record<string, unknown> }> {
+  return request("/api/material-ledger/state-maps", jsonBody("PUT", body));
+}
+
+export function deleteMaterialStateMap(componentId: number): Promise<{ deleted: number }> {
+  return request(`/api/material-ledger/state-maps/${componentId}`, { method: "DELETE" });
+}
+
 export function stockBackfill(dryRun: boolean, fetchJlc: boolean): Promise<StockBackfillResult> {
   return request("/api/companies/stock-backfill",
                  jsonBody("POST", { dry_run: dryRun, fetch_jlc: fetchJlc }));
@@ -1278,23 +1271,6 @@ export function stockBackfill(dryRun: boolean, fetchJlc: boolean): Promise<Stock
 
 /** What binding the history to its lots does (decision 0073): each batch's
  *  cost change, and the draws no lot covers, which keep their price. */
-export interface LotHistoryResult {
-  dry_run: boolean;
-  draws_bound: number;
-  change_usd: number;
-  batches: { run_id: number | null; batch: string | null; closed: boolean;
-             closed_cost_usd: number | null; change_usd: number }[];
-  uncovered: { consumption_id: number; run_id: number | null; batch: string | null; label: string;
-               mpn: string; lcsc: string; component_id: number | null; date: string | null;
-               qty: number; uncovered: number; company_id: number | null }[];
-  batch_id?: number;
-}
-
-/** Bind every live draw to its lots, oldest first, and price it at their
- *  cost, closed batches included. Admin only; a dry run writes nothing. */
-export function lotHistory(dryRun: boolean): Promise<LotHistoryResult> {
-  return request("/api/companies/lot-history", jsonBody("POST", { dry_run: dryRun }));
-}
 
 export function getAuthState(signal?: AbortSignal): Promise<AuthState> {
   return request("/api/auth/me", { signal });
@@ -1809,14 +1785,6 @@ export function bulkSignoff(
   });
 }
 
-export function startImport(): Promise<{ status: string }> {
-  return request("/api/import", { method: "POST" });
-}
-
-export function getImportStatus(signal?: AbortSignal): Promise<ImportStatus> {
-  return request("/api/import/status", { signal });
-}
-
 // ------------------------------------------------------------- file viewer
 
 export interface ViewerCapabilities {
@@ -1846,6 +1814,37 @@ export function getModels3d(
   signal?: AbortSignal,
 ): Promise<Model3DFile[]> {
   return request(`/api/components/${compId}/versions/${versionNo}/models3d`, { signal });
+}
+
+/** One file in the 3D model store. A footprint's `(model ...)` names it by
+ *  `rel_path`. */
+export interface Model3DRow {
+  rel_path: string;
+  size_bytes: number;
+  sha256: string;
+}
+
+/** The route caps `limit` at 300 and has no offset, so a search narrows it. */
+export function listModels3d(
+  query: string,
+  limit: number,
+  signal?: AbortSignal,
+): Promise<{ total_matching: number; models: Model3DRow[] }> {
+  const qs = new URLSearchParams({ limit: String(limit) });
+  if (query) qs.set("query", query);
+  return request(`/api/models3d?${qs.toString()}`, { signal });
+}
+
+/** Same-origin path into the file mirror, for `viewkind.fileHref`. */
+export function model3dPath(relPath: string): string {
+  return `/files/3DModels/${relPath.split("/").map(encodeURIComponent).join("/")}`;
+}
+
+/** Creates the file, or REPLACES the content of a path that exists. Live at once. */
+export function uploadModel3d(relPath: string, file: File): Promise<Model3DRow & { ok: boolean }> {
+  const fd = new FormData();
+  fd.append("file", file);
+  return request(`/api/models3d/upload?rel_path=${encodeURIComponent(relPath)}`, { method: "POST", body: fd });
 }
 
 /** Upload a local file as this row's stored copy (versioned; non-PDF too). */
@@ -1987,7 +1986,6 @@ export interface ProjectInfo {
   git_credential_id: number | null;
   git_credential: { id: number; name: string } | null;
   default_branch: string;
-  display_currency: string | null;
   effective_currency: string;
   description: string;
   created_at: string;
@@ -2007,7 +2005,6 @@ export interface ProjectCreate {
   git_credential_id?: number | null;
   git_token?: string | null;
   default_branch?: string;
-  display_currency?: string | null;
   description?: string;
 }
 
@@ -2019,7 +2016,6 @@ export interface ProjectPatchBody {
   git_credential_id?: number | null;
   git_token?: string;
   default_branch?: string;
-  display_currency?: string;
   description?: string;
 }
 
@@ -2076,6 +2072,21 @@ export interface ProjectHistory {
   commits: HistoryCommit[];
 }
 
+/** One file of a commit. `size` is null for a submodule, which holds no file. */
+export interface ProjectFileRow {
+  path: string;
+  size: number | null;
+}
+
+export function getProjectFiles(id: number, sha: string, signal?: AbortSignal): Promise<ProjectFileRow[]> {
+  return request(`/api/projects/${id}/files?sha=${encodeURIComponent(sha)}`, { signal });
+}
+
+/** Same-origin path of one file at one commit, for `viewkind.fileHref`. */
+export function projectFilePath(id: number, sha: string, path: string): string {
+  return `/api/projects/${id}/file?sha=${encodeURIComponent(sha)}&path=${encodeURIComponent(path)}`;
+}
+
 export function getProjectHistory(
   id: number,
   ref?: string,
@@ -2097,10 +2108,6 @@ export function ingestSnapshot(projectId: number, ref: string): Promise<{ status
   });
 }
 
-export function getSnapshot(id: number, signal?: AbortSignal): Promise<SnapshotInfo> {
-  return request(`/api/snapshots/${id}`, { signal });
-}
-
 export function deleteSnapshot(id: number): Promise<{ deleted: number }> {
   return request(`/api/snapshots/${id}`, { method: "DELETE" });
 }
@@ -2109,6 +2116,8 @@ export function deleteSnapshot(id: number): Promise<{ deleted: number }> {
 
 export interface BomLine {
   key: string;
+  /** The ladder price in USD: a part prints in USD, a total in PLN (decision 0103). */
+  unit_usd?: number | null;
   refs: string;
   qty_per: number;
   qty_total: number;
@@ -2328,12 +2337,6 @@ export function boardStepUrl(snapshotId: number, board: string): string {
 
 export function fabZipUrl(snapshotId: number, board: string): string {
   return `${API_URL}/api/snapshots/${snapshotId}/boards/${encodeURIComponent(board)}/fab.zip`;
-}
-
-export interface CheckViolation {
-  type?: string;
-  severity?: string;
-  description?: string;
 }
 
 export interface BoardChecks {
@@ -2607,6 +2610,9 @@ export interface RunDeviceRow {
 
 export interface RunInfo {
   id: number;
+  /** PLN per USD at the batch's date: its USD figures print in PLN at this rate,
+   *  so they do not move later (decision 0103). */
+  pln_per_usd?: number | null;
   project_id: number;
   /** The company that made the batch (decision 0063). */
   company_id: number | null;
@@ -2619,16 +2625,14 @@ export interface RunInfo {
   run_date: string;
   notes: string;
   qty_good?: number | null;
-  /** what the batch is set to be programmed with: a pinned version, or a
-   *  channel to follow. Both empty = nothing assigned, so whatever the bench
-   *  picks is not an override. */
-  deployment_version_id?: number | null;
-  deployment_channel?: string;
   /** must its units pass the project's test? */
   requires_test?: boolean;
   /** Decision 0058: the process version this batch resolved at creation, and
    *  the lot of the programmable form it programs from (null = fresh boards). */
   process_version_id?: number | null;
+  /** the board of a batch in work; absent on a finished batch or one with no
+   *  process. `board` is the PCB's name (decision 0103) */
+  process_board?: BoardStep[];
   /** the stack the programming bench names twins from (decision 0059) */
   bench_stack?: string | null;
   /** the sale side: price PER DEVICE, units billed, and the customer order */
@@ -2807,27 +2811,8 @@ export async function uploadRunAttachment(
   return request(`/api/runs/${runId}/attachments`, { method: "POST", body: form });
 }
 
-export function runAttachmentUrl(attachmentId: number): string {
-  return `${API_URL}/api/run-attachments/${attachmentId}`;
-}
-
 export function deleteRunAttachment(attachmentId: number): Promise<{ deleted: number }> {
   return request(`/api/run-attachments/${attachmentId}`, { method: "DELETE" });
-}
-
-export function addRunDevices(
-  runId: number,
-  serials: string,
-): Promise<{ added: number; skipped_duplicates: number; total: number }> {
-  return request(`/api/runs/${runId}/devices`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ serials }),
-  });
-}
-
-export function deleteRunDevice(deviceId: number): Promise<{ deleted: number }> {
-  return request(`/api/run-devices/${deviceId}`, { method: "DELETE" });
 }
 
 // ------------------------------------------- post-factum production costs
@@ -3001,6 +2986,8 @@ export interface InvoiceRegister {
     customer: string; order_ref: string; order_date: string;
     /** set = this batch's books are closed (decision 0044) */
     closed_at: string | null;
+    /** PLN per USD at the batch's date (decision 0103). */
+    pln_per_usd: number | null;
   }>;
   summary: {
     document_count: number;
@@ -3127,10 +3114,6 @@ export function getInvoiceRegister(signal?: AbortSignal): Promise<InvoiceRegiste
   return request("/api/invoices", { signal });
 }
 
-export function getSharedDocuments(signal?: AbortSignal): Promise<RunCostDocumentRow[]> {
-  return request("/api/documents", { signal });
-}
-
 /** One document with its full line tree — what an expanded invoice row shows. */
 export function getDocument(docId: number, signal?: AbortSignal): Promise<RunCostDocumentRow> {
   return request(`/api/run-documents/${docId}`, { signal });
@@ -3158,6 +3141,25 @@ export function uploadDocumentAttachment(
   const fd = new FormData();
   fd.append("file", file);
   return request(`/api/run-documents/${docId}/attachment`, { method: "POST", body: fd });
+}
+
+/** A transcription of one of the document's own files (decision 0085). */
+export interface PrintedInvoiceIn {
+  attachment_id: number;
+  number: string;
+  issue_date: string;
+  sale_date: string;
+  currency: string;
+  /** the page, in the shape of `SalesInvoice.body` */
+  body: unknown;
+  /** required when the page disagrees with itself or with the document */
+  reason: string;
+}
+
+export function putPrintedInvoice(docId: number, body: PrintedInvoiceIn): Promise<{
+  changed: string[]; problems: { code: string; text: string }[];
+}> {
+  return request(`/api/run-documents/${docId}/printed-invoice`, jsonBody("PUT", body));
 }
 
 /** Decision 0087: the legal kinds of a supplier document and the VAT limits. */
@@ -3431,6 +3433,8 @@ export function getFxAt(
 }
 
 export interface RunActuals {
+  /** PLN per USD at the batch's date (decision 0103). */
+  pln_per_usd: number | null;
   currency: string;
   /** the actual total in USD. The `total` beside it is in the project's DISPLAY
    *  currency, which is editable, so only this one can be compared against a
@@ -3510,20 +3514,6 @@ export interface ConsumptionRow {
   lots: ConsumptionLot[];
 }
 
-export interface CostPoolRow {
-  key: string;
-  component_id: number | null;
-  mpn: string;
-  lcsc: string;
-  bought: number;
-  used: number;
-  lost: number;
-  on_hand: number;
-  avg_unit_usd: number;
-  value_usd: number;
-  unknown_rate: boolean;
-}
-
 export interface DocumentCreate {
   run_id?: number | null;
   doc_type?: string;
@@ -3549,12 +3539,6 @@ export interface DocumentCreate {
 
 export function getRunDocuments(runId: number, signal?: AbortSignal): Promise<RunCostDocumentRow[]> {
   return request(`/api/runs/${runId}/documents`, { signal });
-}
-
-export function getProjectDocuments(
-  projectId: number, signal?: AbortSignal,
-): Promise<RunCostDocumentRow[]> {
-  return request(`/api/projects/${projectId}/documents`, { signal });
 }
 
 export function createDocument(projectId: number, body: DocumentCreate): Promise<RunCostDocumentRow> {
@@ -3800,12 +3784,6 @@ export function addStockAdjustment(
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
-}
-
-export function getCostPool(
-  projectId: number, signal?: AbortSignal,
-): Promise<{ parts: CostPoolRow[]; total_value_usd: number }> {
-  return request(`/api/projects/${projectId}/cost-pool`, { signal });
 }
 
 // -------------------------------------------------------- where-used & FX
@@ -4292,6 +4270,18 @@ export function getJlcLedgerReport(signal?: AbortSignal): Promise<JlcLedgerRepor
   return request("/api/jlc/stock/ledger", { signal });
 }
 
+/** Copy new rows of JLC's own ledger. It needs the browser session and moves no
+ *  stock. `only` is a list of LCSC codes; empty means every library part. */
+export function syncJlcLedger(only: string[] = []): Promise<JlcLedgerSync> {
+  const qs = only.length ? `?only=${encodeURIComponent(only.join(","))}` : "";
+  return request(`/api/jlc/stock/ledger/sync${qs}`, { method: "POST" });
+}
+
+/** JLC's untouched payload for one stock item. */
+export function getJlcStockItemRaw(itemId: number, signal?: AbortSignal): Promise<unknown> {
+  return request(`/api/jlc/stock/item/${itemId}/raw`, { signal });
+}
+
 export function getJlcPartLedger(lcsc: string, signal?: AbortSignal): Promise<JlcPartLedger> {
   return request(`/api/jlc/stock/ledger/${encodeURIComponent(lcsc)}`, { signal });
 }
@@ -4323,6 +4313,8 @@ export function bookJlcLedgerRows(
 
 export interface PartsStockRow {
   key: string;
+  /** the JLC stock items behind this row; two LCSC codes are two items */
+  jlc_item_ids?: number[];
   component_id: number | null;
   component_name: string | null;
   mpn: string;
@@ -4342,6 +4334,12 @@ export interface PartsStockRow {
    *  this against `held_qty`, because comparing today's pool against a snapshot
    *  measures elapsed time rather than disagreement */
   remaining_at_sync_qty: number;
+  /** what the office organizers hold today (decision 0104) */
+  house_qty: number;
+  house_boxes: { code: string; qty: number }[];
+  /** the pool at JLC's count, less what the boxes held then: what `delta_qty`
+   *  compares with JLC's count */
+  expected_at_jlc_qty: number;
   paid_unit_usd: number | null;
   paid_value_usd: number;
   /** physical side: JLC consignment */
@@ -4763,7 +4761,7 @@ export interface WriteBatch {
   /** The signed-in person who ran it (decision 0050); older batches may say "user". */
   actor: string;
   user_id: number | null;
-  /** Joins the batch to its rows in Admin → Activity. Null before 2026-09-24. */
+  /** Joins the batch to its rows in History → Everyone. Null before 2026-09-24. */
   request_id: string | null;
   summary: Record<string, unknown>;
   identity_before: Record<string, number | boolean> | null;
@@ -4874,6 +4872,132 @@ export function clearJlcSession(): Promise<JlcSessionState> {
   return request("/api/jlc/web/session", { method: "DELETE" });
 }
 
+/** JLC's order centre, read live through the browser session. The payloads stay
+ *  close to raw (docs/jlcpcb-web-api.md §3.1, §3.4), so only the fields a list
+ *  prints are named here. A dead session answers 409 with the server's sentence. */
+export interface JlcWebBatch {
+  batchNum?: string;
+  batchCreateTime?: string | number;
+  batchStatus?: string;
+  payUnionSecondVO?: { totalFee?: number; orderInfoVOList?: unknown[] | null } | null;
+  [key: string]: unknown;
+}
+
+export interface JlcWebPartsSubOrder {
+  orderStatus?: number;
+  presaleGoodsRecords?: unknown[] | null;
+  [key: string]: unknown;
+}
+
+export interface JlcWebPartsOrder {
+  orderBatchNo?: string;
+  stockList?: JlcWebPartsSubOrder[] | null;
+  buyList?: JlcWebPartsSubOrder[] | null;
+  overseasShopList?: JlcWebPartsSubOrder[] | null;
+  idleOrderList?: JlcWebPartsSubOrder[] | null;
+  [key: string]: unknown;
+}
+
+export interface JlcWebListParams {
+  page: number;
+  page_size: number;
+  status?: string;
+  search?: string;
+}
+
+function jlcWebListQuery(p: JlcWebListParams): string {
+  const qs = new URLSearchParams({ page: String(p.page), page_size: String(p.page_size) });
+  if (p.status) qs.set("status", p.status);
+  if (p.search) qs.set("search", p.search);
+  return qs.toString();
+}
+
+export function getJlcWebOrders(
+  params: JlcWebListParams,
+  signal?: AbortSignal,
+): Promise<{ list?: JlcWebBatch[] | null; [key: string]: unknown }> {
+  return request(`/api/jlc/web/orders?${jlcWebListQuery(params)}`, { signal });
+}
+
+export function getJlcWebOrderDetail(batchNum: string, signal?: AbortSignal): Promise<unknown> {
+  return request(`/api/jlc/web/orders/${encodeURIComponent(batchNum)}`, { signal });
+}
+
+export function getJlcWebOrderInvoice(batchNum: string, signal?: AbortSignal): Promise<unknown> {
+  return request(`/api/jlc/web/orders/${encodeURIComponent(batchNum)}/invoice`, { signal });
+}
+
+export function getJlcWebPartsOrders(
+  params: JlcWebListParams,
+  signal?: AbortSignal,
+): Promise<{ list?: JlcWebPartsOrder[] | null; [key: string]: unknown }> {
+  return request(`/api/jlc/web/parts-orders?${jlcWebListQuery(params)}`, { signal });
+}
+
+export function getJlcWebPartsInvoice(orderBatchNo: string, signal?: AbortSignal): Promise<unknown> {
+  return request(`/api/jlc/web/parts-orders/${encodeURIComponent(orderBatchNo)}/invoice`, { signal });
+}
+
+/** One document's answer from the invoice draw (decisions 0082, 0086). */
+export interface JlcInvoicePdfResult {
+  document_id: number;
+  status: string;
+  attachment_id?: number;
+  filename?: string;
+  proforma?: boolean;
+  warnings?: string[];
+  reason?: string;
+  error?: string;
+}
+
+/** Draws each document's invoice from JLC's data and files the PDF with it. No
+ *  dry run. A dead session stops the run with 409 and `detail.results` holds what
+ *  was done before it. At most 200 documents. */
+export function drawJlcInvoicePdfs(
+  documentIds: number[],
+  force: boolean,
+): Promise<{ results: JlcInvoicePdfResult[] }> {
+  return request("/api/jlc/web/invoice-pdfs", jsonBody("POST", { document_ids: documentIds, force }));
+}
+
+/** Store JLC's fee breakdown for staged batches that miss it. Evidence only. */
+export function refreshJlcFees(force: boolean): Promise<{ fetched: number; skipped: number; failed: number }> {
+  return request(`/api/jlc/import/fees/refresh?force=${force}`, { method: "POST" });
+}
+
+export interface JlcFeeBackfillResult {
+  dry_run: boolean;
+  summary: {
+    documents_seen: number;
+    applied: number;
+    children_created: number;
+    value_split_usd: number;
+    by_status: Record<string, number>;
+  };
+  documents: { external_id: string; status: string; error?: string; would_create_children?: number }[];
+}
+
+/** Split imported batch documents into JLC's fee itemization. One batch, or every one. */
+export function backfillJlcFees(externalId: string, dryRun: boolean): Promise<JlcFeeBackfillResult> {
+  const qs = new URLSearchParams({ dry_run: String(dryRun) });
+  if (externalId) qs.set("external_id", externalId);
+  return request(`/api/jlc/import/fees/backfill?${qs.toString()}`, { method: "POST" });
+}
+
+export interface JlcToDrawsResult {
+  status: "nothing_to_migrate" | "dry_run" | "migrated";
+  adjustments?: number;
+  adjustments_removed?: number;
+  orders?: { smt_order_code: string; batch_num?: string; adjustments?: number; qty?: number; value_usd?: number }[];
+  batch_id?: number;
+}
+
+/** Rewrite the pre-0034 external-project adjustments as draws charged to nobody.
+ *  A 409 carries `detail.problems`: the orders that do not reproduce. */
+export function jlcAdjustmentsToDraws(dryRun: boolean): Promise<JlcToDrawsResult> {
+  return request(`/api/jlc/import/adjustments/to-draws?dry_run=${dryRun}`, { method: "POST" });
+}
+
 export function checkJlcSession(): Promise<{
   ok: boolean;
   expired?: boolean;
@@ -4932,6 +5056,8 @@ export function getAllStockAdjustments(
      *  Legitimate for a genuine opening balance, invisible to every value
      *  identity, and the signature of the defect above. */
     zero_cost_positive: number;
+    /** zero-cost additions written by a count in an organizer box (decision 0104) */
+    zero_cost_from_boxes: number;
   };
 }> {
   const qs = reason ? `?reason=${encodeURIComponent(reason)}` : "";
@@ -5531,7 +5657,7 @@ export interface ProjectDevicesPayload {
  *  choice, and the copy is NULL on 6,139 of 6,443 rows. */
 export function getProjectDevices(
   projectId: number,
-  opts: { state?: string; condition?: string; runId?: number; presence?: string; q?: string } = {},
+  opts: { state?: string; condition?: string; runId?: number; presence?: string; q?: string; limit?: number } = {},
   signal?: AbortSignal,
 ): Promise<ProjectDevicesPayload> {
   const qs = new URLSearchParams();
@@ -5540,6 +5666,7 @@ export function getProjectDevices(
   if (opts.runId != null) qs.set("run_id", String(opts.runId));
   if (opts.presence) qs.set("presence", opts.presence);
   if (opts.q) qs.set("q", opts.q);
+  if (opts.limit) qs.set("limit", String(opts.limit));
   const tail = qs.toString();
   return request(`/api/projects/${projectId}/devices${tail ? `?${tail}` : ""}`, { signal });
 }
@@ -5681,18 +5808,6 @@ export interface ProgrammingLogRow {
   text: string;
 }
 
-export interface BatchProgramming {
-  planned: number;
-  programmed_ok: number;
-  failed_only: string[];
-  extra: string[];
-  missing: string[];
-  unidentified_attempts: number;
-  runs: ProgrammingRunSummary[];
-  assigned_deployment_version_id: number | null;
-  deployment_channel: string;
-}
-
 const JSON_HEADERS = { "Content-Type": "application/json" };
 
 export function listFirmware(projectId: number, signal?: AbortSignal): Promise<FirmwareAssetRow[]> {
@@ -5720,10 +5835,6 @@ export function firmwareBinPath(assetId: number): string {
 
 export function listDeployments(projectId: number, signal?: AbortSignal): Promise<DeploymentRow[]> {
   return request(`/api/flasher/projects/${projectId}/deployments`, { signal });
-}
-
-export function getDeployment(id: number, signal?: AbortSignal): Promise<DeploymentRow> {
-  return request(`/api/flasher/deployments/${id}`, { signal });
 }
 
 export function createDeployment(
@@ -5755,7 +5866,7 @@ export function updateDeployment(
  *  so history can never be orphaned by a cleanup. */
 export function deleteDeployment(
   id: number,
-): Promise<{ ok: boolean; deleted_versions: number; batches_cleared: number }> {
+): Promise<{ ok: boolean; deleted_versions: number }> {
   return request(`/api/flasher/deployments/${id}`, { method: "DELETE" });
 }
 
@@ -5795,13 +5906,6 @@ export function getDeploymentDiff(
 ): Promise<DeploymentDiff> {
   const qs = against ? `?against=${against}` : "";
   return request(`/api/flasher/deployment-versions/${versionId}/diff${qs}`, { signal });
-}
-
-export function validateDeploymentVersion(
-  versionId: number,
-  signal?: AbortSignal,
-): Promise<ValidationResult> {
-  return request(`/api/flasher/deployment-versions/${versionId}/validate`, { signal });
 }
 
 export function publishDeploymentVersion(
@@ -5953,10 +6057,19 @@ export function deleteFirmware(assetId: number): Promise<{ ok: boolean }> {
   return request(`/api/flasher/firmware/${assetId}`, { method: "DELETE" });
 }
 
+export interface FirmwareUsageRow {
+  /** The procedure's name. The API calls a procedure a deployment. */
+  deployment: string;
+  version_no: number;
+  version_id: number;
+  status: string;
+}
+
+/** The procedure versions that pin an image: the same answer the DELETE reads. */
 export function getFirmwareUsage(
   assetId: number,
   signal?: AbortSignal,
-): Promise<{ versions: { deployment: string; version_no: number; version_id: number }[] }> {
+): Promise<{ versions: FirmwareUsageRow[] }> {
   return request(`/api/flasher/firmware/${assetId}/usage`, { signal });
 }
 
@@ -6036,6 +6149,8 @@ export function listDevices(
   filters: {
     project_id?: number;
     production_run_id?: number;
+    /** the devices a run of this procedure version touched */
+    deployment_version?: number;
     status?: string;
     q?: string;
     limit?: number;
@@ -6051,6 +6166,7 @@ export function listDevices(
   const params = new URLSearchParams();
   if (filters.project_id) params.set("project_id", String(filters.project_id));
   if (filters.production_run_id) params.set("production_run_id", String(filters.production_run_id));
+  if (filters.deployment_version) params.set("deployment_version", String(filters.deployment_version));
   if (filters.status) params.set("status", filters.status);
   if (filters.q) params.set("q", filters.q);
   if (filters.limit) params.set("limit", String(filters.limit));
@@ -6095,6 +6211,19 @@ export function createProgrammingRun(body: {
   });
 }
 
+/** Rebuild the derived checks from the runs' own steps and results. No dry run:
+ *  each run's rows are deleted and written again. Both scopes are optional. */
+export function recomputeChecks(scope: { projectId?: number | null; runId?: number | null }): Promise<{
+  runs: number;
+  checks: number;
+}> {
+  const qs = new URLSearchParams();
+  if (scope.projectId) qs.set("project_id", String(scope.projectId));
+  if (scope.runId) qs.set("run_id", String(scope.runId));
+  const suffix = qs.toString();
+  return request(`/api/flasher/checks/recompute${suffix ? `?${suffix}` : ""}`, { method: "POST" });
+}
+
 export function markRunAborted(runId: number): Promise<{ ok: boolean }> {
   return request(`/api/flasher/runs/${runId}/mark-aborted`, { method: "POST" });
 }
@@ -6115,28 +6244,35 @@ export function getProgrammingLogs(
   return request(`/api/flasher/runs/${runId}/logs?${params}`, { signal });
 }
 
-export function getBatchProgramming(
-  productionRunId: number,
-  signal?: AbortSignal,
-): Promise<BatchProgramming> {
-  return request(`/api/flasher/production-runs/${productionRunId}/programming`, { signal });
-}
-
-export function assignBatchDeployment(
-  productionRunId: number,
-  body: { deployment_version_id?: number | null; deployment_channel?: string },
-): Promise<{ ok: boolean }> {
-  return request(`/api/flasher/production-runs/${productionRunId}/deployment`, {
-    method: "PUT",
-    headers: JSON_HEADERS,
-    body: JSON.stringify(body),
-  });
-}
-
 /** The broker password file for every device, or one project's. */
 export function mosquittoExportPath(projectId?: number | null): string {
   const qs = projectId == null ? "" : `?project_id=${projectId}`;
   return `${API_URL}/api/flasher/mosquitto${qs}`;
+}
+
+/** The file for every device of one project, under the project's name: what the
+ *  Devices tab of the project page offers. */
+export function projectMosquittoPath(projectId: number): string {
+  return `${API_URL}/api/flasher/projects/${projectId}/mosquitto`;
+}
+
+/** A batch's programming coverage. `planned`, `missing` and `extra` compare with
+ *  a typed serial list, and mean nothing when `planned` is 0. */
+export interface BatchProgramming {
+  planned: number;
+  programmed_ok: number;
+  failed_only: string[];
+  extra: string[];
+  missing: string[];
+  /** attempts that named no device, so no device's row shows them */
+  unidentified_attempts: number;
+  /** the newest 200 of those */
+  unidentified_runs: ProgrammingRunSummary[];
+  runs: ProgrammingRunSummary[];
+}
+
+export function getBatchProgramming(productionRunId: number, signal?: AbortSignal): Promise<BatchProgramming> {
+  return request(`/api/flasher/production-runs/${productionRunId}/programming`, { signal });
 }
 
 /** The same file for the units one batch built, current accounts only. */
@@ -6184,6 +6320,7 @@ export const createBenchRun = (body: BenchRunIn) =>
     body: JSON.stringify(body),
   });
 
+/** The macOS profile for a Mac whose Chrome is managed. */
 export const benchPolicyUrl = (): string => `${API_URL}/api/flasher/bench-policy.mobileconfig`;
 
 /** The bench agent, as a zip the operator can expand and double-click. A
@@ -6555,17 +6692,6 @@ export function confirmAgentChecks(): Promise<{
 
 // checklists
 
-export interface ChecklistSummary {
-  id: number;
-  name: string;
-  subject_kind: ReviewKind;
-  category_id: number | null;
-  category_path: string | null;
-  description: string;
-  version_no: number | null;
-  item_count: number;
-}
-
 export type CheckParamValue = number | boolean | string | string[] | Record<string, string>;
 
 export interface ChecklistItem {
@@ -6699,15 +6825,6 @@ export function getAllChecklists(signal?: AbortSignal): Promise<ChecklistScopeRo
   return request("/api/checklists/all", { signal });
 }
 
-export function getChecklistScope(
-  kind: ReviewKind,
-  categoryId: number | null,
-  signal?: AbortSignal,
-): Promise<ChecklistScope> {
-  const q = categoryId === null ? "" : `&category_id=${categoryId}`;
-  return request(`/api/checklists/scope?kind=${kind}${q}`, { signal });
-}
-
 /** Publish this scope's checklist, creating it if it is the first thing the
  *  scope has stated. Saving an EMPTY list on a category DELETES the row — "adds
  *  nothing" and "has an empty list" must not be two states. */
@@ -6731,25 +6848,44 @@ export function saveChecklistScope(
   });
 }
 
-export function listChecklists(signal?: AbortSignal): Promise<ChecklistSummary[]> {
-  return request("/api/checklists", { signal });
-}
-
+/** One scope's list with its version history. */
 export function getChecklist(id: number, signal?: AbortSignal): Promise<ChecklistDetail> {
   return request(`/api/checklists/${id}`, { signal });
 }
 
+/** Publish these items as a new version of a list that exists. Unlike
+ *  `saveChecklistScope` it never deletes the row, so it is what puts an old
+ *  version back. */
 export function saveChecklist(
   id: number,
   items: ChecklistDetail["items"],
   comment?: string,
-  description?: string,
 ): Promise<ChecklistDetail> {
   return request(`/api/checklists/${id}`, {
     method: "PUT",
     headers: JSON_HEADERS,
-    body: JSON.stringify({ items, comment: comment ?? null, description: description ?? null }),
+    body: JSON.stringify({ items, comment: comment ?? null, description: null }),
   });
+}
+
+export interface ChecklistVersionDetail {
+  id: number;
+  name: string;
+  version_no: number;
+  created_at: string;
+  created_by: string;
+  comment: string | null;
+  items: ChecklistDetail["items"];
+}
+
+/** A past version's items — load one to read it or to put it back (saving
+ *  republishes it as a new version; the history is append-only). */
+export function getChecklistVersion(
+  id: number,
+  versionNo: number,
+  signal?: AbortSignal,
+): Promise<ChecklistVersionDetail> {
+  return request(`/api/checklists/${id}/versions/${versionNo}`, { signal });
 }
 
 export interface ChecklistMeta {
@@ -6800,110 +6936,6 @@ export function getChecklistMeta(signal?: AbortSignal): Promise<ChecklistMeta> {
   return request("/api/checklists/meta", { signal });
 }
 
-export interface ResolvedChecklist {
-  kind: ReviewKind;
-  category_id: number | null;
-  /** `from` names the checklist an item came from — the base one, or the
-   *  category-scoped list that overrode it. */
-  items: (ChecklistItem & { from: string })[];
-  /** Switched off somewhere on the path — shown, not hidden, so "why does this
-   *  part not get that check" is answerable from the same screen. */
-  disabled: (ChecklistItem & { from: string })[];
-}
-
-/** What a subject of this kind (in this category) is actually measured
- *  against: base checklist + every category-scoped one on the path. */
-export function resolveChecklist(
-  kind: ReviewKind,
-  categoryId: number | null,
-  signal?: AbortSignal,
-): Promise<ResolvedChecklist> {
-  const q = categoryId === null ? "" : `&category_id=${categoryId}`;
-  return request(`/api/checklists/resolve?kind=${kind}${q}`, { signal });
-}
-
-export interface ChecklistVersionDetail {
-  id: number;
-  name: string;
-  version_no: number;
-  created_at: string;
-  created_by: string;
-  comment: string | null;
-  items: ChecklistDetail["items"];
-}
-
-/** A past version's items — load one to read it or to put it back (saving
- *  republishes it as a new version; the history is append-only). */
-export function getChecklistVersion(
-  id: number,
-  versionNo: number,
-  signal?: AbortSignal,
-): Promise<ChecklistVersionDetail> {
-  return request(`/api/checklists/${id}/versions/${versionNo}`, { signal });
-}
-
-export function createChecklist(body: {
-  name: string;
-  subject_kind: ReviewKind;
-  category_id: number | null;
-  description: string;
-  items: ChecklistDetail["items"];
-}): Promise<ChecklistDetail> {
-  return request("/api/checklists", {
-    method: "POST",
-    headers: JSON_HEADERS,
-    body: JSON.stringify(body),
-  });
-}
-
-/** Category-scoped lists only — the base checklist of a kind cannot be
- *  deleted, and past verifications keep their own snapshot either way. */
-export function deleteChecklist(id: number): Promise<{ ok: true; deleted: string }> {
-  return request(`/api/checklists/${id}`, { method: "DELETE" });
-}
-
-export interface ComponentRuleSet {
-  required_properties?: string[] | null;
-  non_empty_properties?: string[] | null;
-  manufacturer_properties?: string[] | null;
-  property_patterns?: Record<string, string> | null;
-}
-
-export interface ComponentRules {
-  category_id: number | null;
-  /** What a component in this scope is actually measured against. */
-  effective: ComponentRuleSet;
-  /** What it would be if this scope stated nothing — the parent category, or
-   *  the library-wide block. */
-  inherited: ComponentRuleSet;
-  /** What THIS scope states for itself. A key absent here is inherited. */
-  own: ComponentRuleSet;
-  has_row: boolean;
-}
-
-/** The property rules a component is measured against, for one scope. Omit the
- *  category for the library-wide block every category starts from. */
-export function getComponentRules(
-  categoryId: number | null,
-  signal?: AbortSignal,
-): Promise<ComponentRules> {
-  const q = categoryId === null ? "" : `?category_id=${categoryId}`;
-  return request(`/api/component-rules${q}`, { signal });
-}
-
-/** A key sent as `null` stops being stated at this scope, so it inherits again.
- *  A key sent as a value REPLACES the whole list for this scope. */
-export function saveComponentRules(
-  categoryId: number | null,
-  body: ComponentRuleSet,
-): Promise<ComponentRules> {
-  return request("/api/component-rules", {
-    method: "PUT",
-    headers: JSON_HEADERS,
-    body: JSON.stringify({ ...body, category_id: categoryId }),
-  });
-}
-
 
 /** A standing decision that one check does not apply to this subject.
  *
@@ -6931,14 +6963,6 @@ export interface ReviewException {
   revoke_reason: string | null;
   /** Why it no longer applies, or null while it holds. */
   stale_reason: string | null;
-}
-
-export function listReviewExceptions(
-  kind: ReviewKind,
-  id: number,
-  signal?: AbortSignal,
-): Promise<ReviewException[]> {
-  return request(`/api/reviews/${kind}/${id}/exceptions`, { signal });
 }
 
 /** `scope`: "drawing" pins the material fingerprint and dies when the copper
@@ -7199,28 +7223,6 @@ export function getChangeDetail(
   signal?: AbortSignal,
 ): Promise<ChangeDetailPayload> {
   return request(`/api/changes/${kind}/${id}`, { signal });
-}
-
-/** A specific VERSION of a template, rendered. Unlike `templatePreviewUrl`,
- *  whose `v` is only a cache key, the version here genuinely selects what is
- *  drawn — which is what a before/after pane needs. Version rows are immutable,
- *  so the server answers `immutable` and the browser holds it for a year. */
-export function templateVersionPreviewUrl(
-  kind: "symbol" | "footprint",
-  id: number,
-  versionNo: number,
-): string {
-  return `${API_URL}/api/${kind}s/${id}/versions/${versionNo}/preview.svg`;
-}
-
-/** Fetch a same-origin SVG as TEXT.
- *
- *  The before/after panes need the render's own `width`/`height`, which
- *  kicad-cli emits in MILLIMETRES — that is what lets both versions be drawn
- *  at one shared scale so a difference overlay lines up. An `<img>` would show
- *  the picture but never tell the page how big the drawing is. */
-export async function fetchSvgText(path: string, signal?: AbortSignal): Promise<string> {
-  return (await fetchSvgUnits(path, signal)).text;
 }
 
 /** The same render, plus how many units the symbol has.
@@ -7983,20 +7985,6 @@ export function fsSaveProfiles(
   return request(`/api/fieldsolver/projects/${projectId}/profiles/batch`, fsJson(body));
 }
 
-export function fsSaveProfile(
-  projectId: number,
-  body: {
-    name: string;
-    config: Record<string, unknown>;
-    result?: Record<string, unknown> | null;
-    board?: string;
-    snapshot_id?: number | null;
-    profile_id?: number | null;
-  },
-): Promise<FsBoardState> {
-  return request(`/api/fieldsolver/projects/${projectId}/profiles`, fsJson(body));
-}
-
 export function fsDeleteProfile(
   projectId: number,
   profileId: number,
@@ -8044,7 +8032,11 @@ export interface OrderLineRow {
   qty_open: number;
   qty_replacements: number;
   qty_returned: number;
+  /** reserved plus packed in an open shipment */
   qty_allocated: number;
+  /** the reservations alone, which the order page can release. A device packed
+   *  in a box leaves it on the shipment's page. */
+  reserved_devices: { device_id: number; serial: string }[];
   migrated_from_run_id: number | null;
 }
 
@@ -8070,6 +8062,7 @@ export interface ShipmentDeviceRow {
   order_line_id: number;
   auto: boolean;
   replaces_device_id: number | null;
+  replaces_serial?: string | null;
   run_id: number | null;
   /** when it went into an OPEN box */
   packed_at?: string | null;
@@ -8121,6 +8114,13 @@ export interface OrderEconomics {
   repair_cost_usd: number | null;
   cost_usd: number | null;
   margin_usd: number | null;
+  /** What the screen prints: each device at its batch's rate, so these are
+   *  summed on the server and not converted from the USD figures (decision 0103). */
+  revenue_pln: number | null;
+  devices_cost_pln: number | null;
+  repair_cost_pln: number | null;
+  cost_pln: number | null;
+  margin_pln: number | null;
   margin_pct: number | null;
   shipped_devices: number;
   replacements: number;
@@ -8199,27 +8199,6 @@ export interface InvoiceIn {
   notes?: string;
 }
 
-/** A shipment line NAMES DEVICES. There is no quantity here, and there is no
- *  quantity on the API either: `qty`, `qty_unserialized`, `run_ids` and
- *  `source_run_id` are refused by name with 422 (decision 0049). Declaring one
- *  here would only let the browser build a request the server rejects. */
-export interface ShipmentLineIn {
-  order_line_id: number;
-  device_ids?: number[];
-  /** what a scanner read; resolved to device ids server-side */
-  serials?: string[];
-  replaces_device_id?: number | null;
-  note?: string;
-}
-
-export interface ShipmentIn {
-  shipped_at?: string;
-  delivery_note?: string;
-  tracking?: string;
-  notes?: string;
-  lines: ShipmentLineIn[];
-}
-
 /** One batch's finished devices, counted from the device records and nothing
  *  else (decision 0003 §8, narrowed by 0049). */
 export interface FinishedStockRow {
@@ -8251,6 +8230,9 @@ export interface FinishedStockRow {
   available: number;
   unit_cost_usd?: number | null;
   stock_value_usd?: number | null;
+  unit_cost_pln?: number | null;
+  stock_value_pln?: number | null;
+  pln_per_usd?: number | null;
 }
 
 export interface FinishedStock {
@@ -8262,6 +8244,7 @@ export interface FinishedStock {
     /** devices on the shelf that name NO batch, so no row above holds them */
     no_batch: number;
     stock_value_usd: number | null;
+    stock_value_pln: number | null;
   };
 }
 
@@ -8354,6 +8337,20 @@ export function deleteOrder(id: number): Promise<{ deleted: number }> {
   return request(`/api/orders/${id}`, { method: "DELETE" });
 }
 
+/** Reserve devices for an order line: reserved, not shipped (decision 0003). */
+export function allocateOrderDevices(orderId: number, orderLineId: number, serials: string[]): Promise<OrderRow> {
+  return request(`/api/orders/${orderId}/allocate`, jsonBody("POST", { order_line_id: orderLineId, serials }));
+}
+
+/** Give reserved devices back to stock. The history keeps both events. */
+export function releaseOrderDevices(
+  orderId: number,
+  orderLineId: number,
+  devices: { serials?: string[]; device_ids?: number[] },
+): Promise<OrderRow> {
+  return request(`/api/orders/${orderId}/release`, jsonBody("POST", { order_line_id: orderLineId, ...devices }));
+}
+
 export function addOrderLine(orderId: number, body: OrderLineIn): Promise<OrderRow> {
   return request(`/api/orders/${orderId}/lines`, {
     method: "POST",
@@ -8392,21 +8389,6 @@ export function updateOrderInvoice(invoiceId: number, body: Partial<InvoiceIn>):
 
 export function deleteOrderInvoice(invoiceId: number): Promise<OrderRow> {
   return request(`/api/order-invoices/${invoiceId}`, { method: "DELETE" });
-}
-
-export function getOrderStockOptions(
-  orderId: number,
-  signal?: AbortSignal,
-): Promise<Record<string, FinishedStockRow[]>> {
-  return request(`/api/orders/${orderId}/stock-options`, { signal });
-}
-
-export function createShipment(orderId: number, body: ShipmentIn): Promise<OrderRow> {
-  return request(`/api/orders/${orderId}/shipments`, {
-    method: "POST",
-    headers: JSON_HEADERS,
-    body: JSON.stringify(body),
-  });
 }
 
 export function deleteShipment(shipmentId: number): Promise<OrderRow> {
@@ -8485,6 +8467,11 @@ export function packShipment(id: number, deviceIds: number[], orderLineId?: numb
   });
 }
 
+/** `replaces` is the serial of a device delivered on this order; "" takes it back. */
+export function markShipmentReplacement(id: number, deviceId: number, replaces: string): Promise<ShipmentDetail> {
+  return request(`/api/shipments/${id}/replacement`, jsonBody("POST", { device_id: deviceId, replaces }));
+}
+
 export function unpackShipment(id: number, deviceIds: number[]): Promise<ShipmentDetail> {
   return request(`/api/shipments/${id}/unpack`, {
     method: "POST",
@@ -8540,6 +8527,8 @@ export interface ProductStockRow {
   missing: number;
   /** at each batch's own per-device actual; an unbatched device adds nothing */
   value_usd: number | null;
+  /** At each batch's own rate, so it is summed on the server (decision 0103). */
+  value_pln: number | null;
   /** on the shelf and naming no batch, so no per-batch figure can see them */
   no_batch: number;
   batches: number;
@@ -8647,11 +8636,11 @@ export function unshipDevice(
   });
 }
 
-export function linkDevicesToRun(runId: number, deviceIds: number[]): Promise<{ linked: number; skipped: { id: number; reason: string }[] }> {
+export function linkDevicesToRun(runId: number, body: { serials: string[]; dry_run: boolean }): Promise<{ linked: number; skipped: { id: number; reason: string }[] }> {
   return request(`/api/runs/${runId}/produced`, {
     method: "POST",
     headers: JSON_HEADERS,
-    body: JSON.stringify({ device_ids: deviceIds }),
+    body: JSON.stringify(body),
   });
 }
 
@@ -8908,6 +8897,8 @@ export interface ProjectProcess {
   transformations: TransformationRow[];
   internal_parts: { id: number; name: string }[];
   deployments: ProcessDeployment[];
+  /** on hand of each step input today, keyed by `inputKey` (decision 0103) */
+  input_stock: Record<string, number>;
 }
 
 export function getProjectProcess(
@@ -8963,6 +8954,165 @@ export interface RepinPlan {
 /** Move a batch to another published version of its process (decision 0074). */
 export function repinRun(runId: number, versionId: number, dryRun: boolean): Promise<RepinPlan> {
   return request(`/api/runs/${runId}/process-version`, jsonBody("POST", { version_id: versionId, dry_run: dryRun }));
+}
+
+/** What a move into this batch would do (decision 0029). */
+export interface RebatchPlan {
+  dry_run: boolean;
+  run_id: number;
+  moved: { device_id: number; serial: string; from_run_id: number | null; to_run_id: number; attempts: number }[];
+  skipped: { device_id: number; serial?: string; reason: string }[];
+}
+
+/** Move devices into this batch from the one they were filed against. */
+export function rebatchDevices(runId: number, body: {
+  serials: string[]; note: string; dry_run: boolean;
+}): Promise<RebatchPlan> {
+  return request(`/api/runs/${runId}/rebatch`, jsonBody("POST", body));
+}
+
+/** One row of the parts table: what was drawn against units × quantity. */
+export interface RebuildPartRow {
+  step: string;
+  part: string;
+  name: string;
+  per_unit: number;
+  units: number;
+  need: number;
+  drawn: number;
+  surplus: number;
+  deficit: number;
+  settled: string | null;
+  drawn_now: number;
+  returned_usd: number;
+  left_in_origin: number;
+  /** present on an unsettled row: the statement it needs */
+  why?: string;
+}
+
+export interface RebuildDevicePlan {
+  device_id: number;
+  serial: string | null;
+  mac: string;
+  produced: string | null;
+  status: string;
+  origin: string | null;
+  steps: Record<string, { on?: string; by?: string; version?: string | null }>;
+  lacks: string[];
+  bench_says_not_done?: string[];
+  price_usd?: number;
+}
+
+/** The dry run of a rebuild IS the review (decision 0075 §11). */
+export interface RebuildPlan {
+  dry_run: boolean;
+  run_id: number;
+  batch: string;
+  process_version: number;
+  append: boolean;
+  twins: number;
+  named: number;
+  spares: number;
+  finished: number;
+  scrapped: number;
+  active: number;
+  /** a count on an append, the devices by name on a first rebuild */
+  devices_with_a_twin_already: number | string[];
+  boards_from_orders: number | null;
+  more_units_than_boards: number;
+  found_naming_this_batch: { twins: number; unnamed_active: number };
+  origins: { from_run_id: number | null; from: string; twins: number }[];
+  dates: { before_programming: string; steps_before_programming: string[] };
+  recorded: { step: string; label?: string; units: number; evidence: string; clicks?: number; days?: number }[];
+  not_recorded: { step: string; label: string; why: string }[];
+  bench_says_not_done: Record<string, { devices: number; first: string[] }>;
+  finish_lacks: string[];
+  no_assembly_invoice: boolean;
+  parts: RebuildPartRow[];
+  unsettled: RebuildPartRow[];
+  draws_added: { step: string; part: string; qty: number; usd: number }[];
+  draws_returned: { step: string; part: string; qty: number }[];
+  lines_whose_steps_were_not_recorded: { line_id: number; label: string; steps: string[] }[];
+  left_in_origin: {
+    lines: { line_id: number; label: string; plan_key: string }[];
+    draws: { consumption_id: number; mpn: string }[];
+    loss: { step: string; part: string; qty: number; usd: number }[];
+  };
+  check: {
+    total_before_usd: number;
+    total_usd: number;
+    moved_usd: number;
+    drawn_usd: number;
+    returned_usd: number;
+    carried_usd: number;
+    from_other_batches_usd: number;
+    twins: number;
+    ok: boolean;
+  };
+  refusals: { message: string }[];
+  can_write: boolean;
+  device_cost_before_usd: number | null;
+  /** one price when every twin costs the same, else the lowest and the highest */
+  device_cost_after_usd: number | number[];
+  devices: RebuildDevicePlan[];
+  spare_units: { qty: number; done: string[]; note: string }[];
+}
+
+/** Everything `RebuildIn` takes. The plain fields are `version_id` and `append`;
+ *  the rest arrive from the advanced box as the person typed them. */
+export const REBUILD_ADVANCED_KEYS = [
+  "assume", "draw", "since", "until", "costs", "spares", "settle", "tolerance", "active", "origins",
+] as const;
+
+/** Give a batch made before twins its twins (decisions 0060, 0075). */
+export function rebuildRun(runId: number, body: {
+  version_id?: number | null; append: boolean; dry_run: boolean; [advanced: string]: unknown;
+}): Promise<RebuildPlan> {
+  return request(`/api/runs/${runId}/rebuild`, jsonBody("POST", body));
+}
+
+/** One thing an undo takes back, by the way it is undone. */
+export type RebuildUndoRow =
+  | { kind: "journal"; batch_id: number; write: string;
+      clicks: { click_id: number; step: string; label: string; made_at: string; units: number }[];
+      twins_outside_the_rebuild: number }
+  | { kind: "bench"; click_id: number; step: string; label: string; made_at: string;
+      devices: (string | number)[]; draws: number }
+  | { kind: "link"; line_id: number; click_id: number }
+  | { kind: "key"; line_id: number; step: string };
+
+export interface RebuildUndoPlan {
+  dry_run: boolean;
+  run_id: number;
+  clicks: number;
+  twins: number;
+  takes_back: RebuildUndoRow[];
+  rebuild_batches: number[];
+  before_the_journal: boolean;
+  refused: string[];
+}
+
+/** Take a rebuild back, with the live clicks that stand on its twins. */
+export function undoRebuildRun(runId: number, dryRun: boolean): Promise<RebuildUndoPlan> {
+  return request(`/api/runs/${runId}/rebuild/undo`, jsonBody("POST", { dry_run: dryRun }));
+}
+
+/** What linking old bench runs to their devices would do (decision 0075 §1). */
+export interface BenchLinkPlan {
+  dry_run: boolean;
+  project_id: number;
+  runs: number;
+  linked: { run_id: number; kind: string; topic: string; device_id: number; serial: string | null;
+            batch: string | null; started_at: string | null; status: string; marked: boolean; printed: boolean }[];
+  by_batch: Record<string, number>;
+  devices_with_an_active_twin: number[];
+  ambiguous: { run_id: number; kind: string; topic: string; started_at: string | null; devices: number[] }[];
+  unmatched: { run_id: number; kind: string; topic: string; started_at: string | null; devices: number[] }[];
+  no_topic: { run_id: number; kind: string; started_at: string | null }[];
+}
+
+export function linkBenchRunsByTopic(projectId: number, dryRun: boolean): Promise<BenchLinkPlan> {
+  return request(`/api/projects/${projectId}/bench-runs/link-by-topic`, jsonBody("POST", { dry_run: dryRun }));
 }
 
 export function deleteProcessDraft(versionId: number): Promise<{ deleted: number }> {
@@ -9155,6 +9305,8 @@ export interface CraftAssembly {
 
 export interface CraftView {
   run_id: number;
+  /** PLN per USD at the batch's date (decision 0103). */
+  pln_per_usd: number | null;
   process_version_id: number;
   version_no: number;
   graph: ProcessGraph;
@@ -9184,6 +9336,42 @@ export interface CraftView {
   linked: { line_id: number; label: string; usd: number; steps: string[]; whole_steps: string[] }[];
   assembly: CraftAssembly;
   unlinked: CraftUnlinked;
+  /** the process as figures, route first (decision 0103) */
+  board: BoardStep[];
+}
+
+export type BoardState = "done" | "ready" | "idle" | "short" | "blocked";
+
+export interface BoardInput {
+  key: string;
+  name: string;
+  per_unit: number;
+  on_hand: number;
+  /** how many units the stock covers */
+  covers: number | null;
+}
+
+/** One field of the process board, computed by `twins.board`. */
+export interface BoardStep {
+  key: string;
+  label: string;
+  kind: StepKind;
+  required: boolean;
+  on_route: boolean;
+  needs: string[];
+  total: number;
+  done: number;
+  /** active units that meet the needs and do not have the step */
+  waiting: number;
+  waiting_named: number;
+  waiting_unnamed: number;
+  /** active units that lack the step, plus the boards not received yet */
+  still_to_do: number;
+  /** `waiting`, limited by the stock of the step's parts */
+  can_go: number;
+  state: BoardState;
+  inputs: BoardInput[];
+  procedure: { id: number; name: string; version_no: number | null } | null;
 }
 
 export function getCraft(runId: number, signal?: AbortSignal): Promise<CraftView> {
@@ -9444,6 +9632,42 @@ export function craftCosts(runId: number, body: {
   return request(`/api/runs/${runId}/craft/costs`, jsonBody("POST", body));
 }
 
+/** What one scanned code is to a batch (decision 0103). */
+export interface CodeCheck {
+  code: string;
+  device_id: number | null;
+  serial: string | null;
+  mac: string | null;
+  ok: boolean;
+  /** why it cannot be crafted here; reads after the code */
+  why: string;
+  status: string | null;
+  done: string[];
+  /** the step keys it can take now */
+  can: string[];
+}
+
+export function checkCraftCodes(runId: number, codes: string[]): Promise<CodeCheck[]> {
+  return request(`/api/runs/${runId}/craft/check-codes`, jsonBody("POST", { codes }));
+}
+
+export interface StepsPlan {
+  dry_run: boolean;
+  selected: number;
+  chosen: string;
+  /** one plan per step, in route order; a dry run counts the earlier steps */
+  steps: StepPlan[];
+  batch_id?: number;
+}
+
+/** One or more steps on one group of named devices, as one write. */
+export function craftSteps(runId: number, body: {
+  step_keys: string[]; device_ids: number[]; chosen: "scanned" | "list";
+  made_at?: string; lots?: Record<string, number> | null; note?: string; stated?: string; dry_run: boolean;
+}): Promise<StepsPlan> {
+  return request(`/api/runs/${runId}/craft/steps`, jsonBody("POST", body));
+}
+
 export function craftStep(runId: number, body: CraftSelection & {
   step_key: string; made_at?: string; lots?: Record<string, number> | null; note?: string;
   /** why a person states a test, mark or label step no bench recorded (decision 0074) */
@@ -9583,6 +9807,8 @@ export interface TwinFitted {
 }
 
 export interface TwinInfo {
+  /** PLN per USD at the date of the twin's batch (decision 0103). */
+  pln_per_usd: number | null;
   origin_run_id: number;
   origin_run: string | null;
   run_id: number;
@@ -9670,6 +9896,8 @@ export interface SalesInvoiceBody {
   correction?: { of_number: string; of_date: string; of_ksef: string; reason: string;
                  before_lines: SalesLine[]; before_totals: SalesTotals | null };
   order?: { lines: SalesLine[]; totals: SalesTotals };
+  /** the legal basis of a VAT exemption; FA(3) needs it for a `zw` position */
+  exemption?: { basis: string; law: string };
   notes: string[];
 }
 
@@ -9865,6 +10093,47 @@ export function salesInvoiceFilePath(id: number, fileId: number): string {
   return `/api/sales-invoices/${id}/files/${fileId}?inline=true`;
 }
 
+/** A sales document a company issued elsewhere, as printed (decision 0077). */
+export interface SalesHistoryIn {
+  company_id: number;
+  kind: string;
+  number: string;
+  issue_date: string;
+  sale_date: string;
+  due_date: string;
+  buyer: { name: string; address_l1: string; address_l2: string; nip: string; country: string };
+  currency: string;
+  lines: { name: string; qty: string; unit: string; unit_net: string; vat_rate: string; net: string; vat: string }[];
+  totals: { net: string; vat: string; gross: string; rates: Record<string, { net: string; vat: string }> };
+  advance_numbers: string[];
+  corrects_number: string;
+  paid: boolean;
+  paid_date: string;
+  order_id: number | null;
+  note: string;
+}
+
+export function recordSalesHistory(body: SalesHistoryIn): Promise<SalesInvoiceRow> {
+  return request("/api/sales-invoices/history", jsonBody("POST", body));
+}
+
+/** What an import of the old script's files would do (decision 0066). */
+export interface SalesImportPlan {
+  dry_run: boolean;
+  customers: { matched: { key: string; customer: string }[]; created: string[] };
+  documents: { created: number; skipped: number };
+  templates: string[];
+  products: string[];
+}
+
+export function importSalesRegister(companyId: number, files: {
+  register_file?: File | null; clients_file?: File | null; recurring_file?: File | null; products_file?: File | null;
+}, dryRun: boolean): Promise<SalesImportPlan> {
+  const fd = new FormData();
+  for (const [name, file] of Object.entries(files)) if (file) fd.append(name, file);
+  return request(`/api/sales-invoices/import?company_id=${companyId}&dry_run=${dryRun}`, { method: "POST", body: fd });
+}
+
 export function listTaxEntryFiles(companyId: number, entryId: number, signal?: AbortSignal): Promise<RecordFileRow[]> {
   return request(`/api/companies/${companyId}/tax-entries/${entryId}/files`, { signal });
 }
@@ -9885,6 +10154,21 @@ export function listSalesTemplates(signal?: AbortSignal): Promise<SalesTemplate[
 
 export function generateFromTemplate(id: number, month: string): Promise<SalesInvoiceRow> {
   return request(`/api/sales-invoice-templates/${id}/generate`, jsonBody("POST", { month }));
+}
+
+/** What a recurring invoice's form writes. */
+export type SalesTemplateIn = Omit<SalesTemplate, "id">;
+
+export function createSalesTemplate(body: SalesTemplateIn): Promise<SalesTemplate> {
+  return request("/api/sales-invoice-templates", jsonBody("POST", body));
+}
+
+/** The key and the company never change: the API refuses both. */
+export function updateSalesTemplate(
+  id: number,
+  body: Partial<Omit<SalesTemplateIn, "company_id" | "key">>,
+): Promise<SalesTemplate> {
+  return request(`/api/sales-invoice-templates/${id}`, jsonBody("PATCH", body));
 }
 
 export function listSalesProducts(signal?: AbortSignal): Promise<SalesProductRow[]> {
@@ -9942,6 +10226,20 @@ export function runKsefSync(companyId: number): Promise<{
   recorded: number; limit: string; refused?: { number: string; why: string }[];
 }> {
   return request("/api/ksef/sync", jsonBody("POST", { company_id: companyId }));
+}
+
+/** Decision 0084: give documents imported from KSeF the invoice's tax data, from
+ *  the XML each one stored. Writes nothing on a dry run. */
+export interface KsefFillResult {
+  dry_run: boolean;
+  checked: number;
+  filled: { document_id: number; ksef_number: string; fields: unknown }[];
+  no_xml: { document_id: number; ksef_number: string }[];
+  failed: { document_id: number; ksef_number: string; error: string }[];
+}
+
+export function fillKsefDocuments(dryRun: boolean): Promise<KsefFillResult> {
+  return request(`/api/ksef/fill-documents?dry_run=${dryRun}`, { method: "POST" });
 }
 
 export function getKsefInbox(signal?: AbortSignal): Promise<KsefInboxRow[]> {
@@ -10127,4 +10425,374 @@ export function putTaxEntry(companyId: number, body: {
   interest?: number;
 }): Promise<{ id: number }> {
   return request(`/api/companies/${companyId}/tax-entries`, jsonBody("PUT", body));
+}
+
+/* ---------------------------------------------- History: undo any change (0089) */
+
+export interface ChangeGroup {
+  key: string;
+  at: string | null;
+  until: string | null;
+  user_id: number | null;
+  actor: string;
+  client: string;
+  request: { method?: string; path?: string; status?: number } | string | null;
+  rows: number;
+  tables: Record<string, { inserted: number; updated: number; deleted: number }>;
+  last_id: number;
+  undone_by: string | null;
+  undoes: string | null;
+}
+
+/** One row a request changed. NOT the change feed's `ChangeRow`: this file had both
+ *  under that one name, TypeScript merged them without a word, and each screen's rows
+ *  were typed with the other screen's fields as well. */
+export interface JournalChange {
+  id: number;
+  table: string;
+  op: "I" | "U" | "D";
+  pk: unknown;
+  old: Record<string, unknown> | null;
+  new: Record<string, unknown> | null;
+}
+
+export function listChangeGroups(opts: { everyone?: boolean; before?: number; limit?: number } = {},
+  signal?: AbortSignal): Promise<ChangeGroup[]> {
+  const qs = new URLSearchParams();
+  if (opts.everyone) qs.set("everyone", "true");
+  if (opts.before) qs.set("before", String(opts.before));
+  if (opts.limit) qs.set("limit", String(opts.limit));
+  const tail = qs.toString();
+  return request(`/api/undo/requests${tail ? `?${tail}` : ""}`, { signal });
+}
+
+export function getChangeGroup(key: string, signal?: AbortSignal): Promise<ChangeGroup & { changes: JournalChange[] }> {
+  return request(`/api/undo/requests/${encodeURIComponent(key)}`, { signal });
+}
+
+export interface UndoPlan {
+  key: string;
+  dry_run: boolean;
+  rows: number;
+  refused: { why: string }[];
+  undo_key?: string;
+}
+
+export function undoChangeGroup(key: string, dryRun: boolean): Promise<UndoPlan> {
+  return request(`/api/undo/requests/${encodeURIComponent(key)}`, jsonBody("POST", { dry_run: dryRun }));
+}
+
+/** One recorded change of one row. On an update, `old` and `new` hold only the
+ *  columns it changed; a long new value reads `{"$md5": …}` (decision 0089). */
+export interface RowHistoryEntry {
+  id: number;
+  at: string;
+  key: string;
+  actor: string;
+  client: string;
+  op: "I" | "U" | "D";
+  old: Record<string, unknown> | null;
+  new: Record<string, unknown> | null;
+}
+
+/** Every recorded change of one row, newest first. A non-administrator gets
+ *  only the changes their own requests made. */
+export function getRowHistory(table: string, id: number, signal?: AbortSignal): Promise<RowHistoryEntry[]> {
+  return request(`/api/undo/rows/${encodeURIComponent(table)}?id=${id}`, { signal });
+}
+
+/* --------------------------------------------- Library → Datasheets (0103) */
+
+export interface DatasheetHit {
+  component: string;
+  datasheet: string;
+  page: number;
+  page_count: number;
+  section: string;
+  extract_kind: string;
+  has_table: boolean;
+  /** text with the found words in `<b>`; never set as HTML */
+  snippet: string;
+  /** the archived file, at this page */
+  uri: string;
+}
+
+export function getDatasheetPage(id: number, page: number, signal?: AbortSignal): Promise<{
+  datasheet: string; page: number; section: string; extract_kind: string; has_table: boolean; content: string;
+}> {
+  return request(`/api/datasheets/${id}/pages/${page}`, { signal });
+}
+
+export function getDatasheetOutline(id: number, signal?: AbortSignal): Promise<{
+  datasheet: string; page_count: number | null; sections: { page: number; section: string }[];
+  table_pages: number[]; drawing_pages: number[]; unreadable_pages: number[];
+}> {
+  return request(`/api/datasheets/${id}/outline`, { signal });
+}
+
+export function searchDatasheets(q: string, opts: { limit?: number; includeSuperseded?: boolean } = {},
+  signal?: AbortSignal): Promise<{ query: string; hits: DatasheetHit[] }> {
+  const qs = new URLSearchParams({ q });
+  if (opts.limit) qs.set("limit", String(opts.limit));
+  if (opts.includeSuperseded) qs.set("include_superseded", "true");
+  return request(`/api/datasheets/search?${qs.toString()}`, { signal });
+}
+
+interface JobState {
+  running: boolean;
+  done: number;
+  total: number;
+  last_error: string | null;
+}
+
+export function getIndexStatus(): Promise<JobState & {
+  documents_total: number; documents_indexed: number; pages_total: number; page_kinds: Record<string, number>;
+}> {
+  return request("/api/datasheets/index-status");
+}
+
+export function indexDatasheets(mode: "missing" | "current" | "all"): Promise<unknown> {
+  return request("/api/datasheets/index", jsonBody("POST", { mode }));
+}
+
+export function stopIndexDatasheets(): Promise<unknown> {
+  return request("/api/datasheets/index/stop", { method: "POST" });
+}
+
+export function getClassifyStatus(): Promise<JobState & { counts: Record<string, number> }> {
+  return request("/api/datasheets/classify-status");
+}
+
+export function classifyDatasheets(mode: "missing" | "all"): Promise<unknown> {
+  return request("/api/datasheets/classify", jsonBody("POST", { mode }));
+}
+
+export function getBrokenDatasheets(): Promise<{ items: Record<string, unknown>[] }> {
+  return request("/api/datasheets/broken");
+}
+
+export function purgeBrokenDatasheets(): Promise<unknown> {
+  return request("/api/datasheets/broken", { method: "DELETE" });
+}
+
+export function getRestamps(): Promise<{ items: Record<string, unknown>[] }> {
+  return request("/api/datasheets/restamps");
+}
+
+export function collapseRestamps(): Promise<unknown> {
+  return request("/api/datasheets/restamps/collapse", { method: "POST" });
+}
+
+export function getDatasheetStorage(): Promise<{
+  documents: number; document_bytes: number; versions: number; documents_shared_by_several_datasheets: number;
+  reclaim: { running: boolean; last_error: string | null };
+}> {
+  return request("/api/datasheets/storage");
+}
+
+export function reclaimDatasheetStorage(): Promise<unknown> {
+  return request("/api/datasheets/storage/reclaim", { method: "POST" });
+}
+
+
+// ---------------------------------------------------------- office organizers
+// Which box holds what (decision 0104). A box is shared by the companies; the
+// pieces in it are a company's. A take is also a draw from the stock ledger.
+
+export interface OrganizerPart {
+  item_id: number;
+  component_id: number | null;
+  name: string;
+  in_library: boolean;
+  mpn: string;
+  lcsc: string;
+  qty: number;
+  /** what the import brought with the part: its manufacturer and comment */
+  note: string;
+  /** only the companies that hold some; two means a take must say whose */
+  companies: { id: number; name: string; qty: number }[];
+  last_at: string;
+  last_actor: string;
+}
+
+export interface OrganizerBoxRow {
+  id: number;
+  organizer: string;
+  code: string;
+  note: string;
+  parts: OrganizerPart[];
+}
+
+export interface OrganizerOverview {
+  boxes: OrganizerBoxRow[];
+  organizers: { name: string; boxes: number; filled: number; pieces: number }[];
+  totals: { boxes: number; filled: number; parts: number; pieces: number };
+}
+
+export interface OrganizerMoveRow {
+  id: number;
+  at: string;
+  kind: "opening" | "count" | "take" | "move" | "clear";
+  purpose: "" | "research" | "batch";
+  qty: number;
+  box_id: number;
+  box: string;
+  organizer: string;
+  item_id: number;
+  name: string;
+  company_id: number;
+  company: string;
+  run_id: number | null;
+  run_label: string | null;
+  note: string;
+  actor: string;
+  unit_cost_usd: number | null;
+  /** what a take cost. 0 for a piece with no purchase behind it. */
+  value_usd: number | null;
+}
+
+/** The part a write names, as the overview gave it or as the picker chose it. */
+export interface OrganizerPartRef {
+  component_id?: number | null;
+  mpn?: string;
+  lcsc?: string;
+}
+
+export function getOrganizers(signal?: AbortSignal): Promise<OrganizerOverview> {
+  return request("/api/organizers", { signal });
+}
+
+export function getOrganizerMoves(
+  q: { box_id?: number; item_id?: number; purpose?: string; limit?: number },
+  signal?: AbortSignal,
+): Promise<OrganizerMoveRow[]> {
+  const p = new URLSearchParams();
+  if (q.box_id != null) p.set("box_id", String(q.box_id));
+  if (q.item_id != null) p.set("item_id", String(q.item_id));
+  if (q.purpose) p.set("purpose", q.purpose);
+  if (q.limit != null) p.set("limit", String(q.limit));
+  return request(`/api/organizers/moves?${p.toString()}`, { signal });
+}
+
+/** One draw for R&D, with its box when it came from one. */
+export interface OrganizerResearchRow {
+  id: number;
+  at: string;
+  name: string;
+  box: string;
+  qty: number;
+  unit_cost_usd: number | null;
+  value_usd: number;
+  company_id: number | null;
+  company: string;
+  note: string;
+  actor: string;
+}
+
+export function getOrganizerResearch(signal?: AbortSignal): Promise<{
+  rows: OrganizerResearchRow[];
+  /** null when no PLN rate is stored: the screen then prints USD */
+  pln_per_usd: number | null;
+}> {
+  return request("/api/organizers/research", { signal });
+}
+
+export function addOrganizerBoxes(organizer: string, codes: string[]): Promise<{
+  made: { id: number; code: string }[]; batch_id: number;
+}> {
+  return request("/api/organizers/boxes", jsonBody("POST", { organizer, codes }));
+}
+
+export function renameOrganizer(name: string, newName: string): Promise<{ boxes: number; batch_id: number }> {
+  return request("/api/organizers/rename", jsonBody("POST", { name, new_name: newName }));
+}
+
+export function countOrganizerBox(boxId: number, body: OrganizerPartRef & {
+  company_id: number; qty: number; at?: string; note?: string;
+}): Promise<{ changed: boolean; delta: number; found: number; written_off: number; batch_id: number }> {
+  return request(`/api/organizers/boxes/${boxId}/count`, jsonBody("POST", body));
+}
+
+export function takeFromOrganizerBox(boxId: number, body: OrganizerPartRef & {
+  qty: number; purpose: "research" | "batch"; company_id?: number | null; run_id?: number | null;
+  at?: string; note?: string;
+}): Promise<{
+  company_id: number; draw_id: number | null; unit_cost_usd: number | null; value_usd: number | null;
+  left: number; batch_id: number;
+}> {
+  return request(`/api/organizers/boxes/${boxId}/take`, jsonBody("POST", body));
+}
+
+export function moveOrganizerPart(boxId: number, body: OrganizerPartRef & {
+  qty: number; to_box_id: number; company_id?: number | null; at?: string; note?: string;
+}): Promise<{ left: number; batch_id: number }> {
+  return request(`/api/organizers/boxes/${boxId}/move`, jsonBody("POST", body));
+}
+
+export function clearOrganizerPart(boxId: number, part: OrganizerPartRef): Promise<{ batch_id: number }> {
+  return request(`/api/organizers/boxes/${boxId}/clear`, jsonBody("POST", part));
+}
+
+export function patchOrganizerBox(boxId: number, patch: { code?: string; note?: string }): Promise<{
+  id: number; code: string; note: string;
+}> {
+  return request(`/api/organizers/boxes/${boxId}`, jsonBody("PATCH", patch));
+}
+
+/** Only a box that never held anything: the server answers 409 for any other. */
+export function deleteOrganizerBox(boxId: number): Promise<{ deleted: number }> {
+  return request(`/api/organizers/boxes/${boxId}`, { method: "DELETE" });
+}
+
+/** Pieces in no box. A use writes a draw with no batch, and a loss writes a scrap
+ *  adjustment. The note is required: it is the only record of why. */
+export function recordOrganizerUse(body: OrganizerPartRef & {
+  qty: number; company_id: number; purpose: "research" | "external" | "loss"; at?: string; note: string;
+}): Promise<{
+  qty: number; unit_cost_usd: number; value_usd: number; batch_id: number;
+  draw_id?: number; adjustment_id?: number;
+}> {
+  return request("/api/organizers/research", jsonBody("POST", body));
+}
+
+export interface OrganizerImportRow extends OrganizerPartRef {
+  organizer: string;
+  code: string;
+  company_id?: number | null;
+  qty?: number;
+  note?: string;
+}
+
+/** What one row of a list does. The part's fields are absent on `empty_box`. */
+export interface OrganizerImportPlanRow {
+  organizer: string;
+  code: string;
+  new_box: boolean;
+  status: "written" | "already_imported" | "empty_box";
+  part?: string;
+  company_id?: number;
+  qty?: number;
+  in_library?: boolean;
+  pool_before?: number;
+  jlc?: number;
+  free_before?: number;
+  /** only on `written`: the pieces no purchase covers, which enter at zero value */
+  found_at_zero?: number;
+}
+
+export interface OrganizerImportResult {
+  rows: OrganizerImportPlanRow[];
+  totals: {
+    rows: number; boxes_made: number; written: number; already_imported: number;
+    pieces: number; found_rows: number; found_pieces: number;
+  };
+  dry_run: boolean;
+  /** only when it wrote */
+  batch_id?: number;
+}
+
+export function importOrganizers(body: {
+  rows: OrganizerImportRow[]; at: string; source_ref?: string; dry_run: boolean;
+}): Promise<OrganizerImportResult> {
+  return request("/api/organizers/import", jsonBody("POST", body));
 }

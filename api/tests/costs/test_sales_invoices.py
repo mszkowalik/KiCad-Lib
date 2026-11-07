@@ -352,6 +352,20 @@ def test_a_company_the_caller_cannot_see_does_not_exist(db, seller, buyer):
         assert e.value.status_code == 404
 
 
+def test_a_second_template_with_the_same_key_is_refused(db, seller):
+    """The unique index would answer a 500, and the page has to say why."""
+    from types import SimpleNamespace
+
+    from app.routers import sales_invoices as R
+
+    req = SimpleNamespace(state=SimpleNamespace(user=None), headers={})
+    made = R.create_template(R.TemplateIn(company_id=seller.id, key="test-twice"), request=req, db=db)
+    assert made["key"] == "test-twice"
+    with pytest.raises(HTTPException) as e:
+        R.create_template(R.TemplateIn(company_id=seller.id, key="test-twice"), request=req, db=db)
+    assert e.value.status_code == 409
+
+
 def test_a_country_code_is_two_letters(db, buyer):
     from types import SimpleNamespace
 
@@ -363,3 +377,24 @@ def test_a_country_code_is_two_letters(db, buyer):
     assert e.value.status_code == 422
     R.update_customer(buyer.id, R.CustomerPatch(country="de"), request=req, db=db)
     assert buyer.country == "DE"
+
+
+def test_a_position_with_a_bad_number_is_refused_by_name():
+    from app.services.invoicing import amounts as A
+
+    with pytest.raises(ValueError, match="position 2"):
+        A.lines([{"name": "ok", "qty": 1, "unit_net": "1.00"}, {"name": "bad", "qty": 1, "unit_net": "1,5x"}])
+
+
+@pytest.mark.parametrize("day,ok", [("last", True), ("1", True), ("28", True), (28, True),
+                                    ("29", False), ("31", False), ("0", False), ("x", False)])
+def test_a_template_day_is_one_every_month_has(day, ok):
+    from fastapi import HTTPException
+
+    from app.routers.sales_invoices import _check_day
+
+    if ok:
+        _check_day(day)
+    else:
+        with pytest.raises(HTTPException):
+            _check_day(day)

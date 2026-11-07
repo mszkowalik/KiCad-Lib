@@ -8,9 +8,11 @@ import {
   putJlcSession,
   type JlcSessionState,
 } from "../../api";
+import { localWhen, today, plural } from "../../format";
 import AutoTextarea from "../AutoTextarea";
 import Field from "../Field";
 import { ErrorBanner } from "../Ui";
+import { useDialog } from "../Dialog";
 
 /** An account page: logged out, the site sends the tab to its login page. A page
  *  of ours cannot read the cookies it sets, so a person copies them back. */
@@ -29,6 +31,7 @@ const JLC_LOGIN_URL = "https://jlcpcb.com/user-center/orders/";
  * own schedule — so "configured" is never rendered as "ok" on its own.
  */
 export default function JlcSessionStrip({ onChange }: { onChange?: () => void }) {
+  const dialog = useDialog();
   const [state, setState] = useState<JlcSessionState | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState("");
@@ -73,7 +76,7 @@ export default function JlcSessionStrip({ onChange }: { onChange?: () => void })
   async function save() {
     setBusy("save");
     try {
-      await putJlcSession(cookies, `pasted ${new Date().toISOString().slice(0, 10)}`);
+      await putJlcSession(cookies, `pasted ${today()}`);
       setCookies("");
       setPaste(false);
       setLive("unknown");
@@ -87,6 +90,9 @@ export default function JlcSessionStrip({ onChange }: { onChange?: () => void })
   }
 
   async function forget() {
+    const ok = await dialog.confirm("Forget the stored JLCPCB session? Stock and order syncs stop until somebody logs in again.",
+      { title: "Forget session", confirmLabel: "Forget", tone: "danger" });
+    if (!ok) return;
     setBusy("forget");
     try {
       await clearJlcSession();
@@ -124,7 +130,7 @@ export default function JlcSessionStrip({ onChange }: { onChange?: () => void })
         <span className={`pill ${tone}`}>{word}</span>
         {state?.last_ok_at && (
           <span className="muted dim">
-            last worked {new Date(state.last_ok_at).toLocaleString()}
+            last worked {localWhen(state.last_ok_at)}
           </span>
         )}
         {state?.label && <span className="muted dim">· {state.label}</span>}
@@ -144,7 +150,7 @@ export default function JlcSessionStrip({ onChange }: { onChange?: () => void })
             className="muted dim"
             title="Successful keep-alive touches. A touch every 20 minutes cannot expire from idleness."
           >
-            · {state.keepalive_count} keep-alive{state.keepalive_count === 1 ? "" : "s"}
+            · {plural(state.keepalive_count, "keep-alive")}
           </span>
         )}
       </div>

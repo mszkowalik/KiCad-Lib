@@ -23,6 +23,15 @@ from app.services import run_actuals as ra
 from app.services.invoicing import service as S
 
 
+@pytest.fixture(autouse=True)
+def _figures_in_usd(monkeypatch):
+    """These tests read cost totals as USD. The platform displays PLN (decision
+    0103), and the rate between the two is not what they check."""
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "default_currency", "USD")
+
+
 @pytest.fixture
 def db():
     conn = engine.connect()

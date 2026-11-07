@@ -17,8 +17,7 @@ A component in this directory is used by more than one page. If you are about to
 write a page-local copy of something here, extend the shared one instead.
 **A file selector is `FilePick`** (2026-09-17): one button that opens the
 browser's dialog, resets itself so the same file can be picked twice, and takes
-`accept`, `multiple` or `directory`. Seven hand-rolled `<input type="file">`
-markups predate it; new code uses the component.
+`accept`, `multiple` or `directory`. It is the only `<input type="file">` here.
 
 Sub-directories carry their own rules: `flasher/`, `invoices/`, `project/`,
 `run/`.
@@ -103,7 +102,7 @@ sign-off states to `STATUS_TONES`.
   (fixed 2026-09-16). Add the word to the map — never a colour at the call
   site.
 - The browse filter matches the PRINTED label, not the API's state string
-  (`SIGNOFF_TEXT` in `Browse.tsx`), so typing "re-check" finds the stale rows.
+  (`signoffWord` in `Ui.tsx`), so typing "re-check" finds the stale rows.
   Sorting that column uses rank order (worst first), not alphabetical — sorting
   by it means "show me what still needs looking at".
 
@@ -387,7 +386,9 @@ overflow):
    the hidden text is available on hover.
 4. If one row genuinely must break the clamp (e.g. the full-width `colSpan`
    expansion row in the users table), opt *that cell* out with
-   `white-space: normal; overflow: visible` — never relax the whole table.
+   `white-space: normal; overflow: visible` — never relax the whole table. Inside
+   a `DataTable` cell, `.cell-wrap` is that opt-out: the write log's refusal text
+   is the case, because it names the rows that block an undo.
 5. **No filterable column below ~7%.** `input.filter-input` has
    `min-width: 60px` and the filter cell adds 16px of padding, so a narrower
    column lets the box hang over its neighbour. Columns whose content is a
@@ -455,7 +456,8 @@ component_id?, component_name?}` — rather than any one caller's row, so an
 invoice line satisfies it and so does a BOM position with nothing but a
 designator. It seeds the search from `mpn || label`, so pass the MPN ALONE:
 seeded with `"T491D107K016AT at C2"` it searches for that string and matches
-nothing.
+nothing. A subject with no part yet passes `kind`, which the dialog prints and
+does not search for.
 
 Two modes, and the difference is who writes:
 

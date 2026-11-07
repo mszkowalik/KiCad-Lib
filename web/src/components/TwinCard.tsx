@@ -8,8 +8,9 @@
  */
 import { useEffect, useState } from "react";
 import { errorMessage, getDeviceTwin, isAbortError, type TwinFitted, type TwinInfo, type TwinStepRow } from "../api";
-import { usd } from "../format";
+import { localDate, pln } from "../format";
 import DataTable from "./DataTable";
+import FoldSection, { StatChip } from "./FoldSection";
 import { ErrorBanner, StatusPill } from "./Ui";
 
 /** How the unit was chosen, in one word — the cell is narrow; the sentence is
@@ -46,16 +47,24 @@ export default function TwinCard({ deviceId }: { deviceId: number }) {
   }, [deviceId]);
   if (error) return <ErrorBanner message={error} />;
   if (!twin) return null;
+  const money = (v: number | null | undefined) => pln(v, twin.pln_per_usd);
   return (
     <div className="card pad">
       <h2 className="card-title">How it was built</h2>
       <p className="muted dim">
         Board from {twin.origin_run}{twin.run !== twin.origin_run ? `, programmed in ${twin.run}` : ""}.{" "}
         <StatusPill status={twin.status} />{" "}
-        Price {usd(twin.price.total_usd)}: own parts {usd(twin.price.own_parts_usd)} + step invoices{" "}
-        {usd(twin.price.step_costs_usd)} + origin batch cost{" "}
-        {usd(twin.price.origin_share_usd)}{twin.found ? " (found unit, entered at zero)" : ""}.
+        Price {money(twin.price.total_usd)}: own parts {money(twin.price.own_parts_usd)} + step invoices{" "}
+        {money(twin.price.step_costs_usd)} + origin batch cost{" "}
+        {money(twin.price.origin_share_usd)}{twin.found ? " (found unit, entered at zero)" : ""}.
       </p>
+      <FoldSection
+        bare
+        title="Steps"
+        count={twin.steps.length}
+        foldKey={`device:${deviceId}:built-steps`}
+        chips={<StatChip n={money(twin.steps.reduce((a, st) => a + st.parts_usd + st.costs_usd, 0))}>parts and invoices</StatChip>}
+      >
       <DataTable<TwinStepRow>
         rows={twin.steps}
         rowKey={(s) => `${s.step}-${s.made_at}-${s.label}`}
@@ -70,26 +79,34 @@ export default function TwinCard({ deviceId }: { deviceId: number }) {
           // One money cell: the card sits in a narrow column. The parts and
           // the invoices behind the figure are on the hover.
           { key: "cost", label: "Cost", width: 26, numeric: true, get: (s) => s.parts_usd + s.costs_usd,
-            render: (s) => (s.parts_usd + s.costs_usd ? usd(s.parts_usd + s.costs_usd) : "—"),
+            render: (s) => (s.parts_usd + s.costs_usd ? money(s.parts_usd + s.costs_usd) : "—"),
             title: (s) => [
               ...s.parts.map((p) => `${round(p.qty)} × ${p.name}${p.lot ? ` (${p.lot})` : ""}`),
-              ...s.costs.map((c) => `${c.step_name || c.label} (${c.supplier} ${c.doc_number}): ${usd(c.usd)}`
+              ...s.costs.map((c) => `${c.step_name || c.label} (${c.supplier} ${c.doc_number}): ${money(c.usd)}`
                 + (c.shared_by.length ? ` — one invoice for ${c.shared_by.join(", ")}` : "")),
             ].join("\n") || "nothing drawn or invoiced" },
           { key: "how", label: "Chosen", width: 14, get: (s) => CHOSEN[s.chosen]?.[0] ?? s.chosen,
             title: (s) => CHOSEN[s.chosen]?.[1] ?? s.chosen },
         ]}
       />
+      </FoldSection>
       {twin.reflashes.length ? (
         <p className="muted dim">
           Programmed again after it was named:{" "}
           {twin.reflashes.map((r) => `${r.deployment_version ?? "unknown version"}`
-            + `${r.at ? ` on ${r.at.slice(0, 10)}` : ""} (run #${r.programming_run_id})`).join("; ")}.
+            + `${r.at ? ` on ${localDate(r.at)}` : ""} (run #${r.programming_run_id})`).join("; ")}.
         </p>
       ) : null}
       {twin.fitted.length ? (
-        <details>
-          <summary className="muted">On the board: {twin.fitted.length} position(s) from the supplier's own BOM</summary>
+        <FoldSection
+          bare
+          title="On the board"
+          count={twin.fitted.length}
+          foldKey={`device:${deviceId}:fitted`}
+          chips={[...new Set(twin.fitted.map((f) => f.source))].slice(0, 4).map((src) => (
+            <StatChip key={src} n={twin.fitted.filter((f) => f.source === src).length}>{SOURCE[src] ?? src}</StatChip>
+          ))}
+        >
           <p className="muted dim">The supplier's designators, which can differ from the schematic.</p>
           <DataTable<TwinFitted>
             rows={twin.fitted}
@@ -103,7 +120,7 @@ export default function TwinCard({ deviceId }: { deviceId: number }) {
                   f.source === "supplier" ? "bought by the supplier for this order" : f.source) },
             ]}
           />
-        </details>
+        </FoldSection>
       ) : null}
     </div>
   );

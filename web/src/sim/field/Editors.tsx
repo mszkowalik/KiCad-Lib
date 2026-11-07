@@ -61,6 +61,40 @@ const OUTER: { key: keyof FaceDraft; kind: "overlay" | "mask" | "finish"; label:
   { key: "finish", kind: "finish", label: "Surface finish" },
 ];
 
+/** The foot of both editors: the refusal, Delete for a saved record, and the three
+ *  ways out. */
+function EditorFoot({ err, busy, canDelete, onDelete, onSave, onClose }: {
+  err: string;
+  busy: boolean;
+  canDelete: boolean;
+  onDelete: () => void;
+  onSave: (asNew: boolean) => void;
+  onClose: () => void;
+}) {
+  return (
+    <>
+      {err ? <p className="fs-error">{err}</p> : null}
+      <div className="fs-modal-foot">
+        {canDelete ? (
+          <button type="button" className="btn btn-sm btn-danger" onClick={onDelete} disabled={busy}>
+            Delete
+          </button>
+        ) : null}
+        <span className="fs-spacer" />
+        <button type="button" className="btn btn-sm" onClick={() => onSave(true)} disabled={busy}>
+          Save as new
+        </button>
+        <button type="button" className="btn btn-sm btn-primary" onClick={() => onSave(false)} disabled={busy}>
+          Save
+        </button>
+        <button type="button" className="btn btn-sm" onClick={onClose} disabled={busy}>
+          Close
+        </button>
+      </div>
+    </>
+  );
+}
+
 const dielectricDefault = (materials: FsMaterial[]): string | null =>
   materials.find((m) => m.use === "laminate" && /prepreg/i.test(m.name))?.id ??
   materials.find((m) => m.use === "laminate")?.id ??
@@ -634,24 +668,7 @@ export function StackupEditor({ stackup, materials, finishes, onClose, onSaved, 
           </div>
         ) : null}
 
-        {err ? <p className="fs-error">{err}</p> : null}
-        <div className="fs-modal-foot">
-          {d.id ? (
-            <button type="button" className="btn btn-sm btn-danger" onClick={remove} disabled={busy}>
-              Delete
-            </button>
-          ) : null}
-          <span className="fs-spacer" />
-          <button type="button" className="btn btn-sm" onClick={() => save(true)} disabled={busy}>
-            Save as new
-          </button>
-          <button type="button" className="btn btn-sm btn-accent" onClick={() => save(false)} disabled={busy}>
-            Save
-          </button>
-          <button type="button" className="btn btn-sm" onClick={onClose} disabled={busy}>
-            Close
-          </button>
-        </div>
+        <EditorFoot err={err} busy={busy} canDelete={!!d.id} onDelete={remove} onSave={save} onClose={onClose} />
       </div>
     </div>
   );
@@ -891,24 +908,7 @@ export function RulesEditor({ ruleset, finishes, onClose, onSaved, onDeleted }: 
           </fieldset>
         </div>
 
-        {err ? <p className="fs-error">{err}</p> : null}
-        <div className="fs-modal-foot">
-          {d.id ? (
-            <button type="button" className="btn btn-sm btn-danger" onClick={remove} disabled={busy}>
-              Delete
-            </button>
-          ) : null}
-          <span className="fs-spacer" />
-          <button type="button" className="btn btn-sm" onClick={() => save(true)} disabled={busy}>
-            Save as new
-          </button>
-          <button type="button" className="btn btn-sm btn-accent" onClick={() => save(false)} disabled={busy}>
-            Save
-          </button>
-          <button type="button" className="btn btn-sm" onClick={onClose} disabled={busy}>
-            Close
-          </button>
-        </div>
+        <EditorFoot err={err} busy={busy} canDelete={!!d.id} onDelete={remove} onSave={save} onClose={onClose} />
       </div>
     </div>
   );

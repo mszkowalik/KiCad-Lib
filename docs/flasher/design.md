@@ -810,9 +810,9 @@ share a fingerprint, which is how every historical set recovered its real name
 (`release-0.0.1` … `release-1.3.11`) by propagation.
 
 **Channels** (`production`, `bench`) are named pointers at a version. Going
-live and rolling back are channel moves; history is never edited. A batch
-either pins a version or follows a channel, and a run always records what
-actually resolved.
+live and rolling back are channel moves; history is never edited. A batch's
+process names its procedures, the bench runs each at its current version, and a
+run always records what it ran.
 
 ### Guardrails (`services/flasher/validate.py`)
 
@@ -972,7 +972,7 @@ version payload itself, so the view costs no extra requests.
 
 ### Firmware admin, chip detection, and the 1.3.11 question (2026-07-30)
 
-**`/production/files` administers the pool**, one kind per tab. Firmware and
+**`/production/procedures/files` administers the pool**, one kind per tab. Firmware and
 bundles are two-column: how a thing gets in on the left, what exists on the
 right. Only **esp32 and esp32c6** are offered (user decision).
 
@@ -1394,7 +1394,7 @@ versions repointed, 20 fingerprints checked, 6 unreachable blobs pruned.
 
 ### What the UI became
 
-`/production/files` has three tabs — releases, artwork, firmware — and the
+`/production/procedures/files` has three tabs — releases, artwork, firmware — and the
 first two have no project selector. A release row shows its files, size, who
 pins it and a per-file "same as / changed since" read off the older sets. The
 version card shows one pill per set, each linking to its row. The device URL

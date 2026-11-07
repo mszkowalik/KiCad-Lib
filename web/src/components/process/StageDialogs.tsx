@@ -21,25 +21,29 @@ import {
   type StocktakePlan,
   type WriteOffPlan,
 } from "../../api";
-import { usd } from "../../format";
+import { pln, today, usd } from "../../format";
+import { useTodayRate } from "../../useTodayRate";
 import AutoTextarea from "../AutoTextarea";
 import Field, { FieldGrid } from "../Field";
 import NumberInput from "../NumberInput";
 import { ErrorBanner, Spinner } from "../Ui";
-import { today } from "./MakeDialog";
 import { useModal } from "../modal";
 
 
 /** The shared frame: fields, a preview line, Cancel / Preview / Apply.
  *  `applyLabel` and `canApply` let the preview decide what Apply says and
- *  whether it is offered ("Run on 28" when two units are skipped). */
+ *  whether it is offered ("Run on 28" when two units are skipped). `describe` is
+ *  one sentence, inside a paragraph. A plan too big for that puts its tables in
+ *  `detail`, and `wide` gives them the room. */
 export function DryRunDialog<P>({
-  title, intro, fields, describe, run, onClose, applyLabel, canApply,
+  title, intro, fields, describe, detail, wide, run, onClose, applyLabel, canApply,
 }: {
   title: string;
   intro: string;
   fields: React.ReactNode;
   describe: (plan: P) => React.ReactNode;
+  detail?: (plan: P) => React.ReactNode;
+  wide?: boolean;
   run: (dry: boolean) => Promise<P>;
   onClose: (changed: boolean) => void;
   applyLabel?: (plan: P) => string;
@@ -51,6 +55,8 @@ export function DryRunDialog<P>({
   const [error, setError] = useState<string | null>(null);
   const go = async (dry: boolean) => {
     setBusy(true); setError(null);
+    // A plan that a newer preview did not confirm must not leave Apply on.
+    if (dry) setPlan(null);
     try {
       const p = await run(dry);
       if (dry) setPlan(p); else onClose(true);
@@ -62,12 +68,13 @@ export function DryRunDialog<P>({
   };
   return (
     <div className="modal-backdrop" {...modal.backdropProps}>
-      <div className="card pad modal-card modal-card-mid" {...modal.cardProps}>
+      <div className={`card pad modal-card ${wide ? "modal-card-wide" : "modal-card-mid"}`} {...modal.cardProps}>
         <h2 className="card-title">{title}</h2>
         <p className="muted dim">{intro}</p>
         {error ? <ErrorBanner message={error} /> : null}
         <div onChange={() => setPlan(null)}>{fields}</div>
         {plan ? <p className="muted">{describe(plan)}</p> : null}
+        {plan && detail ? detail(plan) : null}
         <div className="btn-row modal-actions">
           {busy ? <Spinner /> : null}
           <button type="button" className="btn" onClick={() => onClose(false)}>Cancel</button>
@@ -83,6 +90,7 @@ export function DryRunDialog<P>({
 export function BankDialog({ projectId, componentId, name, onClose }: {
   projectId: number; componentId: number; name: string; onClose: (changed: boolean) => void;
 }) {
+  const rate = useTodayRate();
   const [qty, setQty] = useState<number | null>(null);
   const [unit, setUnit] = useState<number | null>(0);
   const [at, setAt] = useState(today());
@@ -95,7 +103,7 @@ export function BankDialog({ projectId, componentId, name, onClose }: {
       run={(dry) => bankStage(projectId, {
         component_id: componentId, qty: qty ?? 0, unit_cost_usd: unit ?? 0, at, note, dry_run: dry,
       })}
-      describe={(p) => <>A new lot of <b>{p.qty}</b> × {p.name}, worth <b>{usd(p.value_usd)}</b>, dated {p.at}.</>}
+      describe={(p) => <>A new lot of <b>{p.qty}</b> × {p.name}, worth <b>{pln(p.value_usd, rate)}</b>, dated {p.at}.</>}
       fields={
         <FieldGrid>
           <Field label="Units"><NumberInput className="text" value={qty} min={0} onChange={setQty} /></Field>
@@ -147,12 +155,13 @@ export function StocktakeDialog({ projectId, componentId, name, onBooks, onClose
   );
 }
 
-export function WriteOffDialog({ projectId, lot, name, runs, runId = null, onClose }: {
-  projectId: number; lot: StageLot; name: string; runs: RunInfo[]; runId?: number | null;
+export function WriteOffDialog({ projectId, lot, name, runs, onClose }: {
+  projectId: number; lot: StageLot; name: string; runs: RunInfo[];
   onClose: (changed: boolean) => void;
 }) {
+  const rate = useTodayRate();
   const [qty, setQty] = useState<number | null>(1);
-  const [charge, setCharge] = useState<number | null>(runId);
+  const [charge, setCharge] = useState<number | null>(null);
   const [at, setAt] = useState(today());
   const [note, setNote] = useState("");
   return (
@@ -163,7 +172,7 @@ export function WriteOffDialog({ projectId, lot, name, runs, runId = null, onClo
       run={(dry) => writeOffStage(projectId, {
         lot_adjustment_id: lot.adjustment_id, qty: qty ?? 0, at, charge_run_id: charge, note, dry_run: dry,
       })}
-      describe={(p) => <>Writes off <b>{p.qty}</b>, worth <b>{usd(p.value_usd)}</b>.</>}
+      describe={(p) => <>Writes off <b>{p.qty}</b>, worth <b>{pln(p.value_usd, rate)}</b>.</>}
       fields={
         <FieldGrid>
           <Field label="Units"><NumberInput className="text" value={qty} min={0} onChange={setQty} /></Field>

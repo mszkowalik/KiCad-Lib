@@ -4,7 +4,7 @@ The reasoning is in
 [decision 0068](../decisions/0068-a-company-has-overhead-and-books.md). The
 code is `api/app/services/company_books.py` (the page's figures) and the
 `overhead` destination in `services/run_actuals.py`. The page is
-Production → Company books.
+Finance → Company books.
 
 ## Overhead
 
@@ -12,7 +12,7 @@ Production → Company books.
   product. The categories are the `overhead_categories` table
   (`services/overhead.py`, decision
   [0091](../decisions/0091-overhead-categories-are-a-list-an-admin-edits.md)),
-  edited by an admin on Production → Company books → Overhead. Never put a
+  edited by an admin on Finance → Company books → Overhead. Never put a
   category list in code again: the web reads `GET /api/overhead-categories`
   through `useOverheadCategories` in `components/costs.tsx`.
 * **A position stores the category's KEY, with no foreign key.** The key never

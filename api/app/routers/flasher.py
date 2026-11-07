@@ -45,6 +45,7 @@ from ..services.flasher import (bundle, checks as checks_svc, credentials,
                                 params as params_svc, transports, validate)
 from ..services.flasher import engine as engine_mod
 from ..services.flasher.engine import (SERIAL_MAX, SERIAL_MIN, RunEngine)
+from .users import require_admin
 from .util import acting_name, actor_of, audit, col_cap, content_disposition
 
 router = APIRouter(prefix="/api/flasher", tags=["flasher"])
@@ -219,16 +220,18 @@ class FirmwarePatch(BaseModel):
 
 def _firmware_usage(db: Session, asset_id: int) -> list[dict]:
     """Which deployment versions pin this image. Deleting one would rewrite
-    what a run says it flashed, so usage is a hard stop."""
+    what a run says it flashed, so usage is a hard stop. One row per version: a
+    version may pin the same image at two addresses."""
     rows = (
-        db.query(M.DeploymentImage, M.DeploymentVersion, M.Deployment)
-        .join(M.DeploymentVersion, M.DeploymentVersion.id == M.DeploymentImage.deployment_version_id)
+        db.query(M.DeploymentVersion, M.Deployment)
+        .join(M.DeploymentImage, M.DeploymentImage.deployment_version_id == M.DeploymentVersion.id)
         .join(M.Deployment, M.Deployment.id == M.DeploymentVersion.deployment_id)
         .filter(M.DeploymentImage.firmware_asset_id == asset_id)
+        .order_by(M.Deployment.name, M.DeploymentVersion.version_no)
         .all()
     )
-    return [{"deployment": d.name, "version_no": v.version_no, "version_id": v.id}
-            for _, v, d in rows]
+    return list({v.id: {"deployment": d.name, "version_no": v.version_no, "version_id": v.id, "status": v.status}
+                 for v, d in rows}.values())
 
 
 @router.patch("/firmware/{asset_id}")
@@ -260,7 +263,7 @@ def delete_firmware(asset_id: int, db: Session = Depends(get_db)):
     if used:
         where = ", ".join(f"{u['deployment']} v{u['version_no']}" for u in used[:4])
         raise HTTPException(
-            409, f"{a.filename} is pinned by {len(used)} deployment version(s) ({where}) — "
+            409, f"{a.filename} is used by {len(used)} procedure version(s) ({where}) — "
                  "programming runs record what they flashed, so it stays")
     name = a.filename
     db.delete(a)
@@ -385,7 +388,7 @@ def delete_file_set(set_id: int, db: Session = Depends(get_db)):
     if users:
         where = ", ".join(f"{u['deployment']} v{u['version_no']}" for u in users[:4])
         raise HTTPException(409, {
-            "error": f'"{s.label}" is pinned by {len(users)} deployment version(s) ({where}'
+            "error": f'"{s.label}" is pinned by {len(users)} procedure version(s) ({where}'
                      f"{', …' if len(users) > 4 else ''}) — it stays as their record",
             "users": users,
         })
@@ -686,7 +689,7 @@ def patch_deployment(deployment_id: int, body: DeploymentIn, request: Request,
                      db: Session = Depends(get_db)):
     d = db.get(M.Deployment, deployment_id)
     if d is None:
-        raise HTTPException(404, "no such deployment")
+        raise HTTPException(404, "no such procedure")
     d.name = body.name.strip() or d.name
     d.description = body.description
     d.chip = body.chip.strip()
@@ -708,7 +711,7 @@ def patch_deployment(deployment_id: int, body: DeploymentIn, request: Request,
 def get_deployment(deployment_id: int, db: Session = Depends(get_db)):
     d = db.get(M.Deployment, deployment_id)
     if d is None:
-        raise HTTPException(404, "no such deployment")
+        raise HTTPException(404, "no such procedure")
     return _deployment_json(d, db, deep=True)
 
 
@@ -724,7 +727,7 @@ def delete_deployment(deployment_id: int, db: Session = Depends(get_db)):
     """
     d = db.get(M.Deployment, deployment_id)
     if d is None:
-        raise HTTPException(404, "no such deployment")
+        raise HTTPException(404, "no such procedure")
     version_ids = [v.id for v in d.versions]
     runs = (
         db.query(M.ProgrammingRun)
@@ -736,22 +739,14 @@ def delete_deployment(deployment_id: int, db: Session = Depends(get_db)):
             409,
             f'"{d.name}" is the recorded deployment of {runs} programming run(s) — deleting it '
             "would orphan that history. Rename it or leave it as an archive instead.")
-    batches = (
-        db.query(M.ProductionRun)
-        .filter(M.ProductionRun.deployment_version_id.in_(version_ids or [-1]))
-        .all()
-    )
-    for b in batches:  # soft pointer: clear it rather than dangle
-        b.deployment_version_id = None
     db.query(M.DeploymentChannel).filter(
         M.DeploymentChannel.deployment_id == d.id).delete(synchronize_session=False)
     name, count = d.name, len(version_ids)
     db.delete(d)  # cascades versions -> images + pinned-file links
     db.commit()
     audit(db, "flasher.deployment_delete", "deployment", deployment_id,
-          details=f"{name} ({count} version(s), never used"
-                  + (f", {len(batches)} batch pin(s) cleared" if batches else "") + ")")
-    return {"ok": True, "deleted_versions": count, "batches_cleared": len(batches)}
+          details=f"{name} ({count} version(s), never used)")
+    return {"ok": True, "deleted_versions": count}
 
 
 @router.post("/deployments/{deployment_id}/versions")
@@ -759,12 +754,12 @@ def compose_version(deployment_id: int, body: ComposeIn, db: Session = Depends(g
     """Create a DRAFT version. Sections left None inherit from `from_version_id`."""
     d = db.get(M.Deployment, deployment_id)
     if d is None:
-        raise HTTPException(404, "no such deployment")
+        raise HTTPException(404, "no such procedure")
     base = None
     if body.from_version_id:
         base = db.get(M.DeploymentVersion, body.from_version_id)
         if base is None or base.deployment_id != d.id:
-            raise HTTPException(400, "from_version_id is not a version of this deployment")
+            raise HTTPException(400, "from_version_id is not a version of this procedure")
 
     def inherit(field, base_value, given):
         return base_value if given is None else given
@@ -851,7 +846,7 @@ def _pick_set(db: Session, kind: str, inherited: int | None, given: int | None) 
 def get_deployment_version(version_id: int, db: Session = Depends(get_db)):
     v = db.get(M.DeploymentVersion, version_id)
     if v is None:
-        raise HTTPException(404, "no such deployment version")
+        raise HTTPException(404, "no such procedure version")
     d = db.get(M.Deployment, v.deployment_id)
     versions = sorted(d.versions, key=lambda x: x.version_no)
     idx = [x.id for x in versions].index(v.id)
@@ -866,9 +861,14 @@ def get_deployment_version(version_id: int, db: Session = Depends(get_db)):
                 M.ProgrammingRun.device_unit_id.isnot(None))
         .distinct().count()
     )
+    # The batches that really ran this version.
     batches = (
         db.query(M.ProductionRun)
-        .filter(M.ProductionRun.deployment_version_id == v.id).all()
+        .filter(M.ProductionRun.id.in_(
+            db.query(M.ProgrammingRun.production_run_id)
+            .filter(M.ProgrammingRun.deployment_version_id == v.id,
+                    M.ProgrammingRun.production_run_id.isnot(None))))
+        .order_by(M.ProductionRun.id).all()
     )
     return {
         **bundle.version_json(db, v),
@@ -896,11 +896,11 @@ def diff_deployment_version(version_id: int, against: int | None = None,
                             db: Session = Depends(get_db)):
     cur = db.get(M.DeploymentVersion, version_id)
     if cur is None:
-        raise HTTPException(404, "no such deployment version")
+        raise HTTPException(404, "no such procedure version")
     if against:
         prev = db.get(M.DeploymentVersion, against)
         if prev is None or prev.deployment_id != cur.deployment_id:
-            raise HTTPException(400, "the other version belongs to a different deployment")
+            raise HTTPException(400, "the other version belongs to a different procedure")
     else:
         d = db.get(M.Deployment, cur.deployment_id)
         earlier = [v for v in sorted(d.versions, key=lambda x: x.version_no)
@@ -917,7 +917,7 @@ def diff_deployment_version(version_id: int, against: int | None = None,
 def validate_deployment_version(version_id: int, db: Session = Depends(get_db)):
     v = db.get(M.DeploymentVersion, version_id)
     if v is None:
-        raise HTTPException(404, "no such deployment version")
+        raise HTTPException(404, "no such procedure version")
     return validate.check(db, v)
 
 
@@ -940,7 +940,7 @@ class VersionPatch(BaseModel):
 def patch_deployment_version(version_id: int, body: VersionPatch, db: Session = Depends(get_db)):
     v = db.get(M.DeploymentVersion, version_id)
     if v is None:
-        raise HTTPException(404, "no such deployment version")
+        raise HTTPException(404, "no such procedure version")
     if v.status != "draft":
         raise HTTPException(409, f"version is {v.status} — published versions are immutable")
     d = db.get(M.Deployment, v.deployment_id)
@@ -986,7 +986,7 @@ def patch_deployment_version(version_id: int, body: VersionPatch, db: Session = 
 def publish_deployment_version(version_id: int, body: PublishIn, db: Session = Depends(get_db)):
     v = db.get(M.DeploymentVersion, version_id)
     if v is None:
-        raise HTTPException(404, "no such deployment version")
+        raise HTTPException(404, "no such procedure version")
     if v.status == "rejected":
         raise HTTPException(409, "version was rejected")
     if v.status == "published":
@@ -1014,7 +1014,7 @@ def publish_deployment_version(version_id: int, body: PublishIn, db: Session = D
 def reject_deployment_version(version_id: int, body: PublishIn, db: Session = Depends(get_db)):
     v = db.get(M.DeploymentVersion, version_id)
     if v is None:
-        raise HTTPException(404, "no such deployment version")
+        raise HTTPException(404, "no such procedure version")
     if v.status == "published":
         raise HTTPException(409, "already published — publish a newer version instead")
     v.status = "rejected"
@@ -1038,7 +1038,7 @@ def delete_deployment_version(version_id: int, db: Session = Depends(get_db)):
     """
     v = db.get(M.DeploymentVersion, version_id)
     if v is None:
-        raise HTTPException(404, "no such deployment version")
+        raise HTTPException(404, "no such procedure version")
     if v.status == "published":
         raise HTTPException(409, "published versions are never deleted — they are what a "
                                  "device was given. Publish a newer one instead.")
@@ -1078,11 +1078,11 @@ def set_channel(deployment_id: int, name: str, body: ChannelIn, db: Session = De
     rollback happens — history is never edited."""
     d = db.get(M.Deployment, deployment_id)
     if d is None:
-        raise HTTPException(404, "no such deployment")
+        raise HTTPException(404, "no such procedure")
     if body.deployment_version_id is not None:
         v = db.get(M.DeploymentVersion, body.deployment_version_id)
         if v is None or v.deployment_id != d.id:
-            raise HTTPException(400, "that version belongs to another deployment")
+            raise HTTPException(400, "that version belongs to another procedure")
         if v.status != "published":
             raise HTTPException(409, f"version is {v.status} — only published versions go on a channel")
     ch = (
@@ -1366,7 +1366,7 @@ def delete_param_set(param_set_id: int, db: Session = Depends(get_db)):
         )
         more = f" and {len(users) - 6} more" if len(users) > 6 else ""
         raise HTTPException(409, {
-            "error": f"{len(users)} deployment version(s) use this parameter set: "
+            "error": f"{len(users)} procedure version(s) use this parameter set: "
                      f"{named}{more}. Point them at another set first.",
             "versions": [v.id for v in users],
         })
@@ -1479,6 +1479,7 @@ _DEVICE_FILTERS = {
 def list_devices(
     project_id: int | None = None,
     production_run_id: int | None = None,
+    deployment_version: int | None = None,
     status: str | None = None,
     q: str | None = None,
     limit: int = Query(100, ge=1, le=1000),
@@ -1507,6 +1508,10 @@ def list_devices(
              .outerjoin(M.ProductionRun, M.ProductionRun.id == M.DeviceUnit.production_run_id))
     if project_id:
         query = query.filter(M.DeviceUnit.project_id == project_id)
+    if deployment_version:
+        # "Where used" on a procedure version: the devices one of its runs touched.
+        query = query.filter(M.DeviceUnit.id.in_(
+            db.query(M.ProgrammingRun.device_unit_id).filter(M.ProgrammingRun.deployment_version_id == deployment_version)))
     # The header's company (decision 0063): a device of a batch that company
     # made, or of a project it owns when no batch claimed the device.
     from ..services import companies as company_svc
@@ -1802,28 +1807,18 @@ def create_run(body: RunCreate, request: Request, db: Session = Depends(get_db))
         if prod is None:
             raise HTTPException(404, "no such production run")
 
-    assigned = prod.deployment_version_id if prod else None
-    if assigned is None and prod is not None and prod.deployment_channel:
-        # Follow the batch's channel: resolve it now and record what it gave.
-        ch = (
-            db.query(M.DeploymentChannel)
-            .join(M.Deployment, M.Deployment.id == M.DeploymentChannel.deployment_id)
-            .filter(M.Deployment.project_id == prod.project_id,
-                    M.DeploymentChannel.name == prod.deployment_channel)
-            .one_or_none()
-        )
-        assigned = ch.deployment_version_id if ch else None
-    version_id = body.deployment_version_id or assigned
+    # A batch names no version of its own. Its process names the procedures, and the
+    # bench runs each at its current version, or another with a reason (below).
+    assigned = None
+    version_id = body.deployment_version_id
     if not version_id:
-        raise HTTPException(
-            409, "no deployment version: the batch pins none and follows no channel, "
-                 "and the request named none")
+        raise HTTPException(409, "no procedure version: the request named none")
     v = db.get(M.DeploymentVersion, version_id)
     if v is None:
-        raise HTTPException(404, "no such deployment version")
+        raise HTTPException(404, "no such procedure version")
     dep = db.get(M.Deployment, v.deployment_id)
     if prod is not None and dep.project_id != prod.project_id:
-        raise HTTPException(409, "that deployment belongs to a different project than the batch")
+        raise HTTPException(409, "that procedure belongs to a different project than the batch")
     if v.status == "rejected":
         raise HTTPException(409, "that version was rejected")
     draft_run = v.status == "draft"
@@ -1973,7 +1968,7 @@ def mark_aborted(run_id: int, db: Session = Depends(get_db)):
 
 @router.post("/checks/recompute")
 def recompute_checks(project_id: int | None = None, run_id: int | None = None,
-                     db: Session = Depends(get_db)):
+                     db: Session = Depends(get_db), _admin: M.User = Depends(require_admin)):
     """Rebuild the derived checks from the runs' own steps and results.
 
     Checks are a cached opinion about stored evidence, so improving an extractor
@@ -2098,38 +2093,11 @@ def batch_programming(production_run_id: int, db: Session = Depends(get_db)):
         "extra": sorted(programmed_ok - set(planned)) if planned else [],
         "missing": sorted(set(planned) - programmed_ok) if planned else [],
         "unidentified_attempts": sum(1 for r in runs if not r.device_unit_id),
+        # An attempt that named no device is on no device's row, so the batch page
+        # lists these on their own. `runs` stops at 200 and can leave them out.
+        "unidentified_runs": [_run_summary_json(r, db) for r in runs if not r.device_unit_id][:200],
         "runs": [_run_summary_json(r, db) for r in runs[:200]],
-        "assigned_deployment_version_id": prod.deployment_version_id,
-        "deployment_channel": prod.deployment_channel,
     }
-
-
-class BatchDeploymentIn(BaseModel):
-    """Pin a version outright, or follow a channel by name (mutually exclusive
-    in practice: an explicit pin wins at run creation)."""
-    deployment_version_id: int | None = None
-    deployment_channel: str = Field("", max_length=col_cap(M.ProductionRun, "deployment_channel"))
-
-
-@router.put("/production-runs/{production_run_id}/deployment")
-def assign_batch_deployment(production_run_id: int, body: BatchDeploymentIn,
-                            db: Session = Depends(get_db)):
-    prod = db.get(M.ProductionRun, production_run_id)
-    if prod is None:
-        raise HTTPException(404, "no such production run")
-    if body.deployment_version_id is not None:
-        v = db.get(M.DeploymentVersion, body.deployment_version_id)
-        if v is None:
-            raise HTTPException(404, "no such deployment version")
-        dep = db.get(M.Deployment, v.deployment_id)
-        if dep.project_id != prod.project_id:
-            raise HTTPException(409, "that deployment belongs to a different project")
-        if v.status != "published":
-            raise HTTPException(409, f"version is {v.status} — a batch runs published versions only")
-    prod.deployment_version_id = body.deployment_version_id
-    prod.deployment_channel = body.deployment_channel.strip()
-    db.commit()
-    return {"ok": True}
 
 
 # ----------------------------------------------------------- mosquitto export
@@ -2383,7 +2351,9 @@ def bench_agent(request: Request):
 
 @router.get("/bench-policy.mobileconfig")
 def bench_policy(request: Request):
-    """The macOS profile that stops the bench asking for a port on every unit.
+    """The macOS profile that lets this site reach the bench agent on a Mac whose
+    Chrome is managed. See `_mobileconfig`: its serial grant is vestigial since
+    decision 0023, and the agent writes the same grant itself on any other Mac.
 
     The origin comes from the BROWSER (its `Origin`, else `Referer`), because
     only the browser knows which address the bench is actually open at, and a
@@ -2478,7 +2448,10 @@ def mosquitto_export_all(project_id: int | None = None, db: Session = Depends(ge
 
 @router.get("/projects/{project_id}/mosquitto")
 def mosquitto_export(project_id: int, db: Session = Depends(get_db)):
-    return _mosquitto_file(db, project_id)
+    project = db.get(M.Project, project_id)
+    if project is None:
+        raise HTTPException(404, "no such project")
+    return _mosquitto_file(db, project_id, filename=f"mosquitto_passwords_{project.name}.txt")
 
 
 @router.get("/production-runs/{production_run_id}/mosquitto")

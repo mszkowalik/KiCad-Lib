@@ -1118,6 +1118,37 @@ export default function BenchStation(props: StationSlotProps) {
     : wantsLaser && wantsLabel ? "Mark + label" : wantsLaser ? "Mark" : "Print label";
   const overall = stepNo ? Math.round((stepNo.index / stepNo.total) * 100) : null;
 
+  /** One socket row: the marking layout draws it in its left column. */
+  const portRow = (
+    <div className="bench-port-row">
+      <span className={`pill ${PORT_PILL[portState]}`}>{PORT_TEXT[portState]}</span>
+      {portLabel && portLabel !== "—" ? (
+        <span className="mono dim bench-port" title={portLabel}>
+          {portLabel}
+        </span>
+      ) : null}
+      {station.assigned ? (
+        <button
+          type="button"
+          className="btn btn-sm"
+          onClick={() => {
+            station.unbind();
+            resetPresence();
+            syncPort();
+          }}
+          disabled={busy}
+          title="Give up this socket. The station stops taking whatever is plugged into it, and another station can claim it."
+        >
+          Free socket
+        </button>
+      ) : (
+        <button type="button" className="btn btn-sm" onClick={pickPort} disabled={busy}>
+          Assign socket…
+        </button>
+      )}
+    </div>
+  );
+
   return (
     <div className={`card pad bench-station${marking ? " is-mark" : ""}`}>
       <div className="toolbar">
@@ -1237,33 +1268,7 @@ export default function BenchStation(props: StationSlotProps) {
                 </button>
               </div>
             ) : null}
-            <div className="bench-port-row">
-                    <span className={`pill ${PORT_PILL[portState]}`}>{PORT_TEXT[portState]}</span>
-                    {portLabel && portLabel !== "—" ? (
-                      <span className="mono dim bench-port" title={portLabel}>
-                        {portLabel}
-                      </span>
-                    ) : null}
-                    {station.assigned ? (
-                      <button
-                        type="button"
-                        className="btn btn-sm"
-                        onClick={() => {
-                          station.unbind();
-                          resetPresence();
-                          syncPort();
-                        }}
-                        disabled={busy}
-                        title="Give up this socket. The station stops taking whatever is plugged into it, and another station can claim it."
-                      >
-                        Free socket
-                      </button>
-                    ) : (
-                      <button type="button" className="btn btn-sm" onClick={pickPort} disabled={busy}>
-                        Assign socket…
-                      </button>
-                    )}
-                  </div>
+            {portRow}
           </div>
 
           <div className="bench-mark-right">
@@ -1345,7 +1350,7 @@ export default function BenchStation(props: StationSlotProps) {
               </div>
             ) : null}
             {wantsLabel && labelSetupOpen ? (
-              <div className="stack">
+              <div>
                 {printers.length > 1 ? (
                   <select
                     className="bench-roll"
@@ -1446,35 +1451,7 @@ export default function BenchStation(props: StationSlotProps) {
                 {hint ? <div className="bench-hint">{hint}</div> : null}
               </div>
             ) : null}
-      {marking ? null : (
-        <div className="bench-port-row">
-                <span className={`pill ${PORT_PILL[portState]}`}>{PORT_TEXT[portState]}</span>
-                {portLabel && portLabel !== "—" ? (
-                  <span className="mono dim bench-port" title={portLabel}>
-                    {portLabel}
-                  </span>
-                ) : null}
-                {station.assigned ? (
-                  <button
-                    type="button"
-                    className="btn btn-sm"
-                    onClick={() => {
-                      station.unbind();
-                      resetPresence();
-                      syncPort();
-                    }}
-                    disabled={busy}
-                    title="Give up this socket. The station stops taking whatever is plugged into it, and another station can claim it."
-                  >
-                    Free socket
-                  </button>
-                ) : (
-                  <button type="button" className="btn btn-sm" onClick={pickPort} disabled={busy}>
-                    Assign socket…
-                  </button>
-                )}
-              </div>
-      )}
+      {marking ? null : portRow}
 
       <details
         className="bench-log-wrap"
@@ -1566,8 +1543,8 @@ const PORT_PILL: Record<PortState, string> = {
  *  does not jump every time a step starts or ends. */
 function Bar({ label, pct }: { label: string; pct: number | null }) {
   return (
-    <div className="bench-bar" title={`${label}: ${pct ?? 0}%`}>
-      <div className="bench-bar-fill" style={{ width: `${pct ?? 0}%` }} />
+    <div className="progress-bar" title={`${label}: ${pct ?? 0}%`}>
+      <i style={{ width: `${pct ?? 0}%` }} />
     </div>
   );
 }
@@ -1592,7 +1569,7 @@ function NoticeBody({
     <>
       <h2 className="card-title">{blocked ? "Cannot program this unit" : "Check before you continue"}</h2>
       <p className={blocked ? "err" : "warn"}>{n.text}</p>
-      {n.hint ? <p className="muted small">{n.hint}</p> : null}
+      {n.hint ? <p className="muted">{n.hint}</p> : null}
       {blocked ? (
         <div className="btn-row modal-actions">
           <button type="button" className="btn btn-primary" autoFocus onClick={() => onAnswer(false, "")}>

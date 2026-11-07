@@ -312,7 +312,7 @@ function Verdict({ severity }: { severity: FsStackRow["severity"] }) {
 }
 
 /** The colours the table paints, for a legend. */
-export const STACKUP_LEGEND: { kind: string; label: string }[] = [
+const STACKUP_LEGEND: { kind: string; label: string }[] = [
   { kind: "overlay", label: "Overlay" },
   { kind: "mask", label: "Solder mask" },
   { kind: "finish", label: "Surface finish" },

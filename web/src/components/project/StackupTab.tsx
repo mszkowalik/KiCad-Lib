@@ -25,6 +25,7 @@ import { useAuth } from "../../auth";
 import StackupTable, { StackupLegend } from "../StackupTable";
 import { useDialog } from "../Dialog";
 import { ErrorBanner, Spinner } from "../Ui";
+import { localDate } from "../../format";
 
 export interface SnapshotInfo {
   id: number;
@@ -170,7 +171,7 @@ export default function StackupTab({
           ) : null}
         </div>
         {palette ? (
-          <div className="field-row stk-colors">
+          <div className="field-row">
             <label className="field">
               <span>Solder mask colour</span>
               <span className="swatches">
@@ -245,7 +246,7 @@ export default function StackupTab({
         </p>
         <div className="field-row">
           <Link
-            className="btn btn-sm btn-accent"
+            className="btn btn-sm btn-primary"
             to={`/sim?tab=field${state.revision?.stackup_key ? `&stackup=${encodeURIComponent(state.revision.stackup_key)}` : ""}&project=${projectId}${
               board ? `&board=${encodeURIComponent(board)}` : ""
             }${snapshot ? `&snapshot=${snapshot.id}` : ""}`}
@@ -284,7 +285,7 @@ export default function StackupTab({
                       {z != null ? `${z.toFixed(2)} Ω` : <span className="muted">not solved</span>}
                       {p.outdated ? <span className="pill warn"> outdated</span> : null}
                     </td>
-                    <td className="muted">{p.solved_at ? p.solved_at.slice(0, 10) : "—"}</td>
+                    <td className="muted">{p.solved_at ? localDate(p.solved_at) : "—"}</td>
                     <td>
                       <button type="button" className="btn btn-sm" disabled={busy} onClick={() => remove(p.id, p.name)}>
                         remove
@@ -402,7 +403,8 @@ function BoardFileCheck({ state, ink }: { state: FsBoardState; ink?: { mask?: st
           <tbody>
             {cmp.rows.map((r, i) => (
               <tr key={`${r.what}-${i}`} className={r.ok === false ? "fs-bad" : undefined}>
-                <td style={r.what.startsWith("  ") ? { paddingLeft: 26, color: "var(--muted)" } : undefined}>
+                <td className={r.what.startsWith("  ") ? "muted" : undefined}>
+                  {r.what.startsWith("  ") ? <span className="tree-indent tree-indent-1" /> : null}
                   {r.what.trim()}
                 </td>
                 <td>{fmt(r.board, r.unit)}</td>

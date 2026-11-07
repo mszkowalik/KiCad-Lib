@@ -11,9 +11,9 @@ its own, decision 0062).
 **Postgres is the source of truth.** The old YAML pipeline that seeded it
 (`Sources/*.yaml`, `kicad_lib/`, `main.py`, generated `Symbols/` +
 `Footprints/` + `3DModels/`) is retired: it lives, with full history and its
-final generated state, on the **`archive/yaml-library`** branch. To re-run a
-full YAML import, check out that branch in this working tree — `compose.yaml`
-mounts the repo at `/repo` for exactly that.
+final generated state, on the **`archive/yaml-library`** branch. The HTTP import
+that read it is gone too (2026-11-07): `POST /api/import` wiped the catalog from a
+route no screen called. `services/importer.py` is in the git history before that date.
 
 ## Layout, and where the rules live
 
@@ -29,7 +29,7 @@ files — write it once and link to it.
 | `api/app/services/` | Business logic | `api/app/services/CLAUDE.md` — it routes every backend topic to its document |
 | `api/app/routers/` | HTTP endpoints | `api/app/routers/CLAUDE.md` |
 | `api/app/services/fieldsolver\|flasher\|pcm_plugin\|select_similar_plugin\|mcp_server/` | Field solver, production programming, the KiCad sync plugin, the Select Similar plugin, the stdio MCP server agents install | the `CLAUDE.md` in that directory |
-| `web/` | React + Vite frontend | `web/CLAUDE.md` — the style system and the shared-input rule |
+| `web/` | React + Vite frontend | [docs/reference/ui-map.md](docs/reference/ui-map.md) — where a function goes; `web/CLAUDE.md` — the style system and the shared-input rule |
 | `web/src/components\|pages\|sim/` | Shared components, routes, the simulator | the `CLAUDE.md` in that directory |
 | `render/` | kicad-cli render container (previews, project exports) | — |
 | `clients/` | A sample `.kicad_httplib` and unrelated client projects (flasher, invoice import). Four clients the platform SERVES are NOT here — the KiCad sync plugin (`api/app/services/pcm_plugin/`) and the Select Similar plugin (`api/app/services/select_similar_plugin/`), both packaged by `pcm.py`, the bench agent (`api/app/services/bench_agent/`, zipped by `routers/flasher.py`) and the MCP server (`api/app/services/mcp_server/`, served by `routers/agent.py`) — because `clients/` is not in the api image | `api/CLAUDE.md` |
@@ -225,6 +225,7 @@ decided did not apply:
 | `CHANGELOG.md` | Anything a user of the platform would notice: a new capability, a behaviour change, a correction. Add a dated section at the top. |
 | `docs/todo.md` | You found real work and are not doing it now. **Ask first**, unless the user already asked for that item. |
 | The nearest `CLAUDE.md`, or the `docs/reference/` page it links to | A non-obvious fact about how the repo, platform or process works. Put it in the most specific file that covers it — see "Layout, and where the rules live". **When a change makes an existing statement wrong, correcting it is part of the change** — a stale rule in these files is worse than a missing one, because the next agent believes it. |
+| A new screen, tab, button or API route | Before you add it, read [docs/reference/ui-map.md](docs/reference/ui-map.md). It says where the function goes. `python3 scripts/check-ui-routes.py` must pass. |
 | A `CLAUDE.md` or a `docs/reference/` page | Before you write one, read [docs/reference/writing-instruction-files.md](docs/reference/writing-instruction-files.md) — the six rules that keep these files working, and why a file that grows past its usefulness makes an agent follow LESS of it. Run `python3 scripts/check-docs.py` before you report the work as done. |
 | A platform skill, via `propose_skill_update` | A component or library convention, a decision rule, or a trap. Never record a convention only in `.claude/skills/` — the next refresh overwrites it. |
 
@@ -258,9 +259,7 @@ Two failure modes to avoid, both seen in this repo:
 - **Every write AUTO-PUBLISHES** — components, symbols and footprints since
   2026-08-23, skills since 2026-08-24. There is no draft gate and no approval
   queue left in the platform: the Proposals view and `routers/proposals.py`
-  were removed, `/proposals` redirects to Reviews, and the YAML sync
-  (`POST /api/import/sync`), whose drafts nothing could approve any more,
-  answers 410. Accountability lives on the **review axis** — machine
+  were removed, and `/proposals` redirects to Reviews. Accountability lives on the **review axis** — machine
   validation on every publish, checklist verifications, the Reviews queue,
   human sign-off, and the per-component lifecycle (`released` on first
   sign-off; `deprecated`/`obsolete` hidden from KiCad). See

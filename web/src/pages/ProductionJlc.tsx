@@ -13,6 +13,8 @@
  */
 import { useState } from "react";
 import JlcImportPanel from "../components/invoices/JlcImportPanel";
+import JlcJobsPanel from "../components/invoices/JlcJobsPanel";
+import JlcOrdersPanel from "../components/invoices/JlcOrdersPanel";
 import JlcSessionStrip from "../components/invoices/JlcSessionStrip";
 import JlcStagedPanel from "../components/invoices/JlcStagedPanel";
 
@@ -34,6 +36,8 @@ export default function ProductionJlc() {
         <JlcSessionStrip onChange={bump} />
         <JlcImportPanel key={`q-${seq}`} onApplied={bump} />
         <JlcStagedPanel key={`s-${seq}`} onImported={bump} />
+        <JlcOrdersPanel key={`o-${seq}`} />
+        <JlcJobsPanel onDone={bump} />
       </div>
     </div>
   );

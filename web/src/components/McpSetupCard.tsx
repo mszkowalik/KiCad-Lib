@@ -38,7 +38,7 @@ const SCRIPT_FILE = "~/.local/share/henry/henry_mcp.py";
  *  run, and the rules it must keep about the token. `String.raw` keeps the
  *  shell's `\n` as typed; `~~~` fences because a raw template cannot hold a
  *  backtick. */
-export function mcpSetupPrompt(base: string, accountUrl: string): string {
+function mcpSetupPrompt(base: string, accountUrl: string): string {
   return String.raw`Set up the Henry platform as an MCP server on this computer. Do the steps in order.
 
 Facts:
@@ -134,7 +134,7 @@ export default function McpSetupCard({ me }: { me: PlatformUser | null }) {
 
   return (
     <div className="card pad">
-      <h2>Agents (MCP)</h2>
+      <h2 className="card-title">Agents (MCP)</h2>
       <ErrorBanner message={error ?? ""} />
       <p className="muted">
         Claude Code, or any other agent that speaks MCP, reaches the platform's tools through a

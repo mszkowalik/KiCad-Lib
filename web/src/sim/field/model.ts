@@ -95,16 +95,6 @@ export function lineType(mode: "single" | "diff", coplanar: boolean): LineType {
 
 // ------------------------------------------------------------------ frequency
 
-/** "2.4G", "868M", "100k", "2400M", "1e6", "50 MHz" -> hertz; null when unreadable. */
-export function parseFreq(txt: string): number | null {
-  const m = String(txt).trim().replace(",", ".").match(/^([0-9]*\.?[0-9]+(?:[eE][-+]?[0-9]+)?)\s*([kKmMgGtT]?)\s*(?:hz)?$/i);
-  if (!m) return null;
-  const v = parseFloat(m[1]);
-  if (!(v > 0)) return null;
-  const mult: Record<string, number> = { k: 1e3, m: 1e6, g: 1e9, t: 1e12 };
-  return v * (mult[m[2].toLowerCase()] ?? 1);
-}
-
 export function fmtHz(v: number): string {
   const trim = (x: number) => Number(x.toPrecision(3));
   if (v >= 1e9) return `${trim(v / 1e9)} GHz`;

@@ -585,3 +585,32 @@ def test_the_change_history_never_copies_a_runs_snapshot():
 
     assert tracking._is_secret("programming_runs", "params_snapshot", None)
     assert not tracking._is_secret("programming_runs", "results", None)
+
+
+# ------------------------------------------------- firmware usage
+
+def test_firmware_usage_names_each_version_once(db):
+    """A version may pin one image at two addresses, and the delete confirm names
+    a version, not an image row."""
+    proj = M.Project(name="test-fw-usage", git_url="https://example.invalid/fw.git")
+    db.add(proj)
+    db.flush()
+    dep = M.Deployment(project_id=proj.id, name="Usage", chip="esp32c6")
+    db.add(dep)
+    db.flush()
+    draft = M.DeploymentVersion(deployment_id=dep.id, version_no=1, status="draft")
+    db.add(draft)
+    asset = M.FirmwareAsset(project_id=proj.id, filename="a.bin", sha256="a" * 64, minio_key="k")
+    db.add(asset)
+    db.flush()
+    db.add_all([
+        M.DeploymentImage(deployment_version_id=draft.id, firmware_asset_id=asset.id, address="0x0", position=0),
+        M.DeploymentImage(deployment_version_id=draft.id, firmware_asset_id=asset.id, address="0x10000", position=1),
+    ])
+    db.flush()
+    assert F.firmware_usage(asset.id, db=db)["versions"] == [
+        {"deployment": "Usage", "version_no": 1, "version_id": draft.id, "status": "draft"}]
+    with pytest.raises(HTTPException) as e:
+        F.delete_firmware(asset.id, db=db)
+    assert e.value.status_code == 409
+    assert "1 procedure version" in e.value.detail

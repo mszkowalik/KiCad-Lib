@@ -16,7 +16,10 @@
  *  newest) and lists the others under "Other names" (decision 0056).
  */
 import type { DevicePresence } from "../api";
-import { fmtWhen } from "./flasher/common";
+import { since, localWhen } from "../format";
+import DataTable from "./DataTable";
+import FoldSection from "./FoldSection";
+import { StatusPill } from "./Ui";
 
 interface Props {
   presence: DevicePresence | null;
@@ -24,18 +27,10 @@ interface Props {
   mac: string;
 }
 
-/** "3 min ago" / "2 days ago" — how stale is this, at a glance. */
+/** "3 min ago" / "2 d ago" — how stale is this, at a glance. */
 function ago(iso: string | null): string {
-  if (!iso) return "never";
-  const then = new Date(iso).getTime();
-  if (Number.isNaN(then)) return "never";
-  const secs = Math.max(0, Math.round((Date.now() - then) / 1000));
-  if (secs < 90) return `${secs}s ago`;
-  const mins = Math.round(secs / 60);
-  if (mins < 90) return `${mins} min ago`;
-  const hours = Math.round(mins / 60);
-  if (hours < 48) return `${hours} h ago`;
-  return `${Math.round(hours / 24)} days ago`;
+  const s = since(iso);
+  return s ? `${s} ago` : "never";
 }
 
 export default function DevicePresenceCard({ presence, mac }: Props) {
@@ -43,9 +38,8 @@ export default function DevicePresenceCard({ presence, mac }: Props) {
     return (
       <div className="card pad">
         <h2 className="card-title">Broker</h2>
-        <p className="card-subtitle">
-          <span className="pill">not seen</span> This device has never been heard on the MQTT
-          broker.
+        <p className="muted">
+          <StatusPill status="not seen" /> This device has never been heard on the MQTT broker.
         </p>
         <p className="muted dim">
           That is not a fault: a device that was never deployed has nothing to report, and the
@@ -56,7 +50,6 @@ export default function DevicePresenceCard({ presence, mac }: Props) {
   }
 
   const online = presence.online;
-  const pill = online === true ? "ok" : online === false ? "err" : "";
   const word = online === true ? "online" : online === false ? "offline" : "unknown";
 
   // The broker's best MAC: the device's own report beats the topic, because a
@@ -73,8 +66,8 @@ export default function DevicePresenceCard({ presence, mac }: Props) {
   return (
     <div className="card pad">
       <h2 className="card-title">Broker</h2>
-      <p className="card-subtitle">
-        <span className={`pill ${pill}`}>{word}</span>{" "}
+      <p className="muted">
+        <StatusPill status={word} />{" "}
         {online === true
           ? presence.last_seen_at
             ? `talking to the broker, last heard ${ago(presence.last_seen_at)}.`
@@ -103,21 +96,21 @@ export default function DevicePresenceCard({ presence, mac }: Props) {
           </tr>
           <tr>
             <td className="muted">Last heard</td>
-            <td className="mono">{fmtWhen(presence.last_seen_at)}</td>
+            <td className="mono">{localWhen(presence.last_seen_at)}</td>
           </tr>
           <tr>
             <td className="muted">Last went online</td>
-            <td className="mono">{fmtWhen(presence.last_online_at)}</td>
+            <td className="mono">{localWhen(presence.last_online_at)}</td>
           </tr>
           {presence.last_offline_at ? (
             <tr>
               <td className="muted">Last went offline</td>
-              <td className="mono">{fmtWhen(presence.last_offline_at)}</td>
+              <td className="mono">{localWhen(presence.last_offline_at)}</td>
             </tr>
           ) : null}
           <tr>
             <td className="muted">First heard</td>
-            <td className="mono">{fmtWhen(presence.first_seen_at)}</td>
+            <td className="mono">{localWhen(presence.first_seen_at)}</td>
           </tr>
           {presence.temperature_c !== null ? (
             <tr>
@@ -167,40 +160,29 @@ export default function DevicePresenceCard({ presence, mac }: Props) {
       </table>
 
       {presence.other_topics.length > 0 ? (
-        <>
-          <h3>Other names</h3>
+        <FoldSection bare title="Other names" count={presence.other_topics.length} foldKey={`device:${mac}:other-topics`}>
           <p className="muted dim">
             The same unit under another topic. A bench reflash renames a device, and the broker
             keeps the old name with its last retained state.
           </p>
-          <table className="data data-fixed">
-            <thead>
-              <tr>
-                <th>Topic</th>
-                <th>Broker</th>
-                <th>Last heard</th>
-              </tr>
-            </thead>
-            <tbody>
-              {presence.other_topics.map((t) => (
-                <tr key={t.topic}>
-                  <td className="mono" title={t.topic}>
+          <DataTable
+            rows={presence.other_topics}
+            rowKey={(t) => t.topic}
+            columns={[
+              { key: "topic", label: "Topic", width: 54, className: "mono", get: (t) => t.topic,
+                render: (t) => (
+                  <>
                     {t.topic}{" "}
-                    {t.current_name ? <span className="pill">programmed name</span> : null}
-                  </td>
-                  <td>
-                    <span
-                      className={`pill ${t.online === true ? "ok" : t.online === false ? "err" : ""}`}
-                    >
-                      {t.online === true ? "online" : t.online === false ? "offline" : "unknown"}
-                    </span>
-                  </td>
-                  <td className="mono">{fmtWhen(t.last_seen_at)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </>
+                    {t.current_name ? <span className="pill neutral">programmed name</span> : null}
+                  </>
+                ) },
+              { key: "broker", label: "Broker", width: 18,
+                get: (t) => (t.online === true ? "online" : t.online === false ? "offline" : "unknown"),
+                render: (t) => <StatusPill status={t.online === true ? "online" : t.online === false ? "offline" : "unknown"} /> },
+              { key: "heard", label: "Last heard", width: 28, className: "mono", get: (t) => localWhen(t.last_seen_at) },
+            ]}
+          />
+        </FoldSection>
       ) : null}
 
       {macMismatch ? (

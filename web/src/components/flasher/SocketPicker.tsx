@@ -72,7 +72,7 @@ export default function SocketPicker({ stationName, takenBy, onPick, onCancel }:
     <div className="modal-backdrop" {...modal.backdropProps}>
       <div className="card pad modal-card modal-card-mid" {...modal.cardProps}>
         <h2 className="card-title">Assign a socket to {stationName}</h2>
-        <p className="card-subtitle">
+        <p className="muted dim">
           The list is live. <strong>Plug the device in now</strong> — the socket that appears is
           the one it is in, and it will jump to the top marked NEW. The station keeps that socket
           until it is freed, so the same cable always programs the same station.

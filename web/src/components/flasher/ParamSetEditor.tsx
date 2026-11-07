@@ -26,6 +26,7 @@ import { useEffect, useState } from "react";
 import { errorMessage, getParamSetValues, putParamSet, type ParamUse } from "../../api";
 import { ErrorBanner, Spinner } from "../Ui";
 import { useModal } from "../modal";
+import { plural } from "../../format";
 
 /** Keys a new set starts with: what every V2 procedure interpolates. Typing
  *  six key names from memory is how a set ends up with `SSID1` in it. */
@@ -111,7 +112,7 @@ export default function ParamSetEditor(props: ParamSetEditorProps) {
         <h2 className="card-title">
           {paramSetId ? `Param set “${name}”` : "New param set"}
         </h2>
-        <p className="card-subtitle">
+        <p className="muted dim">
           What a procedure interpolates as {"{placeholders}"} — WiFi, MQTT, the creds salt.
           Shared and NOT versioned: saving changes what every version pointing at this set uses
           on its next run. Each run keeps a masked snapshot of what it was given.
@@ -157,7 +158,7 @@ export default function ParamSetEditor(props: ParamSetEditorProps) {
                   </button>
                   {uses.length ? (
                     <span className="param-uses muted dim" title={uses.map((u) => `${u.deployment} v${u.version_no}`).join(", ")}>
-                      needed by {uses.length} published version{uses.length === 1 ? "" : "s"}
+                      needed by {plural(uses.length, "published version")}
                     </span>
                   ) : (
                     <span className="param-uses" />

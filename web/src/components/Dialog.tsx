@@ -17,6 +17,7 @@ import {
   type ReactNode,
 } from "react";
 import { useModal } from "./modal";
+import Field from "./Field";
 
 export interface ConfirmOptions {
   title?: string;
@@ -151,7 +152,7 @@ function DialogBox({ req, onDone }: { req: Request; onDone: () => void }) {
         {req.kind === "select" ? (
           <div className="modal-options" role="radiogroup">
             {req.options.map((o) => (
-              <label key={o.value} className="proj-inline-field proj-check">
+              <Field key={o.value} inline className="proj-check">
                 <input
                   type="radio"
                   name="dialog-select"
@@ -159,7 +160,7 @@ function DialogBox({ req, onDone }: { req: Request; onDone: () => void }) {
                   onChange={() => setValue(o.value)}
                 />
                 {o.label}
-              </label>
+              </Field>
             ))}
           </div>
         ) : null}

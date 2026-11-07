@@ -45,24 +45,25 @@ const rgb = (s: string): [number, number, number] => {
 const mix = (a: [number, number, number], b: [number, number, number], t: number): string =>
   `rgb(${a.map((v, i) => Math.round(v + (b[i] - v) * t)).join(",")})`;
 
-/** Read the theme once per paint: the values change with prefers-color-scheme. */
+/** Read the theme once per paint: the values change with the theme. Every one of
+ *  these tokens is in both blocks of styles.css, so there is no fallback to keep. */
 export function palette(el: HTMLElement): Palette {
   const s = getComputedStyle(el);
-  const v = (name: string, fallback: string) => s.getPropertyValue(name).trim() || fallback;
+  const v = (name: string) => s.getPropertyValue(name).trim();
   return {
-    text: v("--text", "#1b2430"),
-    muted: v("--muted", "#5c6a7b"),
-    line: v("--line", "#d7dfe8"),
-    surface: v("--surface", "#ffffff"),
-    hot: v("--sim-hot", "#c0392f"),
-    cold: v("--sim-cold", "#1f63d6"),
-    zero: v("--sim-zero", "#5c6a7b"),
-    copper: v("--copper", "#b26a34"),
-    signal: v("--fs-signal", v("--copper", "#b26a34")),
-    reference: v("--fs-reference", "#8b8f96"),
-    mask: v("--fs-mask", "rgba(60,150,60,.35)"),
-    finish: v("--fs-finish", "#e9c46a"),
-    accent: v("--accent", "#1f63d6"),
+    text: v("--text"),
+    muted: v("--muted"),
+    line: v("--line"),
+    surface: v("--surface"),
+    hot: v("--sim-hot"),
+    cold: v("--sim-cold"),
+    zero: v("--sim-zero"),
+    copper: v("--copper"),
+    signal: v("--fs-signal"),
+    reference: v("--fs-reference"),
+    mask: v("--fs-mask"),
+    finish: v("--fs-finish"),
+    accent: v("--accent"),
   };
 }
 

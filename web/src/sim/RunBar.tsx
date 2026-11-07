@@ -20,6 +20,7 @@ import SiInput from "../components/SiInput";
 import { parseSpice, quantityForField, toSpice } from "../components/si";
 import type { Verdicts } from "./scenario";
 import type { LiveState } from "./live";
+import Field from "../components/Field";
 
 interface Props {
   live: boolean;
@@ -82,14 +83,13 @@ export default function RunBar({
           {status === "halted" ? "Resume" : "Hold"}
         </button>
         <span className={`pill ${status === "running" ? "good" : "neutral"}`}>{status}</span>
-        <label className="sim-runbar-pick">
-          <span>Speed</span>
+        <Field inline className="sim-runbar-pick" label="Speed">
           <select className="text" value={String(speed)} onChange={(e) => onSpeed(Number(e.target.value))}>
             {SPEEDS.map((v) => (
               <option key={v} value={String(v)}>{eng(v, "s")} per second</option>
             ))}
           </select>
-        </label>
+        </Field>
         {bare ? null : <span className="sim-runbar-spacer" />}
         {state ? (
           <span className="muted">
@@ -112,8 +112,7 @@ export default function RunBar({
         {busy ? <RunProgress progress={progress} /> : null}
 
         {list.length ? (
-          <label className="sim-runbar-pick">
-            <span>Scenario</span>
+          <Field inline className="sim-runbar-pick" label="Scenario">
             <select
               className="text"
               value={chosen?.id ?? ""}
@@ -129,11 +128,10 @@ export default function RunBar({
                 </option>
               ))}
             </select>
-          </label>
+          </Field>
         ) : null}
 
-        <label className="sim-runbar-pick">
-          <span>Analysis</span>
+        <Field inline className="sim-runbar-pick" label="Analysis">
           <select
             className="text"
             value={analysis ? form?.id ?? "" : ""}
@@ -147,7 +145,7 @@ export default function RunBar({
             <option value="">From the sheet</option>
             {forms.map((f) => <option key={f.id} value={f.id}>{f.label}</option>)}
           </select>
-        </label>
+        </Field>
 
         {analysis ? <code className="sim-runbar-directive">{analysis}</code> : null}
 
@@ -169,8 +167,7 @@ export default function RunBar({
       {analysis && form ? (
         <div className="sim-runbar sim-runbar-form">
           {form.fields.map((f) => (
-            <label key={f.key} className="sim-runbar-pick">
-              <span>{f.label}</span>
+            <Field key={f.key} inline className="sim-runbar-pick" label={f.label}>
               {f.scale === "choice" ? (
                 <select
                   className="text"
@@ -203,7 +200,7 @@ export default function RunBar({
               )}
               {f.unit && !(quantityForField(f.unit, f.scale) && f.scale !== "text")
                 ? <span className="muted">{f.unit}</span> : null}
-            </label>
+            </Field>
           ))}
         </div>
       ) : null}
@@ -237,11 +234,8 @@ function RunProgress({ progress }: { progress?: SimProgress | null }) {
   const pct = fraction === null ? null : Math.round(fraction * 100);
   return (
     <span className="sim-progress" role="status" aria-live="polite">
-      <span className={`sim-progress-track${pct === null ? " waiting" : ""}`}>
-        <span
-          className="sim-progress-fill"
-          style={pct === null ? undefined : { width: `${pct}%` }}
-        />
+      <span className={`progress-bar${pct === null ? " waiting" : ""}`}>
+        <i style={pct === null ? undefined : { width: `${pct}%` }} />
       </span>
       <span className="muted sim-progress-text mono">
         {label}

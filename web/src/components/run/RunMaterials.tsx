@@ -7,9 +7,10 @@
  *  every actual figure named — a draw written by the JLC invoice import is
  *  evidence, a manual draw is a claim.
  *
- *  Money on both sides is USD: draws are USD-denominated by construction, and
+ *  Both sides are stored in USD: draws are USD-denominated by construction, and
  *  the planned side carries `unit_usd`, converted server-side at the run date
- *  (never a silent 1:1 — an unknown rate renders as an em dash).
+ *  (never a silent 1:1 — an unknown rate renders as an em dash). A unit price
+ *  prints in USD and a cost in PLN at the batch's rate (decision 0103).
  *
  *  Row states keep the gaps visible instead of burying them in two tables:
  *  planned-and-used rows compare, planned-but-not-drawn rows warn, drawn-but-
@@ -46,9 +47,11 @@ import {
 } from "../../api";
 import ComponentPickDialog from "../ComponentPickDialog";
 import { useDialog } from "../Dialog";
+import Field from "../Field";
 import { ErrorBanner, Spinner } from "../Ui";
 import SupplyCoverage from "./SupplyCoverage";
-import { plain, price } from "../../format";
+import { localDate, plnNumber, price } from "../../format";
+import { runAct } from "./runAct";
 
 interface MatRow {
   key: string;
@@ -178,18 +181,7 @@ export default function RunMaterials({
     return () => ac.abort();
   }, [reload]);
 
-  const act = async (fn: () => Promise<unknown>) => {
-    setBusy(true);
-    try {
-      await fn();
-      reload();
-      onChanged();
-    } catch (err) {
-      setError(errorMessage(err));
-    } finally {
-      setBusy(false);
-    }
-  };
+  const act = runAct(setBusy, setError, () => { reload(); onChanged(); });
 
   const rows = useMemo<MatRow[]>(() => {
     let out: MatRow[] = [];
@@ -462,13 +454,14 @@ export default function RunMaterials({
   const applyOverride = (line: RunEffectiveLine, raw: string) => {
     const overrides = { ...(run.overrides ?? {}) } as Record<string, unknown>;
     if (raw.trim() === "") delete overrides[line.key];
-    else overrides[line.key] = { unit_price: Number(raw) };
+    else overrides[line.key] = { unit_price: Number(raw), currency: "USD" };
     return act(() => updateRun(run.id, { overrides }));
   };
 
   if (consumption === null && !error) return <Spinner label="Loading materials" />;
 
-  const cur = run.effective?.currency || "USD";
+  // The columns are narrow, so the unit is in the header and not in each cell.
+  const costUnit = run.pln_per_usd ? "PLN" : "USD";
 
   return (
     <>
@@ -487,24 +480,21 @@ export default function RunMaterials({
       {/* The reconciliation sits ABOVE the list, because it is the thing that
           says whether the list below can be trusted — a position the supplier
           met and we ALSO drew reads as an ordinary row down there. */}
-      <div className="card pad">
-        <h3 className="card-title">Supply coverage</h3>
-        <SupplyCoverage runId={run.id} />
-      </div>
+      <SupplyCoverage runId={run.id} />
 
       <div className="card table-wrap">
         <table className="data data-fixed run-materials-table">
           <thead>
             <tr>
               <th>Part</th>
-              <th className="num">Plan qty</th>
+              <th className="num" title="Planned quantity">Plan</th>
               <th className="num">Used</th>
               <th className="num">Δ qty</th>
-              <th className="num">Plan unit $</th>
-              <th className="num">Used unit $</th>
-              <th className="num">Plan $</th>
-              <th className="num">Used $</th>
-              <th className="num">Δ $</th>
+              <th className="num" title="Planned unit price, in USD">Plan $</th>
+              <th className="num" title="Used unit price, in USD">Used $</th>
+              <th className="num" title="Planned cost, in PLN at the batch's rate">Plan {costUnit}</th>
+              <th className="num" title="Used cost, in PLN at the batch's rate">Used {costUnit}</th>
+              <th className="num">Δ {costUnit}</th>
               <th>Source</th>
             </tr>
           </thead>
@@ -513,6 +503,7 @@ export default function RunMaterials({
               <Fragment key={r.key}>
                 <MatTr
                   r={r}
+                  rate={run.pln_per_usd}
                   supply={supply}
                   open={open === r.key}
                   busy={busy}
@@ -537,7 +528,7 @@ export default function RunMaterials({
                     <td colSpan={10} className="ledger-cell">
                       <MatDetail
                         r={r}
-                        cur={cur}
+                        rate={run.pln_per_usd}
                         busy={busy}
                         supply={supply}
                         overrideDraft={overrideDraft}
@@ -566,9 +557,13 @@ export default function RunMaterials({
                         onDesignUpdated={(x, v) =>
                           void act(() => updateRunSubstitution(x.id, { design_updated: v }))
                         }
-                        onRemoveDraw={(id) =>
-                          void act(() => deleteConsumption(id))
-                        }
+                        onRemoveDraw={async (id) => {
+                          const ok = await dialog.confirm(
+                            `Remove this draw of ${r.part}? The parts go back into the pool, and this batch stops paying for them.`,
+                            { title: "Remove draw", confirmLabel: "Remove", tone: "danger" },
+                          );
+                          if (ok) void act(() => deleteConsumption(id));
+                        }}
                         onRemoveAdj={async (a) => {
                           const ok = await dialog.confirm(
                             `Delete write-off ${a.id} (${a.qty_delta} of ${a.lcsc || a.mpn})?`,
@@ -594,7 +589,7 @@ export default function RunMaterials({
             <tfoot>
               <tr>
                 <td>
-                  <b>Total (USD)</b>
+                  <b>Total</b>
                   {totals.unpricedPlanned > 0 && (
                     <span
                       className="muted dim"
@@ -611,10 +606,10 @@ export default function RunMaterials({
                 <td />
                 <td />
                 <td className="num">
-                  <b>{plain(totals.planned)}</b>
+                  <b>{plnNumber(totals.planned, run.pln_per_usd)}</b>
                 </td>
                 <td className="num">
-                  <b>{plain(totals.used)}</b>
+                  <b>{plnNumber(totals.used, run.pln_per_usd)}</b>
                 </td>
                 <td className="num">
                   <span
@@ -623,7 +618,7 @@ export default function RunMaterials({
                     }`}
                   >
                     {totals.delta > 0 ? "+" : ""}
-                    {plain(totals.delta)}
+                    {plnNumber(totals.delta, run.pln_per_usd)}
                   </span>
                 </td>
                 <td />
@@ -666,23 +661,19 @@ export default function RunMaterials({
         </div>
         <div className="field-grid">
           {!crafted ? (<>
-          <label>
-            Draw part (MPN)
+          <Field label="Draw part (MPN)">
             <input className="text" value={consMpn} onChange={(e) => setConsMpn(e.target.value)} />
-          </label>
-          <label>
-            Quantity
+          </Field>
+          <Field label="Quantity">
             <input className="text" value={consQty} onChange={(e) => setConsQty(e.target.value)} />
-          </label>
+          </Field>
           </>) : null}
-          <label>
-            Lost part (MPN)
+          <Field label="Lost part (MPN)">
             <input className="text" value={lossMpn} onChange={(e) => setLossMpn(e.target.value)} />
-          </label>
-          <label>
-            Quantity lost
+          </Field>
+          <Field label="Quantity lost">
             <input className="text" value={lossQty} onChange={(e) => setLossQty(e.target.value)} />
-          </label>
+          </Field>
         </div>
         <div className="btn-row">
           {!crafted ? (
@@ -729,7 +720,7 @@ export default function RunMaterials({
           Attrition is charged to this batch, so its per-device cost carries the real loss. Pool
           quantities must <strong>agree</strong> with JLCPCB&apos;s own count: whatever went in
           either went out through a batch, was written off here, or is still on the shelf.
-          Production → Stock reconciles the two part by part.
+          Stock → Parts reconciles the two part by part.
         </p>
       </div>
     </>
@@ -738,6 +729,7 @@ export default function RunMaterials({
 
 function MatTr({
   r,
+  rate,
   open,
   busy,
   supply,
@@ -745,6 +737,8 @@ function MatTr({
   onSetUsed,
 }: {
   r: MatRow;
+  /** PLN per USD at the batch's date: a cost prints in PLN, a unit price in USD. */
+  rate: number | null | undefined;
   open: boolean;
   busy: boolean;
   /** so a substitution pill can name the part the batch really bought */
@@ -768,9 +762,13 @@ function MatTr({
     <tr className="ledger-row" onClick={onToggle} title="Click for draws, lots and the override editor">
       <td title={`${r.part}${r.refs ? ` — ${r.refs}` : ""}${r.lcsc ? ` — ${r.lcsc}` : ""}`}>
         <span className="ledger-caret">{open ? "▾" : "▸"}</span>
+        {/* Before the name, and one pill: a long name may truncate, a pill may not. */}
+        {r.eff?.dropped ? (
+          <span className="pill neutral" title={r.eff.overridden ? "Dropped by an override on this batch" : undefined}>dropped</span>
+        ) : r.eff?.overridden ? (
+          <span className="pill warn">override</span>
+        ) : null}
         <span className="mono">{r.part}</span>
-        {r.eff?.dropped ? <span className="pill neutral">dropped</span> : null}
-        {r.eff?.overridden ? <span className="pill warn">override</span> : null}
         {r.subs.map((x) => {
           // The same substitution touches two rows: the part the design asks
           // for, and the part that actually went on. Saying "→ C7223" on the
@@ -836,8 +834,8 @@ function MatTr({
           title={r.usedAs ? `the used side is ${r.usedAs}, fitted in place of ${r.part}` : undefined}>
         {r.usedUnitUsd == null ? "—" : price(r.usedUnitUsd)}
       </td>
-      <td className="num">{r.plannedTotalUsd == null ? "—" : plain(r.plannedTotalUsd)}</td>
-      <td className="num">{r.usedTotalUsd == null ? "—" : plain(r.usedTotalUsd)}</td>
+      <td className="num">{r.plannedTotalUsd == null ? "—" : plnNumber(r.plannedTotalUsd, rate)}</td>
+      <td className="num">{r.usedTotalUsd == null ? "—" : plnNumber(r.usedTotalUsd, rate)}</td>
       <td className="num">
         {dv == null ? (
           <span className="dim">—</span>
@@ -846,12 +844,12 @@ function MatTr({
             className={`pill ${Math.abs(dv) < 0.01 ? "ok" : dv > 0 ? "warn" : "neutral"}`}
           >
             {dv > 0 ? "+" : ""}
-            {plain(dv)}
+            {plnNumber(dv, rate)}
           </span>
         )}
       </td>
       <td>
-        <SourceCell r={r} />
+        <SourceCell r={r} rate={rate} />
         {r.unused ? (
           <span
             className="pill err unused-flag"
@@ -937,7 +935,7 @@ function UsedCell({ r, busy, onSet }: { r: MatRow; busy: boolean; onSet: ((q: nu
 }
 
 /** Where the actual figures came from — evidence vs claim, named per row. */
-function SourceCell({ r }: { r: MatRow }) {
+function SourceCell({ r, rate }: { r: MatRow; rate: number | null | undefined }) {
   const pills: { text: string; tone: string; title: string }[] = [];
   const anyReported = r.cons.some((c) => c.lots.some((l) => l.source === "reported"));
   const bases = new Set(r.cons.map((c) => c.basis));
@@ -955,10 +953,9 @@ function SourceCell({ r }: { r: MatRow }) {
     pills.push({ text: "manual draw", tone: "neutral", title: "Entered by hand." });
   if (bases.has("allocated") || bases.has("bom"))
     pills.push({
-      text: "BOM average",
+      text: "BOM avg",
       tone: "warn",
-      title: "Drawn from the whole BOM — allocated, not measured. The price is the pool's moving average, "
-        + "or the cost of its lots while lot pricing is on.",
+      title: "Drawn from the whole BOM — allocated, not measured. The price is the pool's moving average.",
     });
   if (r.writtenOff > 0)
     pills.push({ text: "write-off", tone: "warn", title: "Attrition charged to this batch." });
@@ -991,7 +988,7 @@ function SourceCell({ r }: { r: MatRow }) {
           : "Bought straight for this batch, so it never entered the shared pool.")
         + (r.supplied
            ? ` ${r.supplied.qty} on ${r.supplied.suppliers.join(", ") || "an invoice"}`
-             + `, ${r.supplied.amount_usd.toFixed(2)} USD.`
+             + `, ${plnNumber(r.supplied.amount_usd, rate)} ${rate ? "PLN" : "USD"}.`
            : ""),
     });
   }
@@ -1008,7 +1005,7 @@ function SourceCell({ r }: { r: MatRow }) {
     });
   if (r.eff == null && r.cons.length > 0)
     pills.push({
-      text: "not planned",
+      text: "unplanned",
       tone: "err",
       title: "Drawn without appearing in the batch's BOM — rework or an extra.",
     });
@@ -1170,7 +1167,7 @@ function SubstitutePanel({
               <label className="check-inline"
                      title={x.design_updated
                        ? "the schematic specifies the fitted part"
-                       : "the schematic still specifies the superseded part — this stays a finding on the Stock page"}>
+                       : "the schematic still specifies the superseded part — this stays a finding on Stock → Parts"}>
                 <input type="checkbox" checked={x.design_updated} disabled={busy}
                        onClick={(e) => e.stopPropagation()}
                        onChange={(e) => onDesignUpdated(x, e.target.checked)} />
@@ -1292,7 +1289,7 @@ function SubstitutePanel({
 
 function MatDetail({
   r,
-  cur,
+  rate,
   busy,
   supply,
   overrideDraft,
@@ -1305,7 +1302,7 @@ function MatDetail({
   onDesignUpdated,
 }: {
   r: MatRow;
-  cur: string;
+  rate: number | null | undefined;
   supply: BatchSupplyRow[];
   busy: boolean;
   overrideDraft: string;
@@ -1326,9 +1323,8 @@ function MatDetail({
       {r.eff && !r.eff.dropped && (
         <div className="btn-row">
           <span className="muted">
-            Planned unit at run date: {price(r.eff.unit_price, cur)}
-            {r.eff.override_note ? ` — ${r.eff.override_note}` : ""}. Final price override (in{" "}
-            {cur}; blank + Apply clears it):
+            Planned unit at run date: {price(r.eff.unit_usd, "USD")}
+            {r.eff.override_note ? ` — ${r.eff.override_note}` : ""}. Final price override (in USD; blank + Apply clears it):
           </span>
           <input
             className="text num-input"
@@ -1357,7 +1353,7 @@ function MatDetail({
                 <th>Drawn</th>
                 <th className="num">Qty</th>
                 <th className="num">Unit (USD)</th>
-                <th className="num">Total (USD)</th>
+                <th className="num">Total ({rate ? "PLN" : "USD"})</th>
                 <th>Basis / lot</th>
                 <th />
               </tr>
@@ -1366,10 +1362,10 @@ function MatDetail({
               {r.cons.flatMap((c) => {
                 const head = (
                   <tr key={`c${c.id}`}>
-                    <td className="muted">{c.consumed_at?.slice(0, 10) || "—"}</td>
+                    <td className="muted">{localDate(c.consumed_at) || "—"}</td>
                     <td className="num">{c.qty}</td>
                     <td className="num">{c.unit_cost_usd.toFixed(6)}</td>
-                    <td className="num">{c.total_usd.toFixed(4)}</td>
+                    <td className="num">{plnNumber(c.total_usd, rate, 4)}</td>
                     <td>
                       <span
                         className={`pill ${
@@ -1404,7 +1400,7 @@ function MatDetail({
                           <td className="dim">lot {lot.purchase_order || lot.ext_ref}</td>
                           <td className="num dim">{lot.qty}</td>
                           <td className="num dim">{lot.unit_cost_usd.toFixed(6)}</td>
-                          <td className="num dim">{lot.total_usd.toFixed(4)}</td>
+                          <td className="num dim">{plnNumber(lot.total_usd, rate, 4)}</td>
                           <td>
                             <span className={`pill ${lot.source === "reported" ? "ok" : "warn"}`}>
                               {lot.source}
@@ -1418,7 +1414,7 @@ function MatDetail({
               })}
               {r.adjs.map((a) => (
                 <tr key={`a${a.id}`}>
-                  <td className="muted">{a.adjusted_at?.slice(0, 10) || "—"}</td>
+                  <td className="muted">{localDate(a.adjusted_at) || "—"}</td>
                   <td className="num">{a.qty_delta}</td>
                   <td className="num dim">{a.unit_cost_usd ?? "avg"}</td>
                   <td className="num dim">—</td>

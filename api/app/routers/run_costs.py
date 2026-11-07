@@ -940,17 +940,6 @@ def list_run_documents(run_id: int, db: Session = Depends(get_db)):
     return [run_actuals.document_json(d, db=db) for d in docs]
 
 
-@router.get("/projects/{project_id}/documents")
-def list_project_documents(project_id: int, db: Session = Depends(get_db)):
-    if db.get(M.Project, project_id) is None:
-        raise HTTPException(404, "project not found")
-    docs = (
-        db.query(M.RunCostDocument).filter_by(project_id=project_id)
-        .order_by(M.RunCostDocument.doc_date, M.RunCostDocument.id).all()
-    )
-    return [run_actuals.document_json(d, db=db) for d in docs]
-
-
 @router.get("/documents")
 def list_shared_documents(db: Session = Depends(get_db)):
     """Documents that belong to no single project — typically a parts invoice
@@ -1098,7 +1087,7 @@ def create_correction(doc_id: int, body: CorrectionIn | None = None,
     if (src.doc_type or "") == "transfer":
         # Decision 0069: a transfer changes only as a whole, so its two sides
         # can never disagree.
-        raise HTTPException(409, "a transfer changes only as a whole: reverse it on Production → Transfers")
+        raise HTTPException(409, "a transfer changes only as a whole: reverse it on Stock → Transfers")
     body = body or CorrectionIn()
     # A correction of a correction is legal and sometimes necessary, but it
     # points at the document it corrects, never at the root — the chain is the
@@ -1809,7 +1798,7 @@ def _stock_view(db: Session, request: Request | None) -> int | None:
     return run_actuals.stock_scope(db, scope[0]) if len(scope) == 1 else None
 
 
-@router.get("/parts-stock")
+@router.get("/parts-stock", openapi_extra={"x-agent-tool": "get_parts_stock"})
 def parts_stock(request: Request = None, db: Session = Depends(get_db)):
     """Every part measured both ways: what JLC physically holds at market price,
     and what the cost pool says was paid for the unconsumed remainder.
@@ -1886,7 +1875,7 @@ def get_cost_steps():
     return cost_steps.catalog_json()
 
 
-@router.get("/parts-ledger")
+@router.get("/parts-ledger", openapi_extra={"x-agent-tool": "get_part_ledger"})
 def parts_ledger(component_id: int | None = None, mpn: str = "", lcsc: str = "",
                  request: Request = None, db: Session = Depends(get_db)):
     """One part's full event timeline with running balance — how the stock moved,
@@ -1931,20 +1920,6 @@ def add_consumption(run_id: int, body: ConsumptionIn, db: Session = Depends(get_
     unit = body.unit_cost_usd
     if unit is None:
         unit = pool["avg_usd"] if pool else 0.0
-    # Decision 0073: with lot pricing on, the draw comes from its lots, oldest
-    # first, at their cost — a typed price does not override what was paid.
-    from ..services import lots as lots_svc
-
-    want = {"component_id": (pool or {}).get("component_id") or body.component_id,
-            "mpn": (pool or {}).get("mpn") or body.mpn, "lcsc": (pool or {}).get("lcsc") or body.lcsc,
-            "qty": body.qty, "label": body.mpn or body.lcsc or str(body.component_id)}
-    uncovered = lots_svc.fifo_price(db, [want], as_of=body.consumed_at or run.run_date or "",
-                                    company_id=run_actuals.run_scope(db, run))
-    if uncovered:
-        raise HTTPException(409, {"error": f"{lots_svc.short_text(uncovered)} — enter the missing purchase "
-                                           "(decision 0073)", "uncovered": uncovered})
-    if want.get("bindings"):
-        unit = want["unit_cost_usd"]
     c = ledger.draw(
         db, run_id=run_id,
         component_id=(pool or {}).get("component_id") or body.component_id,
@@ -1952,8 +1927,6 @@ def add_consumption(run_id: int, body: ConsumptionIn, db: Session = Depends(get_
         lcsc=(pool or {}).get("lcsc") or body.lcsc,
         taken=body.qty, unit_cost_usd=unit, basis=body.basis,
         at=body.consumed_at or run.run_date or "", note=body.note, actor=acting_name())
-    if want.get("bindings"):
-        lots_svc.bind(db, c, want)
     db.flush()
     audit(db, "run.consumption.add", "draw", c.id, {
         "run_id": run_id, "qty": c.taken, "unit_cost_usd": c.unit_cost_usd, "basis": c.basis,
@@ -2040,24 +2013,11 @@ def set_used_qty(run_id: int, body: ConsumptionIn, db: Session = Depends(get_db)
                 "mpn": body.mpn, "lcsc": body.lcsc,
                 "hint": "enter the purchase invoice first, or check the spelling"})
         unit = body.unit_cost_usd if body.unit_cost_usd is not None else pool["avg_usd"]
-        from ..services import lots as lots_svc
-
-        want = {"component_id": pool.get("component_id"), "mpn": pool.get("mpn") or body.mpn,
-                "lcsc": pool.get("lcsc") or body.lcsc, "qty": qty,
-                "label": body.mpn or body.lcsc or str(body.component_id)}
-        uncovered = lots_svc.fifo_price(db, [want], as_of=as_of or "", company_id=run_actuals.run_scope(db, run))
-        if uncovered:
-            raise HTTPException(409, {"error": f"{lots_svc.short_text(uncovered)} — enter the missing purchase "
-                                               "(decision 0073)", "uncovered": uncovered})
-        if want.get("bindings"):
-            unit = want["unit_cost_usd"]
         row = ledger.draw(
             db, run_id=run_id, component_id=pool.get("component_id"),
             mpn=pool.get("mpn") or body.mpn, lcsc=pool.get("lcsc") or body.lcsc,
             taken=qty, unit_cost_usd=unit, basis="manual",
             at=body.consumed_at or run.run_date or "", note=body.note, actor=acting_name())
-        if want.get("bindings"):
-            lots_svc.bind(db, row, want)
         audit(db, "run.consumption.add", "draw", row.id,
               {"run_id": run_id, "qty": qty, "unit_cost_usd": row.unit_cost_usd,
                "basis": "manual", "note": "counted at end of production"})
@@ -2069,18 +2029,11 @@ def set_used_qty(run_id: int, body: ConsumptionIn, db: Session = Depends(get_db)
         return {"status": "unchanged", "id": row.id, "qty": qty}
     # The unit cost stays as SNAPSHOTTED. It is what the pool averaged when the
     # draw was priced, and re-pricing on every correction would let a later
-    # purchase rewrite what a closed batch paid. While lot pricing is on, or
-    # when its price already is its lots' price, the draw is priced over its
-    # OWN lots instead, which a later purchase cannot move.
+    # purchase rewrite what a closed batch paid. A draw that shrinks gives back
+    # its newest bindings, and one whose price is its lots' keeps their price.
     from ..services import lots as lots_svc
 
-    # Decision 0073: a bound draw that grows takes the next lots oldest first,
-    # one that shrinks gives back its newest bindings, and it is priced again.
-    uncovered = lots_svc.resize_bound(db, row, qty, as_of=row.at or run.run_date or "",
-                                      company_id=run_actuals.run_scope(db, run))
-    if uncovered:
-        raise HTTPException(409, {"error": f"{lots_svc.short_text(uncovered)} — enter the missing purchase "
-                                           "(decision 0073)", "uncovered": uncovered})
+    lots_svc.resize_bound(db, row, qty)
     row.taken = qty
     was_basis = row.basis
     row.basis = "manual"
@@ -2096,8 +2049,7 @@ def set_used_qty(run_id: int, body: ConsumptionIn, db: Session = Depends(get_db)
 
 @router.post("/runs/{run_id}/consumption/from-bom")
 def consume_bom(run_id: int, db: Session = Depends(get_db)):
-    """Draw the run's whole BOM from the pool at the moving average, or from
-    its lots oldest first while lot pricing is on (decision 0073)."""
+    """Draw the run's whole BOM from the pool at the moving average."""
     run = _run(db, run_id)
     res = run_actuals.consume_from_bom(db, run)
     if res.get("error"):
@@ -2189,7 +2141,7 @@ def _adjustment_json(a: M.Adjustment) -> dict:
             "import_ref": a.import_ref or "", "actor": a.actor or "", "note": a.note}
 
 
-@router.get("/stock-adjustments")
+@router.get("/stock-adjustments", openapi_extra={"x-agent-tool": "list_stock_adjustments"})
 def list_all_adjustments(reason: str = "", db: Session = Depends(get_db)):
     """EVERY adjustment, including the ones belonging to no project.
 
@@ -2204,6 +2156,8 @@ def list_all_adjustments(reason: str = "", db: Session = Depends(get_db)):
     if reason:
         q = q.filter(M.Adjustment.reason == reason)
     rows = q.order_by(M.Adjustment.id.desc()).all()
+    from_boxes = {i for (i,) in db.query(M.OrganizerMove.material_move_id)
+                  .filter(M.OrganizerMove.material_move_id.isnot(None)).all()}
     return {
         "adjustments": [_adjustment_json(a) for a in rows],
         "totals": {
@@ -2215,8 +2169,14 @@ def list_all_adjustments(reason: str = "", db: Session = Depends(get_db)):
             # Stock conjured with no cost attached. Legitimate for a genuine opening
             # balance; otherwise it is quantity with no money behind it, which no
             # value identity can ever notice.
-            "zero_cost_positive": sum(1 for a in rows if (a.qty or 0) > 0
-                                      and not a.unit_cost_usd),
+            "zero_cost_positive": sum(1 for a in rows if (a.qty or 0) > 0 and not a.unit_cost_usd
+                                      and a.id not in from_boxes),
+            # The same, written by a count in an office organizer (decision 0104):
+            # pieces somebody read off a box, so they are evidenced, and no purchase
+            # in the records prices them. Reported apart, or the warning above would
+            # stand for ever and hide the kind of row it exists to find.
+            "zero_cost_from_boxes": sum(1 for a in rows if (a.qty or 0) > 0 and not a.unit_cost_usd
+                                        and a.id in from_boxes),
         },
     }
 

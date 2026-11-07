@@ -1,14 +1,9 @@
-/** Shared cost-domain primitives: the line-kind list, the production-step
- *  select and the charge-to destination select. Each of these existed as
+/** Shared cost-domain primitives: the production-step select and the charge-to
+ *  destination select. Each of these existed as
  *  three drifting literal copies before this file. */
 import { useEffect, useId, useState } from "react";
 import type { ReactNode } from "react";
-import { listOverheadCategories, type CostLineKind, type CostStepCatalog } from "../api";
-
-export const COST_LINE_KINDS: CostLineKind[] = [
-  "part", "fab", "assembly", "tooling", "freight",
-  "duty", "tax", "rework", "packaging", "service", "other",
-];
+import { listOverheadCategories, type CostStepCatalog } from "../api";
 
 /** A run a cost line can be charged to, with its project named for display. */
 export interface RunOption {
@@ -91,7 +86,7 @@ export function StepSelect({
 export type GoesTo = "" | "inherit" | "pool" | "nobody" | string;
 
 /** Company overhead categories (decisions 0068, 0091): `overhead:<key>` as a
- *  destination. The list is the platform's — an admin edits it on Production →
+ *  destination. The list is the platform's — an admin edits it on Finance →
  *  Company books → Overhead — so it is loaded, once per page, and shared: an
  *  invoice draws one select per position, and each asking would be one request
  *  per row. */
@@ -118,7 +113,7 @@ export function forgetOverheadCategories() {
 
 /** `[key, label]` pairs, by label with the fallback (`other`) last. Empty
  *  until the first load answers. */
-export function useOverheadCategories(): [string, string][] {
+function useOverheadCategories(): [string, string][] {
   const [list, setList] = useState<[string, string][]>(overheadList ?? []);
   useEffect(() => {
     let live = true;
@@ -240,13 +235,13 @@ export function GoesToSelect({
 // Worded to FIT. The column is 14% wide and a select cannot be ellipsised
 // usefully — "it is stock" rendered as "it is s…", which says nothing. The long
 // form goes in the title instead.
-export const HOW_FOR_STOCK = [
+const HOW_FOR_STOCK = [
   ["pooled", "stock", "This position IS stock. It enters the shared pool and every project draws from it."],
   ["by_value", "spread by value", "Landed cost: spread over this document's part lines in proportion to their value, so it raises what that stock really cost to arrive."],
   ["by_qty", "spread by qty", "Landed cost: spread over this document's part lines per piece."],
 ] as const;
 
-export const HOW_FOR_CHARGE = [
+const HOW_FOR_CHARGE = [
   ["per_run", "own amount", "Charged once, as the amount printed on the invoice."],
   ["per_device", "per device", "A rate per board: charged at this amount times the units the batch was billed for."],
 ] as const;
@@ -259,7 +254,7 @@ export const HOW_FOR_CHARGE = [
  *  reached production saying nothing at all, and consistency is what makes
  *  `excluded_by_reason_usd` readable instead of a list of near-synonyms.
  *  The vocabulary itself is in the production-run skill. */
-export const EXCLUDE_REASONS: readonly (readonly [string, string])[] = [
+const EXCLUDE_REASONS: readonly (readonly [string, string])[] = [
   ["reclaimable_vat", "import VAT and customs — everything here is recorded net"],
   ["prepaid_components", "already paid for and already in the pool"],
   ["external_project", "a product this platform does not track"],

@@ -28,7 +28,7 @@ import {
   type CostStepCatalog,
   type RunCostLineRow,
 } from "../../api";
-import { plain } from "../../format";
+import { plain, plural } from "../../format";
 import { GoesToSelect, HowSelect, StepSelect, type RunOption, type TransformOption } from "../costs";
 import ComponentPickDialog from "../ComponentPickDialog";
 import { ErrorBanner } from "../Ui";
@@ -41,7 +41,7 @@ export const PART_STEPS = new Set([
   "parts:pool", "parts:prepaid", "parts:attrition", "pcba:parts",
 ]);
 
-export const isPartStep = (step: string) => PART_STEPS.has(step);
+const isPartStep = (step: string) => PART_STEPS.has(step);
 
 /** COLUMN WIDTHS. On the header cells, not in styles.css.
  *
@@ -116,7 +116,7 @@ export function blankDraft(): LineDraft {
  *  destination the money does not actually go to, which is the failure this
  *  whole change exists to end.
  */
-export function goesToOf(li: RunCostLineRow): string {
+function goesToOf(li: RunCostLineRow): string {
   if (li.allocate === "excluded") return "nobody";
   // A company overhead, right after "nobody" — the server's order (decision 0068).
   if (li.allocate === "overhead") return `overhead:${li.overhead_category || "other"}`;
@@ -649,7 +649,7 @@ export default function InvoiceLinesTable({
           Add position
         </button>
         <span className="muted">
-          {rows.length} position{rows.length === 1 ? "" : "s"} · {currency}
+          {plural(rows.length, "position")} · {currency}
         </span>
       </div>
 

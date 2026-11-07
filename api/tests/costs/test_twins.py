@@ -21,7 +21,10 @@ What these pin down:
   record it, only the ticked positions and draws join it, a position imported
   later waits until it is added, the record is undone whole, any other
   position can be linked to the click it paid for, and the twins' prices still
-  add up to the batch's total.
+  add up to the batch's total;
+- the process board counts per step what is done, what waits and what stock
+  lets go, and the scan group's check and multi-step run judge each device on
+  its own (decision 0103).
 
 Run from `api/`, with the dev database up:
     python -m pytest tests/costs/test_twins.py -q
@@ -1739,15 +1742,13 @@ def test_scrapping_a_named_unit_with_no_recorded_state(db, world):
 # ---------------------------------------- second review regressions (0074, 0075)
 
 
-def test_a_smaller_draw_gives_back_its_newest_lots_while_lot_pricing_is_off(db, world, monkeypatch):
-    """Review R2-7 (decision 0073): with the switch off, a smaller draw still
-    gives back its newest bindings, so no draw holds more lots than units, and
-    keeps its price; a larger one changes no binding."""
-    from app.config import settings
+def test_a_smaller_draw_gives_back_its_newest_lots(db, world):
+    """Review R2-7 (decision 0073): a smaller draw gives back its newest bindings,
+    so no draw holds more lots than units, and keeps its price; a larger one
+    changes no binding (decision 0105)."""
     from app.routers import run_costs as rc
     from app.services import lots as L
-
-    monkeypatch.setattr(settings, "lot_pricing", False)
+    from tests.costs.lot_helpers import bind, pick
     st = world["sticker"]
     a = db.query(M.RunCostLine).filter_by(component_id=st.id, unit_price=0.2).one()
     doc = M.RunCostDocument(project_id=world["project"].id, doc_type="invoice", supplier="TESTCO",
@@ -1771,8 +1772,8 @@ def test_a_smaller_draw_gives_back_its_newest_lots_while_lot_pricing_is_off(db, 
                 .filter_by(move_id=c.id).order_by(M.MaterialMoveLot.id)]
 
     c = db.get(M.Draw, used(120)["id"])
-    # bound oldest first, as the history job binds a draw made while the switch is off
-    L.bind(db, c, L.FifoPicker(db).pick(st.id, "", "", 120, "2026-02-01"), source="fifo_history")
+    # bound oldest first, as the history job of 2026-10 bound a draw
+    bind(db, c, pick(db, None, st.id, "", "", 120, "2026-02-01"), source="fifo_history")
     unit = c.unit_cost_usd
     assert bound() == [(a.id, 100), (b.id, 20)]
     used(90)
@@ -2352,3 +2353,190 @@ def test_a_relink_without_an_unlink_leaves_the_header_nothing_stale(db, world):
         rc.ChildIn(label="extra", amount=0, plan_key="final:device", run_id=b1.id)]), db)
     extra = db.query(M.RunCostLine).filter_by(parent_line_id=fee.id, label="extra").one()
     assert db.query(M.StepCost).filter_by(line_id=extra.id).count() == 0
+
+
+# ---------------------------------------------------- the board (decision 0103)
+
+def _field(rows, key):
+    return next(r for r in rows if r["key"] == key)
+
+
+def test_the_board_counts_each_step_of_an_empty_batch(db, world):
+    rows = T.board(db, world["b1"])
+    assert [r["key"] for r in rows][:3] == ["assembly", "receive", "enclose"]
+    rec = _field(rows, "receive")
+    # Nothing received: the batch's quantity is what waits at Receive.
+    assert (rec["done"], rec["waiting"], rec["still_to_do"], rec["total"]) == (0, 10, 10, 10)
+    enc = _field(rows, "enclose")
+    assert (enc["waiting"], enc["can_go"], enc["still_to_do"]) == (0, 0, 10)
+    # 20 glued enclosures on hand cover the 10 still to do.
+    assert enc["inputs"][0]["on_hand"] == 20 and enc["inputs"][0]["covers"] == 20
+    assert enc["state"] == "idle"
+
+
+def test_the_board_follows_the_units_and_the_stock(db, world):
+    stack = _received(db, world, 10)
+    rows = T.board(db, world["b1"])
+    assert _field(rows, "receive")["state"] == "done"
+    assert _field(rows, "assembly")["state"] == "done"
+    enc = _field(rows, "enclose")
+    assert (enc["waiting"], enc["waiting_unnamed"], enc["can_go"], enc["state"]) == (10, 10, 10, "ready")
+    T.apply_step(db, world["b1"], step_key="enclose", stack=stack, qty=4, dry_run=False)
+    rows = T.board(db, world["b1"])
+    enc = _field(rows, "enclose")
+    assert (enc["done"], enc["waiting"], enc["still_to_do"]) == (4, 6, 6)
+    assert enc["inputs"][0]["on_hand"] == 16
+    assert _field(rows, "program")["waiting"] == 10  # needs only Receive
+
+
+def test_the_board_says_when_stock_does_not_cover_the_rest(db, world):
+    # 100 cartons bought, none drawn: 90 lost leaves 10, and a batch of 30 needs 30.
+    world["b1"].qty = 30
+    core.adjustment(db, mpn="TEST-TWIN-KARTON", qty=-90, unit_cost_usd=None, reason="miscount", at="2026-01-20", note="test")
+    db.flush()
+    rows = T.board(db, world["b1"])
+    carton = _field(rows, "carton")
+    assert carton["inputs"][0]["on_hand"] == 10
+    assert (carton["still_to_do"], carton["state"]) == (30, "short")
+
+
+def test_the_board_splits_named_and_unnamed_units(db, world):
+    d1, d2, d3 = _crafted_devices(db, world, 51, 3)
+    T.apply_step(db, world["b1"], step_key="carton", device_ids=[d1.id], chosen="scanned", dry_run=False)
+    carton = _field(T.board(db, world["b1"]), "carton")
+    assert (carton["done"], carton["waiting_named"], carton["waiting_unnamed"]) == (1, 2, 0)
+    # The 3 of `_crafted_devices` were received of 10 planned: 7 are not here yet.
+    assert carton["still_to_do"] == 2 + 7
+
+
+def test_a_choice_needs_only_one_of_its_options_on_the_board(db, world):
+    (d,) = _crafted_devices(db, world, 61, 1)
+    T.apply_step(db, world["b1"], step_key="sticker", device_ids=[d.id], chosen="scanned", dry_run=False)
+    uv = _field(T.board(db, world["b1"]), "uvprint")
+    # The unit took the other option: it neither waits nor is still to do.
+    assert (uv["waiting"], uv["still_to_do"]) == (0, 9)
+
+
+def test_check_codes_names_what_each_code_is(db, world):
+    (d,) = _crafted_devices(db, world, 71, 1)
+    gap = _device(db, world, 72)
+    osvc.mark_produced(db, gap, world["b1"].id, actor="test")
+    db.flush()
+    rows = T.check_codes(db, world["b1"], [d.serial, d.mac.replace(":", "").upper(), gap.serial, "NOPE"])
+    assert rows[0]["ok"] and rows[0]["device_id"] == d.id
+    assert "carton" in rows[0]["can"] and "enclose" not in rows[0]["can"]
+    assert rows[1]["ok"] and rows[1]["device_id"] == d.id  # the MAC, with no separators
+    assert not rows[2]["ok"] and "merge" in rows[2]["why"]
+    assert not rows[3]["ok"] and rows[3]["why"] == "matches no device"
+
+
+def test_check_codes_names_another_batch(db, world):
+    (d,) = _crafted_devices(db, world, 75, 1)
+    row = T.check_codes(db, world["b2"], [d.serial])[0]
+    assert not row["ok"] and "TB1" in row["why"]
+
+
+def _leaflet_after_carton(db, world):
+    """A variant where the leaflet needs the carton, as CE_Dongle_V2's does."""
+    v = world["v"]
+    graph = {**v.graph, "steps": [{**s, "needs": ["carton"]} if s["key"] == "leaflet" else s
+                                  for s in v.graph["steps"]]}
+    v.graph = graph
+    db.flush()
+
+
+def test_a_dry_run_counts_the_earlier_step_and_writes_nothing(db, world):
+    _leaflet_after_carton(db, world)
+    d1, d2 = _crafted_devices(db, world, 81, 2)
+    clicks = db.query(M.Click).count()
+    res = T.apply_steps(db, world["b1"], step_keys=["leaflet", "carton"], device_ids=[d1.id, d2.id],
+                        chosen="scanned", dry_run=True)
+    # Route order wins over tick order, and the leaflet sees the carton as done.
+    assert [p["step"] for p in res["steps"]] == ["carton", "leaflet"]
+    assert [p["units"] for p in res["steps"]] == [2, 2]
+    assert db.query(M.Click).count() == clicks
+    assert [_carton_links(db, d) for d in (d1, d2)] == [0, 0]
+
+
+def test_a_group_run_writes_one_click_per_step_and_skips_per_device(db, world):
+    _leaflet_after_carton(db, world)
+    d1, d2, d3 = _crafted_devices(db, world, 85, 3)
+    T.apply_step(db, world["b1"], step_key="carton", device_ids=[d1.id], chosen="scanned", dry_run=False)
+    res = T.apply_steps(db, world["b1"], step_keys=["carton", "leaflet"], device_ids=[d1.id, d2.id, d3.id],
+                        chosen="scanned", dry_run=False)
+    carton, leaflet = res["steps"]
+    assert (carton["units"], carton["refused"][0]["unit"]) == (2, d1.serial)
+    assert (leaflet["units"], leaflet["refused"]) == (3, [])
+    assert [_carton_links(db, d) for d in (d1, d2, d3)] == [1, 1, 1]
+    keys = [k for (k,) in db.query(M.Click.step_key).filter_by(run_id=world["b1"].id, chosen="scanned")
+            .order_by(M.Click.id).all()]
+    assert keys.count("leaflet") == 1 and keys.count("carton") == 2
+
+
+def test_a_group_run_can_finish_the_devices_that_are_ready(db, world):
+    d1, d2 = _crafted_devices(db, world, 91, 2)
+    T.record_marking(db, d1, laser=True, label=True)
+    for step in ("uvprint", "carton"):
+        T.apply_step(db, world["b1"], step_key=step, device_ids=[d1.id], chosen="list", dry_run=False)
+    res = T.apply_steps(db, world["b1"], step_keys=["finish"], device_ids=[d1.id, d2.id], chosen="scanned",
+                        dry_run=False)
+    plan = res["steps"][0]
+    assert plan["units"] == 1 and plan["refused"][0]["unit"] == d2.serial
+    assert db.query(M.Unit).filter_by(device_unit_id=d1.id).one().status == "finished"
+    assert db.query(M.Unit).filter_by(device_unit_id=d2.id).one().status == "active"
+
+
+def test_a_group_run_no_device_can_take_is_refused(db, world):
+    (d,) = _crafted_devices(db, world, 95, 1)
+    T.apply_step(db, world["b1"], step_key="carton", device_ids=[d.id], chosen="list", dry_run=False)
+    with pytest.raises(HTTPException) as e:
+        T.apply_steps(db, world["b1"], step_keys=["carton"], device_ids=[d.id], chosen="list", dry_run=False)
+    assert e.value.status_code == 409 and "none of these devices" in e.value.detail["error"]
+
+
+def test_a_group_run_stops_on_a_shortage(db, world):
+    d1, d2 = _crafted_devices(db, world, 97, 2)
+    core.adjustment(db, mpn="TEST-TWIN-KARTON", qty=-99, unit_cost_usd=None, reason="miscount", at="2026-01-20", note="test")
+    db.flush()
+    dry = T.apply_steps(db, world["b1"], step_keys=["carton"], device_ids=[d1.id, d2.id], chosen="scanned")
+    assert dry["steps"][0]["shortages"]
+    with pytest.raises(HTTPException) as e:
+        T.apply_steps(db, world["b1"], step_keys=["carton"], device_ids=[d1.id, d2.id], chosen="scanned",
+                      dry_run=False)
+    assert e.value.status_code == 409
+    assert [_carton_links(db, d) for d in (d1, d2)] == [0, 0]
+
+
+def test_one_undo_takes_back_a_group_run(db, world):
+    from app.routers import ledger
+    from app.routers import process as pr
+
+    _leaflet_after_carton(db, world)
+    d1, d2 = _crafted_devices(db, world, 101, 2)
+    ids = [d1.id, d2.id]
+    dry = pr.craft_steps(world["b1"].id, pr.StepsIn(step_keys=["carton", "leaflet"], device_ids=ids, chosen="scanned",
+                                                    dry_run=True), db=db)
+    assert [p["units"] for p in dry["steps"]] == [2, 2]
+    assert [_carton_links(db, d) for d in (d1, d2)] == [0, 0]
+    res = pr.craft_steps(world["b1"].id, pr.StepsIn(step_keys=["carton", "leaflet"], device_ids=ids, chosen="scanned",
+                                                    dry_run=False), db=db)
+    assert res["batch_id"] and [_carton_links(db, d) for d in (d1, d2)] == [1, 1]
+    view = T.craft_view(db, world["b1"])
+    two = [c for c in view["clicks"] if c["step"] in ("carton", "leaflet")]
+    # Each step has its own click, and both name the one write that Undo reverses.
+    assert len(two) == 2 and {c["batch_id"] for c in two} == {res["batch_id"]}
+    ledger.reverse_batch(res["batch_id"], dry_run=False, db=db)
+    db.expire_all()
+    assert [_carton_links(db, d) for d in (d1, d2)] == [0, 0]
+
+
+def test_the_batches_list_carries_a_board_for_a_batch_in_work(db, world):
+    from app.routers import production_runs as pr
+
+    world["b1"].status = "planned"
+    db.flush()
+    rows = {r["id"]: r for r in pr._runs_payload(db, [world["b1"], world["b2"]], with_board=True)}
+    assert [s["key"] for s in rows[world["b1"].id]["process_board"]][:2] == ["assembly", "receive"]
+    # `board` is the PCB's name, and a finished batch draws no board.
+    assert isinstance(rows[world["b1"].id]["board"], str)
+    assert "process_board" not in rows[world["b2"].id]

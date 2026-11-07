@@ -23,8 +23,8 @@ positive adjustment of the make, which deposits a stored lot (`A<lot id>`).
 Every replayer already reads both, so the pool's value identity holds by
 construction.
 
-**A prepared part always takes a lot.** A bought part takes lots only while
-`lot_pricing` is on. A prepared part's lots carry real differences (printed or
+**A prepared part always takes a lot.** A bought part takes the pool's moving
+average. A prepared part's lots carry real differences (printed or
 stickered, found at zero value or built from today's purchases), so every draw
 of one names its lot.
 """
@@ -164,6 +164,13 @@ def input_ref(inp: dict) -> tuple[int | None, str]:
     the MPN its purchases are keyed by in the pool (`mpn`)."""
     cid = inp.get("component_id")
     return (int(cid) if cid else None), (inp.get("mpn") or "").strip()
+
+
+def input_key(inp: dict) -> str:
+    """One step input as a string: `c<component id>` or `m<mpn>`. The web
+    client's `inputKey` builds the same string."""
+    cid, mpn = input_ref(inp)
+    return f"c{cid}" if cid else f"m{mpn}"
 
 
 def input_label(inp: dict, names: dict) -> str:
@@ -725,16 +732,6 @@ def transform(db: Session, project_id: int, *, recipe_key: str, qty: float, scra
                 problems.append({"component_id": cid, "name": label, "problem": "unpriced",
                                  "detail": "the pool has no price for this part on that date"})
 
-    # Decision 0073: the bought inputs come from their lots, oldest first, at
-    # their cost; the prepared lot's value is then the lots' value.
-    from . import lots as _lots
-
-    problems += _lots.fifo_price(db, [d for d in draws if not d["internal"]], as_of=made_at, company_id=scope)
-    if _lots.lot_pricing_on():
-        problems = [p for p in problems if not (p.get("problem") == "unpriced"
-                                                and any(d.get("bindings") and d["component_id"] == p["component_id"]
-                                                        for d in draws))]
-
     shortages = run_actuals.check_shortages(db, [
         {"component_id": d["component_id"], "mpn": d.get("mpn", ""), "lcsc": "", "qty": d["qty"],
          "date": made_at, "label": d["name"]} for d in draws if not d["internal"]],
@@ -772,8 +769,6 @@ def transform(db: Session, project_id: int, *, recipe_key: str, qty: float, scra
         c = _ledger.draw(db, event=mk, component_id=d["component_id"], mpn=d.get("mpn", ""), taken=d["qty"],
                          unit_cost_usd=d["unit_cost_usd"], basis=BASIS_TRANSFORMATION, at=made_at,
                          company_id=tcompany, note=f"input of {mk.step_label} (transformation #{mk.id})")
-        if d.get("bindings"):
-            _lots.bind(db, c, d)
         if d["lot_adjustment_id"]:
             _ledger.bind(db, c, qty=d["qty"], unit_cost_usd=d["unit_cost_usd"], lot_id=d["lot_adjustment_id"],
                          source="manual", note=f"transformation #{mk.id}")
@@ -1006,6 +1001,34 @@ def prepared_view(db: Session, project_id: int, v: M.ProcessVersion | None) -> d
     inputs = {str(cid): {**(names.get(cid) or {"id": cid}), "pool": pool_row(cid)}
               for cid in sorted(used - outs)}
     return {"prepared": parts, "inputs": inputs}
+
+
+def input_stock(db: Session, graph: dict, company_id: int | None, *, pool: dict | None = None) -> dict[str, float]:
+    """What is on hand today of every part the steps of `graph` add, keyed as
+    `input_key` keys it (decision 0103). A bought part is found by identity
+    overlap, as `check_shortages` finds it, so the figure a field prints is the
+    figure the click is judged by. A prepared part is the sum of its open lots.
+    `pool` lets a list reuse one replay for many batches of a company."""
+    if pool is None:
+        pool = run_actuals.pool_state(db, as_of=_today(), company_id=company_id)
+    entries = [(set(run_actuals._identity_keys(p.get("component_id"), p.get("mpn") or "", p.get("lcsc") or "")), p)
+               for p in pool.values()]
+    out: dict[str, float] = {}
+    for step in graph.get("steps") or []:
+        for inp in step.get("inputs") or []:
+            cid, mpn = input_ref(inp)
+            key = input_key(inp)
+            if key in out:
+                continue
+            comp = db.get(M.Component, cid) if cid else None
+            if comp is not None and comp.internal:
+                out[key] = round(sum(lt["remaining"] for lt in prepared_lots(db, {cid}, open_only=True,
+                                                                             company_id=company_id)), 6)
+                continue
+            want = set(run_actuals._identity_keys(cid, "" if cid else mpn, ""))
+            hit = next((p for keys, p in entries if keys & want), None)
+            out[key] = round(max(float(hit.get("qty") or 0.0), 0.0), 6) if hit else 0.0
+    return out
 
 
 def deployments_for(db: Session, project_id: int) -> list[dict]:

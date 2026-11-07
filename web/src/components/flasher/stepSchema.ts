@@ -368,7 +368,7 @@ export const PHASES: { key: OpSpec["phase"]; label: string }[] = [
 
 /** Variables the engine always provides. Mirrors bundle.RUNTIME_VARS; this is
  *  a dropdown convenience, the server remains the authority. */
-export const RUNTIME_VARS = [
+const RUNTIME_VARS = [
   "mac", "serial", "chip", "base_url", "operator", "mqtt_user", "mqtt_password", "sim_pin",
 ];
 

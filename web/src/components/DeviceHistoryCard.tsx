@@ -24,10 +24,11 @@ import {
   type DeviceHistory,
   type OrderRow,
 } from "../api";
+import DataTable from "./DataTable";
+import FoldSection, { StatChip } from "./FoldSection";
 import { useDialog } from "./Dialog";
 import { ErrorBanner, Spinner, StatusPill } from "./Ui";
-import { fmtWhen } from "./flasher/common";
-import { amount } from "../format";
+import { amount, localWhen } from "../format";
 
 const STATE_LABEL: Record<string, string> = {
   "": "unrecorded",
@@ -48,7 +49,9 @@ function describe(ev: DeviceEventRow): string {
         ? `packed into shipment #${ev.shipment_id} for ${ev.customer ?? "an order"}${ev.order_ref ? ` · ${ev.order_ref}` : ""}`
         : `reserved for ${ev.customer ?? "an order"}${ev.order_ref ? ` · ${ev.order_ref}` : ""}`;
     case "unallocated":
-      return `taken out of shipment #${ev.shipment_id ?? "?"}${ev.note ? ` · ${ev.note}` : ""} — back in stock`;
+      return ev.shipment_id
+        ? `taken out of shipment #${ev.shipment_id}${ev.note ? ` · ${ev.note}` : ""} — back in stock`
+        : `released from ${ev.customer ?? "an order"}${ev.order_ref ? ` · ${ev.order_ref}` : ""} — back in stock`;
     case "shipped":
       return (
         `shipped to ${ev.customer ?? "an order"}${ev.order_ref ? ` · ${ev.order_ref}` : ""}` +
@@ -77,6 +80,9 @@ function describe(ev: DeviceEventRow): string {
       return ev.kind;
   }
 }
+
+/** Events that left the device off the normal path: first in the folded header. */
+const EVENT_PROBLEM = new Set(["returned", "disposed", "missing"]);
 
 export default function DeviceHistoryCard({ deviceId, serial }: { deviceId: number; serial: string }) {
   const [hist, setHist] = useState<DeviceHistory | null>(null);
@@ -206,7 +212,7 @@ export default function DeviceHistoryCard({ deviceId, serial }: { deviceId: numb
         <span className="toolbar-total">
           {hist?.production_run ? (
             <>
-              batch <Link className="val-link" to={`/runs/${hist.production_run_id}`}>{hist.production_run}</Link>
+              batch <Link className="val-link" to={`/production/batches/${hist.production_run_id}`}>{hist.production_run}</Link>
             </>
           ) : hist ? (
             "batch not recorded"
@@ -222,36 +228,42 @@ export default function DeviceHistoryCard({ deviceId, serial }: { deviceId: numb
           page, or record its return against the order it was delivered on.
         </p>
       ) : (
+        <FoldSection
+          bare
+          title="History"
+          count={hist.events.length}
+          foldKey={`device:${deviceId}:events`}
+          chips={[...new Set(hist.events.map((ev) => ev.kind))]
+            .sort((a, b) => Number(EVENT_PROBLEM.has(b)) - Number(EVENT_PROBLEM.has(a)))
+            .slice(0, 4)
+            .map((kind) => (
+              <StatChip key={kind} n={hist.events.filter((ev) => ev.kind === kind).length}
+                tone={EVENT_PROBLEM.has(kind) ? "warn" : undefined}>
+                {kind}
+              </StatChip>
+            ))}
+        >
         <div className="table-wrap">
-          <table className="data data-fixed device-history-table">
-            <thead>
-              <tr>
-                <th>When</th>
-                <th>Event</th>
-                <th>What</th>
-                <th>Order</th>
-                <th>By</th>
-              </tr>
-            </thead>
-            <tbody>
-              {hist.events.map((ev) => (
-                <tr key={ev.id}>
-                  <td className="muted" title={ev.at ?? ""}>{fmtWhen(ev.at)}</td>
-                  <td>{ev.kind}</td>
-                  <td title={`${describe(ev)}${ev.note ? ` — ${ev.note}` : ""}`}>{describe(ev)}</td>
-                  <td>
-                    {ev.order_id ? (
-                      <Link className="val-link" to={`/production/orders/${ev.order_id}`}>
-                        {ev.order_ref || `order #${ev.order_id}`}
-                      </Link>
-                    ) : "—"}
-                  </td>
-                  <td>{ev.actor || "—"}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <DataTable
+            rows={hist.events}
+            rowKey={(ev) => ev.id}
+            columns={[
+              { key: "at", label: "When", width: "132px", className: "muted", get: (ev) => ev.at ?? "",
+                title: (ev) => ev.at ?? "", render: (ev) => localWhen(ev.at) },
+              { key: "kind", label: "Event", width: 16, get: (ev) => ev.kind },
+              { key: "what", label: "What", width: 48, get: (ev) => describe(ev),
+                title: (ev) => `${describe(ev)}${ev.note ? ` — ${ev.note}` : ""}` },
+              { key: "order", label: "Order", width: 18, get: (ev) => ev.order_ref || (ev.order_id ? `order #${ev.order_id}` : ""),
+                render: (ev) => (ev.order_id ? (
+                  <Link className="val-link" to={`/sales/orders/${ev.order_id}`}>
+                    {ev.order_ref || `order #${ev.order_id}`}
+                  </Link>
+                ) : "—") },
+              { key: "by", label: "By", width: 18, get: (ev) => ev.actor || "—" },
+            ]}
+          />
         </div>
+        </FoldSection>
       )}
       {hist ? (
         <div className="btn-row">

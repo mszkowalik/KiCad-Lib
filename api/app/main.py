@@ -26,7 +26,6 @@ from .routers import (
     field_solver,
     flasher,
     git_credentials,
-    import_station,
     jlc_import,
     jlc_stock,
     jlc_web,
@@ -55,6 +54,7 @@ from .routers import (
     users,
     view,
     orders,
+    organizers,
     overhead as overhead_router,
 )
 
@@ -141,7 +141,6 @@ app.include_router(changes.router)
 app.include_router(skills.router)
 app.include_router(settings_router.router)
 app.include_router(kicad_sync.router)
-app.include_router(import_station.router)
 app.include_router(kicad_http.router)
 app.include_router(view.router)
 app.include_router(projects.router)
@@ -164,6 +163,7 @@ app.include_router(run_costs.router)
 app.include_router(flasher.router)
 app.include_router(mqtt.router)
 app.include_router(orders.router)
+app.include_router(organizers.router)
 app.include_router(activity.router)
 app.include_router(undo_router.router)
 
@@ -524,6 +524,17 @@ _PHASE1_DDL = (
     ("users.theme",
      "ALTER TABLE users ADD COLUMN IF NOT EXISTS "
      "theme varchar(10) NOT NULL DEFAULT 'system'"),
+    # Dark is the default for everybody (user, 2026-11-07), and an account still
+    # on the old default moves with it. The column's own default is the one-time
+    # switch: once it says dark this does nothing, so somebody who picks System
+    # later keeps it. Light was somebody's choice and stays.
+    ("users.theme default dark",
+     "DO $$ BEGIN "
+     "IF (SELECT column_default FROM information_schema.columns "
+     "    WHERE table_name = 'users' AND column_name = 'theme') LIKE '''system''%' THEN "
+     "UPDATE users SET theme = 'dark' WHERE theme = 'system'; "
+     "ALTER TABLE users ALTER COLUMN theme SET DEFAULT 'dark'; "
+     "END IF; END $$"),
     # The device-file pool (`device_files`, `device_file_versions`) is gone:
     # services/flasher/fileset_migrate.py folded it into blobs and file sets
     # (decision 0029) and dropped the tables.

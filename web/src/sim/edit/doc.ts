@@ -8,8 +8,8 @@
  *  from `docToDrawing`, so there is no second copy of the circuit to keep in
  *  step with the first.
  */
-import { matrixOf, placePin } from "../draw/geom";
-import type { At, LibSymbol, Pt, SchTheme, SheetDrawing } from "../draw/types";
+import { matrixOf, placePin, pointKey } from "../draw/geom";
+import type { At, LibSymbol, Pt, SheetDrawing } from "../draw/types";
 import type { ParamForm } from "./params";
 
 /** KiCad's schematic grid. Anything off it will not connect, and a schematic
@@ -113,7 +113,7 @@ export function snapPt(p: Pt): Pt {
   return [snap(p[0]), snap(p[1])];
 }
 
-const key = (p: Pt | number[]): string => `${Math.round(p[0] * 1000)},${Math.round(p[1] * 1000)}`;
+const key = (p: Pt | number[]): string => pointKey(p[0], p[1]);
 
 /** Where a placed symbol's pins land on the sheet. */
 export function symbolPins(sym: DocSymbol, libs: Record<string, LibSymbol>): { n: string; at: Pt }[] {
@@ -296,4 +296,3 @@ export function orthoRun(from: Pt, to: Pt): Pt[] {
     : [a, [a[0], b[1]], b];
 }
 
-export const themeFor = (t: SchTheme): SchTheme => t;

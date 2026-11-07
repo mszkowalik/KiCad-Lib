@@ -17,12 +17,12 @@ wrote, and `user_id` names the person.
 | `row.insert`, `row.update`, `row.delete` | ORM row changed during a request | the table / the primary key | the flush hooks |
 | anything else | `audit()` call | what the call site says | the endpoint. The hook stamps the person |
 
-Admin → Activity reads it through `GET /api/activity` and
+History → Everyone reads it through `GET /api/activity` and
 `GET /api/activity/requests/{request_id}`. Both routes are admin-only.
 
 ## The Write log is a second record, on purpose
 
-A write batch (`services/journal.py`, Production → Write log) holds what is
+A write batch (`services/journal.py`, History → Write batches) holds what is
 needed to UNDO a money movement: each row's full prior state and a hash
 guard. The log cannot, because it redacts and hashes values. The two are
 joined by `request_id`, which `journal.batch` stamps along with `user_id`

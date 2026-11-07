@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useState } from "react";
-import { useSearchParams } from "react-router-dom";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import {
   errorMessage,
   getFootprints,
   getSimModels,
   getSymbols,
   isAbortError,
+  listModels3d,
   proposeNewSimModel,
   type FootprintListItem,
   type SimModelListItem,
@@ -15,62 +15,48 @@ import {
 } from "../api";
 import DataTable, { type Column } from "../components/DataTable";
 import GeometryPaste from "../components/GeometryPaste";
+import Models3dPanel from "../components/Models3dPanel";
+import TabStrip from "../components/TabStrip";
 import TemplateThumb from "../components/TemplateThumb";
 import { ErrorBanner, Spinner } from "../components/Ui";
 
-type Tab = TemplateKind | "sim";
+type Tab = TemplateKind | "sim" | "models";
 
-const symbolColumns: Column<SymbolListItem>[] = [
-  {
-    key: "thumb",
-    label: "",
-    width: 10,
-    interactive: false,
-    get: () => "",
-    render: (r) => <TemplateThumb kind="symbols" id={r.id} name={r.name} versionId={r.version_id} />,
-  },
-  {
-    key: "name",
-    label: "Name",
-    width: 42,
-    get: (r) => r.name,
-    className: "mono",
-    render: (r) => (
-      <Link to={`/library/templates/symbols/${r.id}`} className="comp-link">
-        {r.name}
-      </Link>
-    ),
-  },
-  { key: "pins", label: "Pins", width: 16, numeric: true, get: (r) => r.pin_count },
-  { key: "version", label: "Version", width: 16, numeric: true, get: (r) => r.version_no },
-  { key: "notes", label: "Notes", width: 16, numeric: true, get: (r) => r.comment_count },
-];
+/** The columns of a drawing list. A symbol and a footprint differ in one count. */
+function drawingColumns<T extends SymbolListItem | FootprintListItem>(
+  kind: TemplateKind,
+  countLabel: string,
+  count: (r: T) => number | null,
+): Column<T>[] {
+  return [
+    {
+      key: "thumb",
+      label: "",
+      width: 10,
+      interactive: false,
+      get: () => "",
+      render: (r) => <TemplateThumb kind={kind} id={r.id} name={r.name} versionId={r.version_id} />,
+    },
+    {
+      key: "name",
+      label: "Name",
+      width: 42,
+      get: (r) => r.name,
+      className: "mono",
+      render: (r) => (
+        <Link to={`/library/templates/${kind}/${r.id}`} className="comp-link">
+          {r.name}
+        </Link>
+      ),
+    },
+    { key: "count", label: countLabel, width: 16, numeric: true, get: count },
+    { key: "version", label: "Version", width: 16, numeric: true, get: (r) => r.version_no },
+    { key: "notes", label: "Notes", width: 16, numeric: true, get: (r) => r.comment_count },
+  ];
+}
 
-const footprintColumns: Column<FootprintListItem>[] = [
-  {
-    key: "thumb",
-    label: "",
-    width: 10,
-    interactive: false,
-    get: () => "",
-    render: (r) => <TemplateThumb kind="footprints" id={r.id} name={r.name} versionId={r.version_id} />,
-  },
-  {
-    key: "name",
-    label: "Name",
-    width: 42,
-    get: (r) => r.name,
-    className: "mono",
-    render: (r) => (
-      <Link to={`/library/templates/footprints/${r.id}`} className="comp-link">
-        {r.name}
-      </Link>
-    ),
-  },
-  { key: "pads", label: "Pads", width: 16, numeric: true, get: (r) => r.pad_count },
-  { key: "version", label: "Version", width: 16, numeric: true, get: (r) => r.version_no },
-  { key: "notes", label: "Notes", width: 16, numeric: true, get: (r) => r.comment_count },
-];
+const symbolColumns = drawingColumns<SymbolListItem>("symbols", "Pins", (r) => r.pin_count);
+const footprintColumns = drawingColumns<FootprintListItem>("footprints", "Pads", (r) => r.pad_count);
 
 const simColumns: Column<SimModelListItem>[] = [
   {
@@ -167,7 +153,7 @@ function SimModelPaste({ onFiled }: { onFiled: () => void }) {
         />
         <button
           type="button"
-          className="btn btn-accent"
+          className="btn btn-primary"
           disabled={filing || !text.trim() || !comment.trim()}
           onClick={() => void file()}
         >
@@ -184,12 +170,14 @@ export default function Templates() {
   // longer resets on every visit.
   const [searchParams, setSearchParams] = useSearchParams();
   const tabParam = searchParams.get("tab");
-  const tab: Tab = tabParam === "footprints" || tabParam === "sim" ? tabParam : "symbols";
+  const tab: Tab =
+    tabParam === "footprints" || tabParam === "sim" || tabParam === "models" ? tabParam : "symbols";
   const setTab = (t: Tab) =>
     setSearchParams(t === "symbols" ? {} : { tab: t }, { replace: true });
   const [symbols, setSymbols] = useState<SymbolListItem[] | null>(null);
   const [footprints, setFootprints] = useState<FootprintListItem[] | null>(null);
   const [simModels, setSimModels] = useState<SimModelListItem[] | null>(null);
+  const [modelCount, setModelCount] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback((signal?: AbortSignal) => {
@@ -211,9 +199,19 @@ export default function Templates() {
     return () => ctrl.abort();
   }, [load]);
 
-  /** A filed creation makes the parent row immediately (its version stays a
-   *  draft), so the list is stale the moment the paste box succeeds. */
-  const reload = () => load();
+  // Only the count. The list is the tab's own, and a failure here must not take
+  // the other three tabs down, so a missing count just prints no number.
+  const loadModelCount = useCallback((signal?: AbortSignal) => {
+    listModels3d("", 1, signal)
+      .then((r) => setModelCount(r.total_matching))
+      .catch(() => undefined);
+  }, []);
+
+  useEffect(() => {
+    const ctrl = new AbortController();
+    loadModelCount(ctrl.signal);
+    return () => ctrl.abort();
+  }, [loadModelCount]);
 
   const loading = symbols === null || footprints === null || simModels === null;
 
@@ -224,47 +222,32 @@ export default function Templates() {
           <h1>Templates</h1>
           <span className="toolbar-total">
             {symbols && footprints && simModels
-              ? `${symbols.length} symbols · ${footprints.length} footprints · ${simModels.length} sim models`
+              ? `${symbols.length} symbols · ${footprints.length} footprints · ${simModels.length} sim models` +
+                (modelCount !== null ? ` · ${modelCount} 3D models` : "")
               : ""}
           </span>
         </div>
         <p className="muted">
           Base symbols, footprints and simulation models — the shared templates that
           components are built from. Open one to see its preview or source and notes.
+          The 3D models tab holds the files that footprints name.
         </p>
 
-        <div className="seg proj-tabs" role="tablist" aria-label="Template type">
-          <button
-            type="button"
-            role="tab"
-            aria-selected={tab === "symbols"}
-            className={tab === "symbols" ? "on" : ""}
-            onClick={() => setTab("symbols")}
-          >
-            Symbols{symbols ? ` (${symbols.length})` : ""}
-          </button>
-          <button
-            type="button"
-            role="tab"
-            aria-selected={tab === "footprints"}
-            className={tab === "footprints" ? "on" : ""}
-            onClick={() => setTab("footprints")}
-          >
-            Footprints{footprints ? ` (${footprints.length})` : ""}
-          </button>
-          <button
-            type="button"
-            role="tab"
-            aria-selected={tab === "sim"}
-            className={tab === "sim" ? "on" : ""}
-            onClick={() => setTab("sim")}
-          >
-            Sim models{simModels ? ` (${simModels.length})` : ""}
-          </button>
-        </div>
+        <TabStrip<Tab>
+          label="Template type"
+          value={tab}
+          onChange={setTab}
+          tabs={[
+            { id: "symbols", label: `Symbols${symbols ? ` (${symbols.length})` : ""}` },
+            { id: "footprints", label: `Footprints${footprints ? ` (${footprints.length})` : ""}` },
+            { id: "sim", label: `Sim models${simModels ? ` (${simModels.length})` : ""}` },
+            { id: "models", label: `3D models${modelCount !== null ? ` (${modelCount})` : ""}` },
+          ]}
+        />
 
-        {error ? <ErrorBanner message={error} /> : null}
-        {loading && !error ? <Spinner label="Loading templates" /> : null}
+        {error && tab !== "models" ? <ErrorBanner message={error} /> : null}
+        {loading && !error && tab !== "models" ? <Spinner label="Loading templates" /> : null}
+        {tab === "models" ? <Models3dPanel onChanged={() => loadModelCount()} /> : null}
 
         {!loading && tab === "symbols" ? (
           <div className="card table-wrap">
@@ -297,16 +280,17 @@ export default function Templates() {
           </div>
         ) : null}
 
-        {!loading && tab !== "sim" ? (
+        {!loading && (tab === "symbols" || tab === "footprints") ? (
           <details className="card pad" key={tab}>
             <summary>New {tab === "symbols" ? "symbol" : "footprint"} from the clipboard</summary>
-            <GeometryPaste kind={tab} onFiled={() => void reload()} />
+            {/* A paste publishes at once, so the list is stale the moment it succeeds. */}
+            <GeometryPaste kind={tab} onFiled={() => void load()} />
           </details>
         ) : null}
         {!loading && tab === "sim" ? (
           <details className="card pad" key="sim-new">
             <summary>New sim model from the clipboard</summary>
-            <SimModelPaste onFiled={() => void reload()} />
+            <SimModelPaste onFiled={() => void load()} />
           </details>
         ) : null}
       </div>

@@ -50,11 +50,14 @@ import {
   type FlasherMeta,
   type ParamSetRow,
 } from "../../api";
+import DataTable from "../DataTable";
 import { useDialog } from "../Dialog";
+import FoldSection, { StatChip } from "../FoldSection";
 import { ErrorBanner, Spinner, StatusPill } from "../Ui";
 import { listPrinters, type AgentRoll } from "../../flasher/benchAgent";
 import StepEditor, { type ArtworkChoice } from "./StepEditor";
-import { fmtBytes, fmtWhen, shortSha } from "./common";
+import { fmtBytes, shortSha } from "./common";
+import { localWhen } from "../../format";
 
 /** One word for the files card, from what the version pins. */
 const FILES_TITLE: Record<string, string> = {
@@ -97,16 +100,15 @@ export default function VersionView({
   const [editingParams, setEditingParams] = useState<number | null>(null);
   const [v, setV] = useState<DeploymentVersionDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [showSteps, setShowSteps] = useState(true);
   // The BUNDLE is what you see; the file list is detail behind a toggle
   // (user feedback 2026-07-30: "I still see the files listed instead of the bundle").
-  const [showFiles, setShowFiles] = useState(false);
 
   /** Draft editing. `note` is local because it is typed; everything else
    *  commits on change, so there is no Save button and nothing to forget. */
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
   const [rawJson, setRawJson] = useState(false);
+  const [showSteps, setShowSteps] = useState(true);
   const [stepsText, setStepsText] = useState("");
   const [assets, setAssets] = useState<FirmwareAssetRow[]>([]);
   /** Every file set on the platform — releases and drawings — for the pickers. */
@@ -369,7 +371,7 @@ export default function VersionView({
             2026-09-17). So the caption keeps the caption style, and the note is
             ordinary prose under its own label. */}
         <p className="card-subtitle">
-          {v.created_by || "unknown author"} · {fmtWhen(v.created_at)}
+          {v.created_by || "unknown author"} · {localWhen(v.created_at)}
           {/* A retro-imported version was written and published by the same
               name, and printing both read as two facts about two people. */}
           {v.approved_by && v.approved_by !== v.created_by ? ` · published by ${v.approved_by}` : ""}
@@ -441,9 +443,9 @@ export default function VersionView({
           {!isDraft && v.deployment.param_set_id !== v.param_set_id ? (
             <span
               className="pill warn"
-              title="This version was published against its own set. The deployment now defaults to a different one, which only affects versions made from here on."
+              title="This version was published against its own set. The procedure now defaults to a different one, which only affects versions made from here on."
             >
-              deployment now defaults elsewhere
+              procedure now defaults elsewhere
             </span>
           ) : null}
           {v.param_set_id ? (
@@ -501,12 +503,16 @@ export default function VersionView({
           and it sat below the firmware and berryware cards, off the bottom
           of the window (user request 2026-09-17). Firmware and berryware
           are one row and one pill; they read fine further down. */}
+      {/* The procedure is what this page exists to show, so it is a main list and
+          does not start folded (decision 0103). Show and Hide stay for a reader
+          who wants the cards under it. */}
       <div className="card pad">
-        <div className="toolbar">
-          <h3 className="card-title">Procedure — {v.steps?.length ?? 0} steps</h3>
-          <span className="muted dim mono">
-            {v.transport_profile} @ {v.monitor_baud}
-          </span>
+        <div className="fold-bar">
+          <div className="fold-toggle">
+            <h2 className="card-title">Procedure</h2>
+            <span className="fold-count">{(v.steps?.length ?? 0).toLocaleString()}</span>
+            <StatChip n={`${v.transport_profile} @ ${v.monitor_baud}`} />
+          </div>
           {isDraft && editing ? (
             <>
               {/* Two compact controls on the toolbar line. `.row-input` is
@@ -559,8 +565,8 @@ export default function VersionView({
                   void flushSteps();
                   setRawJson(false);
                 }
-                setEditing((x) => !x);
                 setShowSteps(true);
+                setEditing((x) => !x);
               }}
             >
               {editing ? "Done editing" : "Edit procedure"}
@@ -580,7 +586,7 @@ export default function VersionView({
             {showSteps ? "Hide" : "Show"}
           </button>
         </div>
-        {!showSteps ? null : rawJson && isDraft && editing ? (
+        {showSteps ? <div className="fold-body">{rawJson && isDraft && editing ? (
           <>
             <textarea
               className="note-textarea mono file-editor"
@@ -617,65 +623,56 @@ export default function VersionView({
             defaultOffsets={isDraft ? meta?.default_offsets : undefined}
             checkNames={isDraft ? meta?.checks : undefined}
           />
-        )}
+        )}</div> : null}
       </div>
 
-      <div className="card pad">
-        <h3 className="card-title">
-          Firmware{" "}
-          <span className="muted dim mono">
-            {v.firmware_fingerprint ? shortSha(v.firmware_fingerprint) : "none"}
-          </span>
-        </h3>
+      <FoldSection
+        title="Firmware"
+        count={v.images?.length ?? 0}
+        foldKey={`version:${v.id}:images`}
+        chips={<StatChip n={v.firmware_fingerprint ? shortSha(v.firmware_fingerprint) : "none"}>fingerprint</StatChip>}
+      >
         {v.images?.length ? (
           <div className="table-wrap">
-            <table className="data data-fixed dv-images-table">
-              <thead>
-                <tr>
-                  <th>Offset</th>
-                  <th>Image</th>
-                  <th>Kind</th>
-                  <th>Chip</th>
-                  <th className="num">Size</th>
-                  <th>Build</th>
-                  <th>sha256</th>
-                </tr>
-              </thead>
-              <tbody>
-                {v.images.map((img) => (
-                  <tr key={img.address}>
-                    <td className="mono">{img.address}</td>
-                    <td className="mono" title={img.filename}>
-                      <a className="comp-link" href={firmwareBinPath(img.firmware_asset_id)}>
-                        {img.filename}
-                      </a>
-                    </td>
-                    <td>{img.kind}</td>
-                    <td className="mono dim">{img.chip || "—"}</td>
-                    <td className="num">{fmtBytes(img.size_bytes)}</td>
-                    <td title={img.build_label}>{img.build_label || "—"}</td>
-                    <td className="mono dim" title={img.sha256}>{shortSha(img.sha256)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            <DataTable
+              rows={v.images}
+              rowKey={(img) => img.address}
+              columns={[
+                { key: "offset", label: "Offset", width: 10, className: "mono", get: (img) => img.address },
+                { key: "image", label: "Image", width: 30, className: "mono", get: (img) => img.filename,
+                  render: (img) => (
+                    <a className="comp-link" href={firmwareBinPath(img.firmware_asset_id)}>{img.filename}</a>
+                  ) },
+                { key: "kind", label: "Kind", width: 10, get: (img) => img.kind },
+                { key: "chip", label: "Chip", width: 10, className: "mono dim", get: (img) => img.chip || "—" },
+                { key: "size", label: "Size", width: 10, numeric: true, get: (img) => img.size_bytes,
+                  render: (img) => fmtBytes(img.size_bytes) },
+                { key: "build", label: "Build", width: 18, get: (img) => img.build_label || "—" },
+                { key: "sha", label: "sha256", width: 12, className: "mono dim", get: (img) => shortSha(img.sha256),
+                  title: (img) => img.sha256 },
+              ]}
+            />
           </div>
         ) : (
           <p className="muted">No firmware — this version flashes nothing.</p>
         )}
-      </div>
+      </FoldSection>
 
       {/* Named by what the version PINS — a berryware release, an artwork
           drawing, or both. Each is ONE set, so each reads as one pill that
-          links to the release; the file table is detail behind a toggle
-          (user feedback 2026-07-30: the bundle, not the files). */}
-      <div className="card pad">
-        <div className="toolbar">
-          <h3 className="card-title">{FILES_TITLE[v.files_kind] ?? "Files"}</h3>
+          links to the release, and the file table is detail behind the fold
+          at any length (user feedback 2026-07-30: the bundle, not the files). */}
+      <FoldSection
+        title={FILES_TITLE[v.files_kind] ?? "Files"}
+        count={v.files?.length ?? 0}
+        limit={0}
+        foldKey={`version:${v.id}:files`}
+        actions={
+          <>
           {v.file_set ? (
             <Link
               className="pill ok"
-              to={`/production/files?open=${v.file_set.id}`}
+              to={`/production/procedures/files?open=${v.file_set.id}`}
               title="the berryware release this version pins — open it on the Files page"
             >
               {v.file_set.label} · {v.file_set.file_count} files
@@ -684,49 +681,38 @@ export default function VersionView({
           {v.artwork_set ? (
             <Link
               className="pill info"
-              to={`/production/files?tab=artwork&open=${v.artwork_set.id}`}
+              to={`/production/procedures/files?tab=artwork&open=${v.artwork_set.id}`}
               title="the drawing this version pins — open it on the Files page"
             >
               {v.artwork_set.label}
             </Link>
           ) : null}
-          {v.files?.length ? (
-            <button type="button" className="btn btn-sm" onClick={() => setShowFiles((x) => !x)}>
-              {showFiles ? "Hide files" : "Show files"}
-            </button>
-          ) : null}
-        </div>
+          </>
+        }
+      >
         {!v.files?.length ? (
           <p className="muted">
             {v.deployment.kind === "mark" ? "No artwork pinned." : "No files pinned."}
           </p>
-        ) : !showFiles ? null : (
+        ) : (
           <div className="table-wrap">
-            <table className="data data-fixed dv-files-table">
-              <thead>
-                <tr>
-                  <th className="num">#</th>
-                  <th>File</th>
-                  <th>Kind</th>
-                  <th className="num">Size</th>
-                  <th>sha256</th>
-                </tr>
-              </thead>
-              <tbody>
-                {v.files.map((f, i) => (
-                  <tr key={`${f.set_id}:${f.filename}`}>
-                    <td className="num">{i + 1}</td>
-                    <td className="mono" title={f.filename}>{f.filename}</td>
-                    <td><span className={`pill ${f.kind === "artwork" ? "info" : "neutral"}`}>{f.kind}</span></td>
-                    <td className="num">{fmtBytes(f.size_bytes)}</td>
-                    <td className="mono dim" title={f.sha256}>{shortSha(f.sha256)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            <DataTable
+              rows={(v.files ?? []).map((f, i) => ({ ...f, n: i + 1 }))}
+              rowKey={(f) => `${f.set_id}:${f.filename}`}
+              columns={[
+                { key: "n", label: "#", width: 6, numeric: true, get: (f) => f.n },
+                { key: "file", label: "File", width: 44, className: "mono", get: (f) => f.filename },
+                { key: "kind", label: "Kind", width: 14, get: (f) => f.kind,
+                  render: (f) => <span className={`pill ${f.kind === "artwork" ? "info" : "neutral"}`}>{f.kind}</span> },
+                { key: "size", label: "Size", width: 14, numeric: true, get: (f) => f.size_bytes,
+                  render: (f) => fmtBytes(f.size_bytes) },
+                { key: "sha", label: "sha256", width: 22, className: "mono dim", get: (f) => shortSha(f.sha256),
+                  title: (f) => f.sha256 },
+              ]}
+            />
           </div>
         )}
-      </div>
+      </FoldSection>
 
       {editingParams ? (
         <ParamSetEditor
@@ -736,29 +722,34 @@ export default function VersionView({
         />
       ) : null}
 
-      <div className="card pad">
-        <h3 className="card-title">Where used</h3>
-        <p className="muted">
-          {v.where_used.runs} programming runs · {v.where_used.devices} devices
-          {v.where_used.channels.length ? ` · channels: ${v.where_used.channels.join(", ")}` : ""}
-        </p>
+      <FoldSection
+        title="Where used: batches"
+        count={v.where_used.batches.length}
+        foldKey={`version:${v.id}:where-used`}
+        chips={
+          <>
+            <StatChip n={v.where_used.runs.toLocaleString()}>programming runs</StatChip>
+            <StatChip n={v.where_used.devices.toLocaleString()}>devices</StatChip>
+            {v.where_used.channels.length ? <StatChip n={v.where_used.channels.join(", ")}>channels</StatChip> : null}
+          </>
+        }
+        actions={v.where_used.runs > 0 ? (
+          <Link className="btn btn-sm" to={`/production/devices?deployment_version=${v.id}`}>
+            See the devices
+          </Link>
+        ) : null}
+      >
         {v.where_used.batches.length ? (
           <p className="muted">
-            Batches:{" "}
             {v.where_used.batches.map((b, i) => (
               <span key={b.id}>
                 {i ? ", " : ""}
-                <Link className="val-link" to={`/runs/${b.id}`}>{b.label}</Link>
+                <Link className="val-link" to={`/production/batches/${b.id}`}>{b.label}</Link>
               </span>
             ))}
           </p>
-        ) : null}
-        {v.where_used.runs > 0 ? (
-          <Link className="val-link" to={`/production/devices?deployment_version=${v.id}`}>
-            See the devices programmed with this version
-          </Link>
-        ) : null}
-      </div>
+        ) : <p className="muted">No batch has used this version.</p>}
+      </FoldSection>
     </>
   );
 }

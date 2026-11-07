@@ -211,6 +211,25 @@ def test_a_real_disagreement_still_shows(db, world):
     assert row["delta_qty"] == -60, "JLC is 60 short of what we paid for, and says so"
 
 
+def test_a_row_names_the_jlc_items_behind_it(db, world):
+    """The page reads an item's raw payload by this id. Two LCSC codes of one part
+    are two items, and a part JLC does not hold has none."""
+    db.query(M.JlcStockItem).delete()
+    a = M.JlcStockItem(lcsc="CTEST001", description="scratch", mpn="TEST-PART-1",
+                       manufacturer="TESTCO", package="0402", qty=600, unit_price_usd=0.1)
+    b = M.JlcStockItem(lcsc="CTEST002", description="scratch", mpn="TEST-PART-1",
+                       manufacturer="TESTCO", package="0402", qty=400, unit_price_usd=0.1)
+    c = M.JlcStockItem(lcsc="CTEST003", description="scratch", mpn="TEST-JLC-ONLY",
+                       manufacturer="TESTCO", package="0402", qty=5, unit_price_usd=0.1)
+    db.add_all([a, b, c])
+    db.flush()
+    parts = ra.parts_stock(db)["parts"]
+    row = next(r for r in parts if r["mpn"] == "TEST-PART-1")
+    assert row["jlc_item_ids"] == sorted([a.id, b.id])
+    assert next(r for r in parts if r["key"] == f"jlc{c.id}")["jlc_item_ids"] == [c.id]
+    assert all(r["jlc_item_ids"] == [] for r in parts if r["state"] == "pool_only")
+
+
 # ------------------------------------------- what "written off" means
 
 

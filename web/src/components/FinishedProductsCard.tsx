@@ -1,6 +1,6 @@
 /** Finished devices we hold, one row per PRODUCT.
  *
- *  The Orders page's "Devices on the shelf" is the same shelf cut by BATCH —
+ *  "Devices on the shelf, by batch", on the same page, is that shelf cut by BATCH —
  *  "which batch still holds units". This is the cut a person asks for first:
  *  "how many dongles can we sell".
  *
@@ -28,11 +28,12 @@ import {
   isAbortError,
   type ProductStockRow,
 } from "../api";
-import { usd } from "../format";
+import { plnAmount } from "../format";
 import DataTable, { type Column } from "./DataTable";
+import FoldSection, { StatChip } from "./FoldSection";
 import { ErrorBanner, Spinner } from "./Ui";
 
-const CONDITION_WORD: Record<string, string> = {
+export const CONDITION_WORD: Record<string, string> = {
   ok: "sellable",
   faulty: "faulty",
   prototype: "prototype",
@@ -78,7 +79,7 @@ export default function FinishedProductsCard() {
   const totals = useMemo(() => ({
     in_stock: rows.reduce((n, r) => n + r.in_stock, 0),
     available: rows.reduce((n, r) => n + r.available, 0),
-    value: rows.reduce((n, r) => n + (r.value_usd ?? 0), 0),
+    value: rows.reduce((n, r) => n + (r.value_pln ?? 0), 0),
     no_batch: rows.reduce((n, r) => n + r.no_batch, 0),
     missing: rows.reduce((n, r) => n + r.missing, 0),
   }), [rows]);
@@ -153,33 +154,35 @@ export default function FinishedProductsCard() {
       label: "Value at cost",
       width: 12,
       numeric: true,
-      get: (r) => r.value_usd ?? 0,
+      get: (r) => r.value_pln ?? 0,
       title: (r) => "what the shelf cost to make, at each batch's own per-device actual"
         + (r.no_batch
           ? `. ${r.no_batch} device(s) name no batch, so nothing values them`
           : ""),
-      render: (r) => <>{usd(r.value_usd ?? 0, 0)}</>,
+      render: (r) => <>{plnAmount(r.value_pln ?? 0, 0)}</>,
     },
   ];
 
   return (
-    <div className="card pad">
-      <div className="toolbar">
-        <h2 className="card-title">Finished devices we hold</h2>
-        {stock ? (
-          <span className="toolbar-total">
-            {totals.in_stock.toLocaleString()} on the shelf ·{" "}
-            {totals.available.toLocaleString()} sellable · {usd(totals.value, 0)} at cost
-            {totals.missing ? ` · ${totals.missing.toLocaleString()} missing` : ""}
-          </span>
-        ) : null}
-      </div>
+    <FoldSection
+      title="Finished devices we hold"
+      count={rows.length}
+      foldKey="stock:finished-products"
+      chips={stock ? (
+        <>
+          {totals.missing ? <StatChip n={totals.missing.toLocaleString()} tone="warn">missing</StatChip> : null}
+          {totals.no_batch ? <StatChip n={totals.no_batch.toLocaleString()} tone="warn">name no batch</StatChip> : null}
+          <StatChip n={totals.in_stock.toLocaleString()}>on the shelf</StatChip>
+          <StatChip n={totals.available.toLocaleString()} tone="ok">sellable</StatChip>
+          {totals.missing && totals.no_batch ? null : <StatChip n={plnAmount(totals.value, 0)}>at cost</StatChip>}
+        </>
+      ) : undefined}
+    >
       <p className="card-subtitle">One row per product, open it for the conditions</p>
       <p className="muted dim">
         Only condition <code>ok</code> may ship, so a faulty or prototype unit is counted
         and visible here and can never leave. Open a row to see why, and click a condition
-        to list those exact serials. The same devices cut by BATCH are on{" "}
-        <Link to="/production/orders">Orders</Link>.
+        to list those exact serials. The next card shows the same devices cut by batch.
       </p>
       {totals.no_batch ? (
         // A device that names no batch is real stock and nothing values it —
@@ -188,8 +191,7 @@ export default function FinishedProductsCard() {
         <div className="banner-warn">
           <b>{totals.no_batch} device(s) on the shelf name no batch.</b> They are counted
           here and nothing values them, because per-device cost belongs to a batch. They are
-          also invisible to every per-batch figure, including &ldquo;Devices on the
-          shelf&rdquo; on <Link to="/production/orders">Orders</Link>. Link each one to the
+          also invisible to every per-batch figure, including the next card. Link each one to the
           batch that made it from its own page.
         </div>
       ) : null}
@@ -209,7 +211,7 @@ export default function FinishedProductsCard() {
           />
         </div>
       )}
-    </div>
+    </FoldSection>
   );
 }
 
@@ -226,35 +228,22 @@ function ConditionBreakdown({ row }: { row: ProductStockRow }) {
     return <p className="muted">Nothing on the shelf for {row.project} — every device has shipped.</p>;
   }
   return (
-    <table className="data">
-      <thead>
-        <tr>
-          <th>Condition</th>
-          <th className="num">Devices</th>
-          <th>What it means</th>
-          <th />
-        </tr>
-      </thead>
-      <tbody>
-        {parts.map(({ cond, n }) => (
-          <tr key={cond}>
-            <td>
-              {cond === "ok" ? (
-                <span className="pill ok">{CONDITION_WORD[cond]}</span>
-              ) : (
-                <span className="pill warn">{CONDITION_WORD[cond] ?? cond}</span>
-              )}
-            </td>
-            <td className="num">{n.toLocaleString()}</td>
-            <td className="muted">{CONDITION_WHY[cond] ?? "No rule recorded for this condition."}</td>
-            <td>
-              <Link className="btn btn-sm" to={devicesHref(row.project_id, cond)}>
-                Show the {n.toLocaleString()} serial{n === 1 ? "" : "s"}
-              </Link>
-            </td>
-          </tr>
-        ))}
-      </tbody>
-    </table>
+    <DataTable
+      rows={parts}
+      rowKey={(p) => p.cond}
+      columns={[
+        { key: "cond", label: "Condition", width: 16, get: (p) => CONDITION_WORD[p.cond] ?? p.cond,
+          render: (p) => <span className={`pill ${p.cond === "ok" ? "ok" : "warn"}`}>{CONDITION_WORD[p.cond] ?? p.cond}</span> },
+        { key: "n", label: "Devices", width: 10, numeric: true, get: (p) => p.n },
+        { key: "why", label: "What it means", width: 54, className: "muted",
+          get: (p) => CONDITION_WHY[p.cond] ?? "No rule recorded for this condition." },
+        { key: "act", label: "", width: 20, interactive: false, get: () => "",
+          render: (p) => (
+            <Link className="btn btn-sm" to={devicesHref(row.project_id, p.cond)} onClick={(e) => e.stopPropagation()}>
+              Show the {p.n.toLocaleString()} serial{p.n === 1 ? "" : "s"}
+            </Link>
+          ) },
+      ]}
+    />
   );
 }

@@ -48,8 +48,8 @@ class StateMapIn(BaseModel):
 
 @router.put("/state-maps")
 def put_state_map(body: StateMapIn, db: Session = Depends(get_db), _admin: M.User = Depends(require_admin)):
-    """State that an internal part is a state of another item. The next
-    rebuild reads its transformations' output lots that way."""
+    """State that an internal part is a state of another item. Nothing reads a
+    map for stock or cost yet: phase 4 of decision 0097 will."""
     part = db.get(M.Component, body.component_id)
     item = db.get(M.Component, body.item_component_id)
     if part is None or not part.internal:

@@ -549,7 +549,7 @@ export function toSpice(v: number | null | undefined): string {
  *  ounce is 17.5 um nominal; JLCPCB publishes its inner layers as 0.0152 mm — the
  *  etched thickness — and marking the fab's own figure as a mistake would be wrong.
  */
-export const COPPER_WEIGHTS: { mm: number; label: string; note: string }[] = [
+const COPPER_WEIGHTS: { mm: number; label: string; note: string }[] = [
   { mm: 0.0152, label: "½ oz", note: "half ounce as etched (JLCPCB inner layer)" },
   { mm: 0.0175, label: "½ oz", note: "half ounce, nominal" },
   { mm: 0.035, label: "1 oz", note: "one ounce" },
@@ -585,7 +585,7 @@ export const COPPER_CHOICES = COPPER_WEIGHTS.map((w) => `${formatSi(w.mm, "lengt
  *  One fab's ratio is not a law of physics, so this is a DEFAULT that keeps the two
  *  numbers consistent while somebody types, not a claim about every fab.
  */
-export const MASK_OVER_TRACE_RATIO = 0.5;
+const MASK_OVER_TRACE_RATIO = 0.5;
 
 export const maskOverTrace = (aboveSubstrateMm: number): number =>
   Math.round(aboveSubstrateMm * MASK_OVER_TRACE_RATIO * 1e6) / 1e6;

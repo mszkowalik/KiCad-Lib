@@ -1,11 +1,12 @@
 /** Where a component is used — every project whose latest ready snapshot
  *  places it, with boards, refs and quantities. The endpoint existed with no
  *  caller anywhere; a part's blast radius was invisible while editing it.
- *  Also the jump-off to the part's stock ledger on Production → Stock. */
+ *  Also the jump-off to the part's stock ledger on Stock → Parts. */
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { getWhereUsed, isAbortError, type WhereUsedRow } from "../api";
 import DataTable, { type Column } from "./DataTable";
+import FoldSection, { StatChip } from "./FoldSection";
 
 export default function WhereUsedCard({ compId, name }: { compId: number; name: string }) {
   const [rows, setRows] = useState<WhereUsedRow[] | null>(null);
@@ -28,7 +29,6 @@ export default function WhereUsedCard({ compId, name }: { compId: number; name: 
       project_id: r.project_id,
       project_name: r.project_name,
       ref: r.ref,
-      first: i === 0,
       ...u,
     })),
   );
@@ -63,9 +63,25 @@ export default function WhereUsedCard({ compId, name }: { compId: number; name: 
     { key: "qty", label: "Qty / device", width: 14, numeric: true, get: (u) => u.qty },
   ];
 
+  const dnp = flat.filter((u) => u.dnp).length;
+
   return (
-    <section className="card pad">
-      <h2 className="card-title">Where used</h2>
+    <FoldSection
+      title="Where used"
+      count={flat.length}
+      foldKey={`component:${compId}:where-used`}
+      chips={
+        <>
+          {rows?.length ? <StatChip n={rows.length}>{rows.length === 1 ? "project" : "projects"}</StatChip> : null}
+          {dnp ? <StatChip n={dnp}>DNP</StatChip> : null}
+        </>
+      }
+      actions={
+        <Link className="btn btn-sm" to={`/stock?q=${encodeURIComponent(name)}`} title="Stock and draws for this part">
+          Stock ledger
+        </Link>
+      }
+    >
       {rows === null ? (
         <p className="muted">Checking projects…</p>
       ) : rows.length === 0 ? (
@@ -81,12 +97,6 @@ export default function WhereUsedCard({ compId, name }: { compId: number; name: 
           />
         </div>
       )}
-      <p className="muted dim">
-        Stock and draws for this part:{" "}
-        <Link to={`/production/stock?q=${encodeURIComponent(name)}`}>
-          ledger on Production → Stock
-        </Link>
-      </p>
-    </section>
+    </FoldSection>
   );
 }

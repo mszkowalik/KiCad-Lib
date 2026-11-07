@@ -13,10 +13,11 @@ export function apply(m: Matrix, p: Pt | number[]): Pt {
   return [m[0] * p[0] + m[2] * p[1] + m[4], m[1] * p[0] + m[3] * p[1] + m[5]];
 }
 
-/** Only the rotation/reflection part — for directions, which carry no origin. */
-export function applyDir(m: Matrix, p: Pt): Pt {
-  return [m[0] * p[0] + m[2] * p[1], m[1] * p[0] + m[3] * p[1]];
-}
+/** A position as a map key, rounded to a thousandth of a millimetre. The netlister,
+ *  the junction finder and the current solver must all agree on it: two ends that
+ *  meet are one node only if they produce the same key. */
+export const pointKey = (x: number, y: number): string =>
+  `${Math.round(x * 1000)},${Math.round(y * 1000)}`;
 
 export function matrixOf(at: At, mirror: string): Matrix {
   // Must stay identical to sch_draw.placement_matrix: the overlay puts a

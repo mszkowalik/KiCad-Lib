@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   errorMessage,
   getWriteBatch,
@@ -10,8 +10,53 @@ import {
 } from "../../api";
 import { Link } from "react-router-dom";
 import { useAuth } from "../../auth";
+import DataTable, { type Column } from "../DataTable";
 import { useDialog } from "../Dialog";
 import { ErrorBanner, Spinner } from "../Ui";
+import { localWhen } from "../../format";
+
+const OP_TONE: Record<string, string> = { insert: "ok", delete: "err" };
+
+const ROW_COLUMNS: Column<WriteBatchRow>[] = [
+  { key: "table", label: "Table", width: 22, className: "mono", get: (r) => r.table },
+  { key: "row", label: "Row", width: 10, className: "mono", get: (r) => r.row_id },
+  { key: "op", label: "Op", width: 10, get: (r) => r.op,
+    render: (r) => <span className={`pill ${OP_TONE[r.op] ?? "warn"}`}>{r.op}</span> },
+  { key: "before", label: "Before", width: 58, className: "mono",
+    get: (r) => (r.before ? JSON.stringify(r.before) : ""),
+    render: (r) => (r.before ? JSON.stringify(r.before)
+      : <span className="dim">— (insert: reversal deletes the row)</span>) },
+];
+
+/** Which rows a batch touched and how, read when its row opens. */
+function BatchRows({ batch }: { batch: WriteBatch }) {
+  // History → Everyone is admin-only, so only an admin is offered the link to it.
+  const { isAdmin } = useAuth();
+  const [rows, setRows] = useState<WriteBatchRow[] | null>(null);
+  const [error, setError] = useState("");
+  useEffect(() => {
+    const ac = new AbortController();
+    getWriteBatch(batch.id, ac.signal)
+      .then((d) => setRows(d.rows))
+      .catch((err) => { if (!isAbortError(err)) setError(errorMessage(err)); });
+    return () => ac.abort();
+  }, [batch.id]);
+  return (
+    <>
+      {isAdmin && batch.request_id ? (
+        <p className="muted">
+          <Link className="comp-link" to={`/history/all?request=${batch.request_id}`}>
+            Everything this request wrote →
+          </Link>{" "}
+          the request, its events and every row it changed, in History → Everyone.
+        </p>
+      ) : null}
+      <ErrorBanner message={error} />
+      {rows === null && !error ? <Spinner label="loading batch rows" /> : null}
+      {rows !== null ? <DataTable rows={rows} rowKey={(r) => r.id} columns={ROW_COLUMNS} /> : null}
+    </>
+  );
+}
 
 /**
  * Every write that moved money, and the button that puts it back.
@@ -28,30 +73,11 @@ import { ErrorBanner, Spinner } from "../Ui";
  */
 export default function WriteLog({ onReversed }: { onReversed?: () => void } = {}) {
   const dialog = useDialog();
-  // Admin → Activity is admin-only, so only an admin is offered the link to it.
-  const { isAdmin } = useAuth();
   const [batches, setBatches] = useState<WriteBatch[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState<number | null>(null);
   const [plan, setPlan] = useState<Record<number, string>>({});
-  // Row-level detail, loaded on demand: which rows a batch touched and how.
-  const [open, setOpen] = useState<number | null>(null);
-  const [detail, setDetail] = useState<Record<number, WriteBatchRow[] | string>>({});
-
-  const toggleDetail = (id: number) => {
-    if (open === id) {
-      setOpen(null);
-      return;
-    }
-    setOpen(id);
-    if (!detail[id]) {
-      getWriteBatch(id)
-        .then((d) => setDetail((p) => ({ ...p, [id]: d.rows })))
-        .catch((err) => setDetail((p) => ({ ...p, [id]: errorMessage(err) })));
-    }
-  };
-
   const load = useCallback((signal?: AbortSignal) => {
     setLoading(true);
     getWriteBatches({ limit: 40 }, signal)
@@ -110,168 +136,70 @@ export default function WriteLog({ onReversed }: { onReversed?: () => void } = {
     }
   }
 
-  if (loading) return <Spinner label="loading the write log" />;
+  // Only the first load: a reload after an undo keeps the table and its open row.
+  if (loading && !batches.length) return <Spinner label="loading the write log" />;
+
+  // The undo column is widest because it carries a refusal naming the rows that
+  // block the reversal. That text is the only actionable part, so it wraps.
+  const columns: Column<WriteBatch>[] = [
+    { key: "id", label: "#", width: 8, className: "mono", get: (b) => b.id },
+    { key: "kind", label: "What", width: 15, get: (b) => b.kind,
+      render: (b) => (
+        <>
+          {b.kind}
+          {b.kind === "reverse" ? <span className="pill neutral">undo</span> : null}
+        </>
+      ) },
+    { key: "source", label: "Source", width: 13, className: "mono", get: (b) => b.source_ref || "—" },
+    { key: "when", label: "When", width: 17, className: "muted dim", get: (b) => b.created_at ?? "",
+      render: (b) => (b.created_at ? localWhen(b.created_at) : "—") },
+    { key: "by", label: "By", width: 13, get: (b) => b.actor || "—" },
+    { key: "rows", label: "Rows", width: 12, get: (b) => b.row_count,
+      render: (b) => (
+        <>
+          {b.row_count}{" "}
+          <span className="muted dim">({Object.entries(b.by_op).map(([k, v]) => `${v} ${k}`).join(", ")})</span>
+        </>
+      ) },
+    { key: "undo", label: "Undo", width: 22, interactive: false, get: () => "",
+      render: (b) => (
+        <>
+          {b.reversed_at ? (
+            <span className="pill neutral">reversed by {b.reversed_by_batch_id}</span>
+          ) : (
+            <div className="btn-row">
+              <button className="btn btn-sm" disabled={busy === b.id}
+                onClick={(e) => { e.stopPropagation(); void preview(b); }}>
+                Check
+              </button>
+              <button className="btn btn-sm btn-danger" disabled={busy === b.id}
+                onClick={(e) => { e.stopPropagation(); void undo(b); }}>
+                Undo
+              </button>
+            </div>
+          )}
+          {plan[b.id] ? <div className="muted dim cell-wrap">{plan[b.id]}</div> : null}
+        </>
+      ) },
+  ];
 
   return (
-    <div className="card">
+    <div className="card pad">
       <h2 className="card-title">Recent writes</h2>
-      <p className="card-subtitle">
+      <p className="muted dim">
         Everything that moved money, newest first. Reversing re-asserts the register against the
         state before the batch ran — not against zero — so a standing gap cannot make an undo
         impossible.
       </p>
       <ErrorBanner message={error} />
-      {batches.length === 0 && (
-        <p className="muted">
-          Nothing yet. Imports and decisions applied through the UI appear here, each undoable.
-        </p>
-      )}
       <div className="table-wrap">
-        {batches.length > 0 && (
-          <table className="data data-fixed write-log-table">
-            <thead>
-              <tr>
-                <th>#</th>
-                <th>what</th>
-                <th>source</th>
-                <th>when</th>
-                <th>by</th>
-                <th>rows</th>
-                <th>undo</th>
-              </tr>
-            </thead>
-            <tbody>
-              {batches.map((b) => {
-                const reversed = !!b.reversed_at;
-                const ops = Object.entries(b.by_op)
-                  .map(([k, v]) => `${v} ${k}`)
-                  .join(", ");
-                return (
-                  <Fragment key={b.id}>
-                  <tr className="ledger-row" onClick={() => toggleDetail(b.id)}
-                      title="Click for the rows this batch touched">
-                    <td className="mono">
-                      <span className="ledger-caret">{open === b.id ? "▾" : "▸"}</span>
-                      {b.id}
-                    </td>
-                    <td>
-                      {b.kind}
-                      {b.kind === "reverse" && <span className="pill neutral">undo</span>}
-                    </td>
-                    <td className="mono cell-desc">{b.source_ref || "—"}</td>
-                    <td className="muted dim">
-                      {b.created_at ? new Date(b.created_at).toLocaleString() : "—"}
-                    </td>
-                    <td title={b.actor}>{b.actor || "—"}</td>
-                    <td>
-                      {b.row_count} <span className="muted dim">({ops})</span>
-                    </td>
-                    <td>
-                      {reversed ? (
-                        <span className="pill neutral">
-                          reversed by {b.reversed_by_batch_id}
-                        </span>
-                      ) : (
-                        <div className="btn-row">
-                          <button
-                            className="btn btn-sm"
-                            disabled={busy === b.id}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              void preview(b);
-                            }}
-                          >
-                            Check
-                          </button>
-                          <button
-                            className="btn btn-sm btn-danger"
-                            disabled={busy === b.id}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              void undo(b);
-                            }}
-                          >
-                            Undo
-                          </button>
-                        </div>
-                      )}
-                      {plan[b.id] && <div className="muted dim">{plan[b.id]}</div>}
-                    </td>
-                  </tr>
-                  {open === b.id && (
-                    <tr>
-                      <td colSpan={7} className="ledger-cell">
-                        {isAdmin && b.request_id ? (
-                          <p className="muted">
-                            <Link
-                              className="comp-link"
-                              to={`/admin?tab=activity&request=${b.request_id}`}
-                            >
-                              Everything this request wrote →
-                            </Link>{" "}
-                            the request, its events and every row it changed, in Admin → Activity.
-                          </p>
-                        ) : null}
-                        {detail[b.id] == null ? (
-                          <Spinner label="loading batch rows" />
-                        ) : typeof detail[b.id] === "string" ? (
-                          <ErrorBanner message={detail[b.id] as string} />
-                        ) : (
-                          <div className="table-wrap">
-                            <table className="data">
-                              <thead>
-                                <tr>
-                                  <th>table</th>
-                                  <th>row</th>
-                                  <th>op</th>
-                                  <th>before</th>
-                                </tr>
-                              </thead>
-                              <tbody>
-                                {(detail[b.id] as WriteBatchRow[]).map((r) => (
-                                  <tr key={r.id}>
-                                    <td className="mono">{r.table}</td>
-                                    <td className="mono">{r.row_id}</td>
-                                    <td>
-                                      <span
-                                        className={`pill ${
-                                          r.op === "insert"
-                                            ? "ok"
-                                            : r.op === "delete"
-                                              ? "err"
-                                              : "warn"
-                                        }`}
-                                      >
-                                        {r.op}
-                                      </span>
-                                    </td>
-                                    <td
-                                      className="mono cell-desc"
-                                      title={r.before ? JSON.stringify(r.before) : ""}
-                                    >
-                                      {r.before ? (
-                                        JSON.stringify(r.before)
-                                      ) : (
-                                        <span className="dim">
-                                          — (insert: reversal deletes the row)
-                                        </span>
-                                      )}
-                                    </td>
-                                  </tr>
-                                ))}
-                              </tbody>
-                            </table>
-                          </div>
-                        )}
-                      </td>
-                    </tr>
-                  )}
-                  </Fragment>
-                );
-              })}
-            </tbody>
-          </table>
-        )}
+        <DataTable
+          rows={batches}
+          rowKey={(b) => b.id}
+          columns={columns}
+          expand={(b) => <BatchRows batch={b} />}
+          empty="Nothing yet. Imports and decisions applied through the UI appear here, each undoable."
+        />
       </div>
     </div>
   );

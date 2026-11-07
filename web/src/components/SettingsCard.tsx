@@ -23,6 +23,7 @@ import {
 } from "../api";
 import { CheckField } from "./Field";
 import { useDialog } from "./Dialog";
+import FoldSection, { StatChip } from "./FoldSection";
 import InfoTip from "./InfoTip";
 import { ErrorBanner, Spinner } from "./Ui";
 
@@ -138,7 +139,7 @@ export default function SettingsCard() {
   if (groups === null && !error) {
     return (
       <div className="card pad">
-        <h2>Configuration</h2>
+        <h2 className="card-title">Configuration</h2>
         <Spinner label="Loading settings" />
       </div>
     );
@@ -146,7 +147,7 @@ export default function SettingsCard() {
 
   return (
     <div className="card pad">
-      <h2>Configuration</h2>
+      <h2 className="card-title">Configuration</h2>
       <p className="muted">
         A value falls back to the environment. Saving one stores an override that wins over it,
         and Revert drops it.{" "}
@@ -175,8 +176,20 @@ export default function SettingsCard() {
           empty. That button wrote the empty string, which is not how a stored
           secret is cleared (Revert is); typing is what makes the row dirty. */}
       {(groups ?? []).map((g) => (
-        <div key={g.group}>
-          <h3 className="card-subtitle">{g.group}</h3>
+        <FoldSection
+          key={g.group}
+          bare
+          title={g.group}
+          count={g.items.length}
+          foldKey={`settings:${g.group}`}
+          forceOpen={g.items.some((it) => edits[it.key] !== undefined && edits[it.key] !== asText(it))}
+          chips={
+            <>
+              {g.items.some((it) => edits[it.key] !== undefined && edits[it.key] !== asText(it)) ? <StatChip tone="warn">not saved</StatChip> : null}
+              {g.items.some((it) => it.source === "database") ? <StatChip n={g.items.filter((it) => it.source === "database").length}>stored</StatChip> : null}
+            </>
+          }
+        >
           <table className="kv settings-table">
             <tbody>
               {g.items.map((it) => {
@@ -219,7 +232,7 @@ export default function SettingsCard() {
               })}
             </tbody>
           </table>
-        </div>
+        </FoldSection>
       ))}
     </div>
   );

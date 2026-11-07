@@ -124,7 +124,6 @@ def _project_json(db: Session, p: M.Project) -> dict:
         "git_credential": ({"id": p.git_credential.id, "name": p.git_credential.name}
                            if p.git_credential else None),
         "default_branch": p.default_branch,
-        "display_currency": p.display_currency,
         "effective_currency": project_bom.display_currency(p),
         "description": p.description,
         "created_at": p.created_at.isoformat(),
@@ -145,7 +144,6 @@ class ProjectIn(BaseModel):
     git_credential_id: int | None = None
     git_token: str | None = None
     default_branch: str = "main"
-    display_currency: str | None = None
     description: str = ""
 
 
@@ -157,7 +155,6 @@ class ProjectPatch(BaseModel):
     # "" clears the project's own token; None leaves it unchanged
     git_token: str | None = None
     default_branch: str | None = None
-    display_currency: str | None = None
     description: str | None = None
 
 
@@ -196,7 +193,6 @@ def create_project(body: ProjectIn, request: Request, db: Session = Depends(get_
         git_credential_id=_valid_credential(db, body.git_credential_id),
         git_token_enc=encrypt_token(body.git_token) if body.git_token else None,
         default_branch=body.default_branch.strip() or "main",
-        display_currency=(body.display_currency or "").upper() or None,
         description=body.description,
     )
     db.add(p)
@@ -228,8 +224,6 @@ def update_project(project_id: int, body: ProjectPatch, db: Session = Depends(ge
         p.git_token_enc = encrypt_token(body.git_token) if body.git_token else None
     if body.default_branch is not None and body.default_branch.strip():
         p.default_branch = body.default_branch.strip()
-    if body.display_currency is not None:
-        p.display_currency = body.display_currency.upper() or None
     if body.description is not None:
         p.description = body.description
     audit(db, "project.update", "project", p.id)
@@ -300,29 +294,57 @@ def project_history(project_id: int, ref: str = "", limit: int = Query(100, le=5
     }
 
 
+def _commit_in_mirror(project_id: int, sha: str) -> None:
+    """Refuse what git cannot be asked. A project with no mirror has nothing to
+    read, and `subprocess` answers a missing directory with an exception that
+    would reach the browser as a bare 500. `sha` lands in a git command line, so
+    it must not read as an option."""
+    if not gitrepo.has_mirror(project_id):
+        raise HTTPException(409, "repository not fetched yet — run fetch first")
+    if sha.startswith("-"):
+        raise HTTPException(422, f"{sha!r} does not name a commit")
+
+
 @router.get("/projects/{project_id}/files")
 def project_files(project_id: int, sha: str, db: Session = Depends(get_db)):
     _project(db, project_id)
+    _commit_in_mirror(project_id, sha)
     try:
         return gitrepo.list_files(project_id, sha)
     except gitrepo.GitError as e:
         raise HTTPException(404, str(e)) from e
 
 
+_FILE_MEDIA = {
+    ".pdf": "application/pdf", ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
+    ".gif": "image/gif", ".webp": "image/webp", ".svg": "image/svg+xml",
+    ".step": "application/step", ".stp": "application/step", ".zip": "application/zip",
+}
+
+
 @router.get("/projects/{project_id}/file")
 def project_file(project_id: int, sha: str, path: str, db: Session = Depends(get_db)):
+    """One file at one commit, to read in a tab. `inline` with its own name, so the
+    browser shows a PDF or a text file and a save keeps the name. A file with no
+    known type is text unless it holds a NUL, because a binary sent as text prints
+    as noise."""
     _project(db, project_id)
+    _commit_in_mirror(project_id, sha)
     try:
         data = gitrepo.show_file(project_id, sha, path)
     except gitrepo.GitError as e:
         raise HTTPException(404, str(e)) from e
-    media = "text/plain; charset=utf-8"
-    lower = path.lower()
-    for ext, m in ((".pdf", "application/pdf"), (".png", "image/png"), (".jpg", "image/jpeg"),
-                   (".svg", "image/svg+xml"), (".step", "application/step"), (".zip", "application/zip")):
-        if lower.endswith(ext):
-            media = m
-    return Response(content=data, media_type=media)
+    name = path.rsplit("/", 1)[-1]
+    ext = "." + name.rsplit(".", 1)[-1].lower() if "." in name else ""
+    binary = b"\0" in data[:8192]
+    media = _FILE_MEDIA.get(ext) or ("application/octet-stream" if binary else "text/plain; charset=utf-8")
+    headers = {"Content-Disposition": content_disposition("inline", name)}
+    # A repository's SVG can carry a script, and opened as a page it would run on
+    # this origin with the reader's session. The viewer draws it in an <img>, where
+    # this changes nothing.
+    if ext == ".svg":
+        headers["Content-Security-Policy"] = "sandbox"
+    return Response(content=data, media_type=media, headers=headers)
 
 
 # ---------------------------------------------------------------- snapshots
@@ -370,6 +392,12 @@ def get_snapshot(snapshot_id: int, db: Session = Depends(get_db)):
 def delete_snapshot(snapshot_id: int, db: Session = Depends(get_db)):
     s = _snapshot(db, snapshot_id)
     project_id, sha = s.project_id, s.sha
+    # `snapshot_id` on a batch is a soft pointer, so nothing else stops this: a
+    # batch would keep a planned BOM that points at nothing.
+    pinned = [r.label for r in db.query(M.ProductionRun).filter_by(snapshot_id=snapshot_id).all()]
+    if pinned:
+        raise HTTPException(409, f"batches use this snapshot for their planned BOM: {', '.join(pinned)}. "
+                                 "Point them at another commit first.")
     db.delete(s)
     audit(db, "snapshot.delete", "project_snapshot", snapshot_id)
     db.commit()
@@ -442,13 +470,6 @@ def _rel_src(db: Session, snapshot_id: int, board: str, kind: str) -> tuple[M.Pr
         raise HTTPException(404, f"board has no {kind} file")
     gitrepo.materialize(s.project_id, s.sha)  # re-create checkout if pruned
     return s, b, project_render.rel_checkout(s.project_id, s.sha, b[kind])
-
-
-@router.get("/snapshots/{snapshot_id}/boards/{board}/layers")
-def board_layers(snapshot_id: int, board: str, db: Session = Depends(get_db)):
-    s = _snapshot(db, snapshot_id)
-    b = _board(s, board)
-    return {"layers": b.get("layers") or [], "variants": b.get("variants") or []}
 
 
 @router.get("/snapshots/{snapshot_id}/boards/{board}/layer.svg")
@@ -853,8 +874,9 @@ class RateIn(BaseModel):
     source: str = "manual"
 
 
-@router.get("/fx")
+@router.get("/fx", openapi_extra={"x-agent-tool": "list_exchange_rates"})
 def list_rates(db: Session = Depends(get_db)):
+    """The stored exchange rates. `rate_usd` is the USD value of one unit."""
     rows = db.query(M.ExchangeRate).order_by(M.ExchangeRate.currency).all()
     return [
         {"currency": r.currency, "rate_usd": r.rate_usd, "source": r.source,

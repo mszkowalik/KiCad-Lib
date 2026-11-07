@@ -41,7 +41,7 @@ def user_json(user) -> dict:
         "display_name": user.display_name,
         "role": user.role,
         "is_admin": user.role == "admin",
-        "theme": user.theme or "system",
+        "theme": user.theme or "dark",
     }
 
 

@@ -33,6 +33,15 @@ from app.services import project_bom
 from app.services import twins as T
 
 
+@pytest.fixture(autouse=True)
+def _figures_in_usd(monkeypatch):
+    """These tests read cost totals as USD. The platform displays PLN (decision
+    0103), and the rate between the two is not what they check."""
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "default_currency", "USD")
+
+
 @pytest.fixture
 def db():
     """One transaction, never committed: the dev database is left untouched."""
@@ -225,3 +234,24 @@ def test_the_batch_economics_leave_the_line_out_and_carry_the_warnings(db, world
     # Ten devices: the resistor from the BOM, everything else from the steps.
     assert eff["totals"]["parts_total"] == pytest.approx(sum(li["line_total"] for li in counted))
     assert not any(li.get("refs") == "ENC1" for li in counted)
+
+
+def test_an_override_with_no_currency_is_usd_and_a_named_one_is_kept(db, world, monkeypatch):
+    """Batch 8's assembly override is a bare 1.878288, written while the project
+    displayed USD. Read as PLN after decision 0103 it would lose three quarters."""
+    monkeypatch.setattr(project_bom.settings, "default_currency", "PLN")
+    monkeypatch.setattr(project_bom.fx, "rates_at", lambda _db, _at: {"USD": 1.0, "PLN": 0.25})
+    run = world["run"]
+    key = project_bom.run_effective(db, run)["lines"][0]["key"]
+
+    run.overrides = {key: {"unit_price": 2.0}}
+    eff = project_bom.run_effective(db, run)
+    line = next(li for li in eff["lines"] if li["key"] == key)
+    assert eff["currency"] == "PLN"
+    assert line["unit_price"] == 8.0
+    assert line["unit_usd"] == 2.0
+
+    run.overrides = {key: {"unit_price": 2.0, "currency": "PLN"}}
+    line = next(li for li in project_bom.run_effective(db, run)["lines"] if li["key"] == key)
+    assert line["unit_price"] == 2.0
+    assert line["unit_usd"] == 0.5

@@ -1,6 +1,6 @@
 /** Production batches of this project — a plain table. Everything about one batch
- *  (economics, materials, costs, files, serials, the sale) lives on the run's
- *  own page at /runs/:id; this tab only lists, creates and deletes. */
+ *  (economics, materials, costs, files, serials) lives on its own page at
+ *  /production/batches/:id; this tab only lists, creates and deletes. */
 import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import {
@@ -15,6 +15,9 @@ import {
   type SnapshotInfo,
 } from "../../api";
 import { useDialog } from "../Dialog";
+import Field, { FieldGrid } from "../Field";
+import FoldSection, { StatChip } from "../FoldSection";
+import NumberInput from "../NumberInput";
 import { ErrorBanner, Spinner, StatusPill } from "../Ui";
 import DataTable, { type Column } from "../DataTable";
 
@@ -70,7 +73,7 @@ export default function RunsTab({ project, snapshots, snapshot, board, variant }
       setCreating(false);
       setShowNew(false);
       setLabel("");
-      navigate(`/runs/${r.id}`);
+      navigate(`/production/batches/${r.id}`);
     } catch (err) {
       setCreating(false);
       // The design-review gate: a 409 naming what is unsigned / unreviewed /
@@ -115,7 +118,7 @@ export default function RunsTab({ project, snapshots, snapshot, board, variant }
       width: 24,
       get: (r) => r.label,
       render: (r) => (
-        <Link className="comp-link" to={`/runs/${r.id}`} onClick={(e) => e.stopPropagation()}>
+        <Link className="comp-link" to={`/production/batches/${r.id}`} onClick={(e) => e.stopPropagation()}>
           {r.label}
         </Link>
       ),
@@ -152,7 +155,7 @@ export default function RunsTab({ project, snapshots, snapshot, board, variant }
       get: () => "",
       render: (r) => (
         <>
-          <Link className="btn btn-sm" to={`/runs/${r.id}`} onClick={(e) => e.stopPropagation()}>
+          <Link className="btn btn-sm" to={`/production/batches/${r.id}`} onClick={(e) => e.stopPropagation()}>
             Open
           </Link>{" "}
           <button
@@ -164,7 +167,7 @@ export default function RunsTab({ project, snapshots, snapshot, board, variant }
                 { title: "Delete production batch", confirmLabel: "Delete", tone: "danger" },
               );
               if (!confirmed) return;
-              deleteRun(r.id).then(() => load());
+              deleteRun(r.id).then(() => load()).catch((err) => setError(errorMessage(err)));
             }}
           >
             Delete
@@ -178,7 +181,6 @@ export default function RunsTab({ project, snapshots, snapshot, board, variant }
     <div>
       {error ? <ErrorBanner message={error} /> : null}
       <div className="toolbar">
-        <span className="toolbar-total">{runs ? `${runs.length} batch(es)` : ""}</span>
         <button className="btn btn-primary btn-sm" onClick={() => setShowNew((v) => !v)}>
           {showNew ? "Cancel" : "New production batch"}
         </button>
@@ -186,23 +188,19 @@ export default function RunsTab({ project, snapshots, snapshot, board, variant }
 
       {showNew ? (
         <div className="card pad edit-card">
-          <div className="field-grid">
-            <label>
-              Label
-              <input className="text" value={label} placeholder="Run #1 — prototypes"
+          <FieldGrid>
+            <Field label="Label">
+              <input className="text" value={label} placeholder="Batch 1 — prototypes"
                 onChange={(e) => setLabel(e.target.value)} />
-            </label>
-            <label>
-              Quantity (devices)
-              <input className="text" type="number" min="1" value={qty}
-                onChange={(e) => setQty(Math.max(1, Number(e.target.value)))} />
-            </label>
-            <label>
-              Date
+            </Field>
+            <Field label="Quantity (devices)">
+              <NumberInput className="text" value={qty} min={1} onChange={setQty} />
+            </Field>
+            <Field label="Date">
               <input className="text" type="date" value={runDate}
                 onChange={(e) => setRunDate(e.target.value)} />
-            </label>
-          </div>
+            </Field>
+          </FieldGrid>
           <p className="muted">
             {snapshot
               ? `Prices the BOM of ${snapshot.ref_name} / ${board}${variant ? ` (variant ${variant})` : ""} from price history at the run date (today if empty).`
@@ -214,19 +212,28 @@ export default function RunsTab({ project, snapshots, snapshot, board, variant }
         </div>
       ) : null}
 
-      {runs === null && !error ? <Spinner label="Loading runs" /> : null}
+      {runs === null && !error ? <Spinner label="Loading batches" /> : null}
       {runs && runs.length > 0 ? (
-        <div className="card table-wrap">
-          <DataTable
-            columns={cols}
-            rows={runs}
-            rowKey={(r) => r.id}
-            persistKey="project-runs"
-            rowClass={() => "ledger-row"}
-            onRowClick={(r) => navigate(`/runs/${r.id}`)}
-            empty="No production batches yet."
-          />
-        </div>
+        <FoldSection
+          title="Batches"
+          count={runs.length}
+          foldKey={`project:${project.id}:batches`}
+          chips={[...new Set(runs.map((r) => r.status))].slice(0, 4).map((st) => (
+            <StatChip key={st} n={runs.filter((r) => r.status === st).length}>{st}</StatChip>
+          ))}
+        >
+          <div className="table-wrap">
+            <DataTable
+              columns={cols}
+              rows={runs}
+              rowKey={(r) => r.id}
+              persistKey="project-runs"
+              rowClass={() => "ledger-row"}
+              onRowClick={(r) => navigate(`/production/batches/${r.id}`)}
+              empty="No production batches yet."
+            />
+          </div>
+        </FoldSection>
       ) : null}
       {runs && runs.length === 0 && !showNew ? (
         <p className="muted">No production batches yet.</p>

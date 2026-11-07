@@ -4,6 +4,10 @@ React + TypeScript + Vite frontend for Henry, the platform. Talks to the
 API at `api`. Routing is in `src/App.tsx`; pages live in `src/pages/`,
 shared pieces in `src/components/`, and the typed API client is `src/api.ts`.
 
+**Before you add a screen, a tab or a button, read
+[docs/reference/ui-map.md](../docs/reference/ui-map.md).** It says where a function
+goes and how a screen behaves. This file says how it looks.
+
 ## Layout — the deep rules live beside the code
 
 A CLAUDE.md in a subdirectory is read when you open a file in it. This file
@@ -27,7 +31,7 @@ it governs.
 ## Reuse the existing style system — do NOT create new styles
 
 This is the most important rule for this directory. The UI has **one** global
-stylesheet, `src/styles.css` (~190 classes, one CSS-variable palette, full
+stylesheet, `src/styles.css` (one CSS-variable palette, full
 light/dark theming). New work must **reuse** it. When you build a screen or
 component:
 
@@ -39,7 +43,8 @@ component:
   variables: `var(--bg)`, `var(--surface)`, `var(--surface-2)`, `var(--text)`,
   `var(--muted)`, `var(--line)`, `var(--accent)` / `--accent-soft`,
   `var(--copper)` / `--copper-soft`, `var(--ok)` / `--warn)` / `--err)` (+ their
-  `-soft` fills), `var(--mono)`, `var(--sans)`, `var(--radius)`. Raw hex codes,
+  `-soft` fills), `var(--mono)`, `var(--sans)`, `var(--radius)` and its scale
+  (`--radius-lg`, `-sm`, `-xs`, `-2xs`, `-3xs`). Raw hex codes,
   `px` colors, or a second font stack are not allowed in components.
 - **Avoid inline `style={{…}}`.** Inline styles bypass the theme and the design
   system. Use a class. Only exception: a genuinely dynamic value that can't be a
@@ -64,6 +69,10 @@ component:
     `line-height: normal` whatever the rule says and its intrinsic box is a
     pixel taller again, so it never matched the `<input>` beside it. Three
     heights, and a fourth is a bug.
+  - **A class that sets an appearance on a control is element-qualified.** The
+    control rule is `input.text` (specificity 0,1,1), so a bare `.x` (0,1,0) on the
+    same box loses and nothing says so. `input.mono`, `textarea.skill-textarea` and
+    `input.needs-answer` are written this way for that reason.
 
 - **A value with a UNIT is an `SiInput`, on every page.** Quantities:
   `length` (base mm), `frequency` (Hz), `resistance` (Ω), `percent`,
@@ -155,6 +164,14 @@ component:
   - Modifiers compose onto `.text` rather than replacing it: `num-input`
     (90px, tabular), `modal-input` (full width in a dialog), `mono`. That is the
     pattern for anything narrow or special — never a new standalone input class.
+  - **`<Field inline>` puts the label beside the control**, for a toolbar. A
+    caller's class carries the size only (`sim-runbar-pick`). `.sim-knob` is not
+    this shape: it is a block row in the body text colour and size, and a live
+    knob reads its `onBlur` on the label, so it stays a plain `<label>`.
+  - **`<Field group>` is for a field that holds labels of its own**: a
+    `CheckField` or a `FilePick`. Its frame is a `<div>`, because a label must not
+    hold a label. Inside a `label`, a click on the outer text works the inner
+    control as well.
 
 - **Every page is `.page` unless it has a reason not to.** `min(1680px,
   max(1100px, 80%))`. `.page-wide` (the simulator) and the browse sidebar layout
@@ -173,7 +190,8 @@ component:
   footprint) use the shared `components/CommentsPanel.tsx`
   (`<CommentsPanel kind="components|symbols|footprints" id={n} noun="…" />`) —
   it wraps the generic `getComments/addComment/deleteComment(kind, id)` client
-  fns; never re-implement the notes list/form.
+  fns; never re-implement the notes list/form. A figure and its label is a
+  `components/CountTile.tsx`, with one label style: never a local `.count-tile`.
 - **EVERY list goes through `components/DataTable.tsx`** — sortable header,
   per-column filter row, fixed column widths with ellipsis (never scrolls
   horizontally), optional expandable rows, and chunked rendering. Pass
@@ -198,6 +216,36 @@ component:
   | `onVisibleChange` | the filtered rows, for a toolbar acting on "everything shown" (the browser's bulk sign-off selects the FILTERED set) |
   | `footer` | where a server-paged list puts its own loading sentinel |
 
+- **A secondary list goes in `components/FoldSection.tsx`, and the rule is one
+  rule on every page** (decision 0103). A list that is not the subject of its page
+  starts folded above `FOLD_LIMIT` (8) rows, and the folded line gives the count,
+  up to four `StatChip`s and the main action. A count that needs action gets an
+  amber or red chip, so a fold never hides a problem. `foldKey` remembers the
+  choice. A short list has no toggle. The MAIN list of a page never folds: the same
+  chips sit above its filter row, and a click on one (`NarrowChip`) narrows the list. A tab with
+  more than 4 cards folds the quiet ones with `limit={-1}`, which keeps the toggle
+  at any count. A card that holds a problem keeps the normal limit. A list that
+  reads its rows when it opens puts the fetch in a child component, because the
+  children render only while open.
+- **Tabs are `components/TabStrip.tsx`.** Above 7 tabs, a strip gets group labels.
+  Never write the `.seg.proj-tabs` loop by hand again.
+- **Money goes through `format.ts`, and the unit is a rule** (decision 0103). A
+  total is PLN, a component's unit price is USD, an invoice is in its own currency.
+  `pln(usd, rate)` prints a stored USD figure: `rate` is the `pln_per_usd` of the
+  figure's batch, or `useTodayRate()` for a figure with no batch. `plnAmount` prints
+  a figure the server already sums in PLN, because a sum over batches has many rates.
+  In a column too narrow for the suffix, `plnNumber` prints the number and the header
+  names the unit. A PLN figure is about 4 times a USD one plus a suffix, so measure
+  the column: `td.scrollWidth - td.clientWidth`.
+- **A check that passes draws nothing.** "22 of 22 positions reconcile" is a line
+  nobody acts on, and it trains a reader to skip the card (user, 2026-11-07). Draw the
+  card when something is wrong or when the check could not run. A card that may stay
+  empty has no spinner either, or it flashes on every load.
+- **A scanner is `components/ScanList.tsx`** (`useScanList`, `ScanBox`). It is a
+  keyboard that types a code and Enter, so a wrong code is a row and a sound, never
+  a dialog: a dialog takes the focus, the next scan only closes it, and that code
+  is lost. The box keeps the focus, and the list survives a reload.
+  A job that takes many serials at once, in a dialog, uses its `SerialsField`.
 - **`width` is a budget, and a pill does not fit in a small one.** The `width`
   numbers must sum to 100 (they are `<col>` percentages on a
   `table-layout: fixed` table) and each one has to hold the WIDEST thing the
@@ -245,7 +293,8 @@ component:
   and page from the server — the change feed (keyset cursor) and the device
   list (offset) — and both mark their columns `serverFilter` and set
   `serverSort`, because a browser holding 100 of 5502 rows cannot honestly
-  report "no rows match". Everything else fetches its set and renders it in
+  report "no rows match". Their filter boxes reach the server through
+  `components/useDebounced.ts`. Everything else fetches its set and renders it in
   chunks, which keeps filters instant and exact. A column whose filter cannot
   reach the server on a paged list must be `interactive: false` rather than
   offering a box that quietly searches one page.
@@ -266,6 +315,11 @@ component:
 
 ### The theme is ONE selector, and JavaScript decides when it applies
 
+**Dark is the default, and a browser check runs on dark** (user, 2026-11-07, who
+always works on it). Open light only to confirm a token exists in both blocks. The default is written in four places:
+`users.theme` in the model and in `main.py`, `theme.ts`, and the snippet in
+`index.html`.
+
 `:root` is the LIGHT palette and `:root[data-theme="dark"]` is the dark one.
 There is no `prefers-color-scheme` rule in `styles.css` any more: a person can
 now choose light, dark or "follow the OS" (Account → Appearance), so the OS
@@ -275,10 +329,11 @@ media query as well would mean stating the same 60 palette tokens twice, once
 per way of arriving at dark — and the second copy is the one that gets
 forgotten.
 
-- **A new token belongs in both blocks.** Nothing else in the app reads
-  `prefers-color-scheme`, so a token defined only on `:root` silently keeps its
+- **A new colour token belongs in both blocks.** Nothing else in the app reads
+  `prefers-color-scheme`, so a colour defined only on `:root` silently keeps its
   light value in dark; the field solver reads the variables per paint
-  (`sim/field/draw.ts`) and follows for free.
+  (`sim/field/draw.ts`) and follows for free. A token that does not change with
+  the theme (the fonts, the radius scale) sits on `:root` alone.
 - **The choice lives on the ACCOUNT** (`users.theme`, `POST
   /api/account/theme`), and `localStorage["ui-theme"]` is a CACHE of it, not a
   second setting. The cache exists because the theme has to be on `<html>`
@@ -310,16 +365,21 @@ such a table `table-layout: fixed` and explicit column widths (see
 
 | Family | Classes |
 |---|---|
-| Buttons | `btn`, `btn-sm`, `btn-primary`, `btn-accent`, `btn-ok`, `btn-danger`, `btn-row` |
-| Cards | `card`, `card-title`, `card-subtitle`, `meta-card`, `edit-card`, `live-card`, `prices-card`, `ds-card`, `danger-card` |
+| Buttons | `btn`, `btn-sm`, `btn-primary`, `btn-ok`, `btn-danger`, `btn-row` |
+| Cards | `card`, `card-title`, `card-subtitle`, `meta-card`, `edit-card`, `ds-card`, `danger-card` |
 | Tables | `data`, `table-wrap`, `th-sort`, `sort-ind`, `filter-row`, `filter-input`, `clear-filters`, `cell-desc`, `cell-fp`, `cell-cat`, `row-del`, `empty` |
 | Status / tags | `pill` (+ `ok`/`warn`/`err`/`neutral`), `badge`, `tag-hidden` |
 | Banners | `banner-error`, `banner-ok`, `banner-warn` |
-| Forms / inputs | `text`, `search`, `filter-input`, `row-input`, `note-textarea`, `chat-input`, `chat-textarea` |
+| Progress | `progress-bar` (+ `progress-bar-sm`, `progress-bar-lg`), with an `<i>` as the fill |
+| Forms / inputs | `text`, `search`, `filter-input`, `row-input`, `note-textarea` |
 | Layout | `browse`, `sidebar`, `main`, `main-solo`, `toolbar`, `toolbar-total`, `detail-page`, `detail-left`, `detail-right`, `edit-grid` |
 | Text | `mono`, `num`, `muted`, `dim`, `comp-link`, `val-link`, `backlink` |
 
 (Full list: `grep -oE '^\.[a-zA-Z][a-zA-Z0-9_-]*' src/styles.css | sort -u`.)
+
+`scripts/check-css.py` fails the build on a class that no string in `src/` uses.
+Remove the rule. If the code builds the name at run time, give the reason in
+`ALLOW` in that script.
 
 ## Data access — reuse the typed client
 
@@ -399,13 +459,13 @@ renders INSTEAD of the router.
   not a gate. So the rule runs one way only: never hide a control here without
   the matching `require_admin` on the route, and when you add one, add its
   line to `api/tests/auth/test_role_gates.py`. Gated in the UI today: the
-  Admin page's Configuration, Users, Companies, Activity and Fleet broker
-  tabs; the project's "Move to another company" (decision 0063); the Refresh and
-  Override controls on Exchange rates, the two job buttons on Datasheets and
-  the order, add, edit and remove controls on Suppliers, and the add,
-  rename and remove controls on Company books → Overhead, whose tabs stay
-  VISIBLE and read-only; and the field solver's stackup and
-  rule-set Edit buttons. **Prefer dropping the control to hiding the panel** —
+  Admin page's Configuration, Users, Companies, Fleet broker and Data jobs
+  tabs, and History → Everyone; the project's "Move to another company" (decision
+  0063); the Refresh and Override controls on Finance → Exchange rates, the job
+  buttons on Library → Datasheets, the order, add, edit and remove controls on
+  Stock → Suppliers, and the add, rename and remove controls on Finance → Company
+  books → Overhead, whose pages stay VISIBLE and read-only; "Record issued elsewhere" and "Import
+  register" on Sales → Invoices; and the field solver's stackup and rule-set Edit buttons. **Prefer dropping the control to hiding the panel** —
   a table somebody may read is not the same as an action they may take, and an
   "unknown FX rate" warning on the order page has to lead somewhere.
   `fxCols(null)` is the pattern: the action column is left out of the

@@ -10,8 +10,11 @@ import {
   type ProjectReview,
   type SnapshotInfo,
 } from "../../api";
+import DataTable, { type Column } from "../DataTable";
 import { useDialog } from "../Dialog";
+import FoldSection, { StatChip } from "../FoldSection";
 import { ErrorBanner, LifecyclePill, ReviewPill, SignoffPill, Spinner } from "../Ui";
+import { localDate, localWhen } from "../../format";
 
 /** The end-of-design review: every BOM-matched component of the snapshot with
  * its verification, sign-off and lifecycle state, per-selection bulk sign-off,
@@ -111,6 +114,41 @@ export default function ReviewTab({
     }
   };
 
+  type Row = ProjectReview["rows"][number];
+  const columns: Column<Row>[] = [
+    { key: "sel", label: "", width: 3, interactive: false, className: "ctr", get: () => "",
+      render: (r) => (r.matched && r.signoff_state !== "signed" && r.component_id !== null ? (
+        <input
+          type="checkbox"
+          checked={selected.has(r.component_id)}
+          disabled={busy}
+          onChange={() => toggle(r.component_id as number)}
+          aria-label={`Select ${r.component_name ?? r.value}`}
+        />
+      ) : null) },
+    { key: "component", label: "Component", width: 18,
+      get: (r) => r.component_name ?? `${r.mpn || r.value || "?"} (no library match)`,
+      render: (r) => (r.matched && r.component_id !== null ? (
+        <Link className="comp-link" to={`/library/components/${r.component_id}`}>{r.component_name}</Link>
+      ) : (
+        <span className="muted">{r.mpn || r.value || "?"} (no library match)</span>
+      )) },
+    { key: "refs", label: "Refs", width: 13, className: "mono", get: (r) => r.refs },
+    { key: "value", label: "Value", width: 12, className: "mono", get: (r) => r.value },
+    { key: "drawn", label: "Drawn with", width: 14, className: "mono",
+      get: (r) => `${r.lib_version || "—"}${r.current_version_no !== null ? ` / v${r.current_version_no}` : ""}`,
+      title: (r) => (r.lib_version
+        ? `Library versions in the committed schematic vs current v${r.current_version_no ?? "?"}`
+        : "The committed schematic predates the version field") },
+    { key: "review", label: "Review", width: 13, get: (r) => (r.matched ? r.review_state ?? "" : ""),
+      title: (r) => r.review_blockers.join("; "),
+      render: (r) => (r.matched ? <ReviewPill state={r.review_state} /> : null) },
+    { key: "signoff", label: "Sign-off", width: 13, get: (r) => (r.matched ? r.signoff_state ?? "" : ""),
+      render: (r) => (r.matched ? <SignoffPill state={r.signoff_state} /> : null) },
+    { key: "lifecycle", label: "Lifecycle", width: 14, get: (r) => (r.matched ? r.lifecycle ?? "" : ""),
+      render: (r) => (r.matched ? <LifecyclePill state={r.lifecycle} /> : null) },
+  ];
+
   return (
     <div>
       {data.clean ? (
@@ -134,9 +172,9 @@ export default function ReviewTab({
           Snapshot <span className="mono">{data.sha.slice(0, 8)}</span>
           {data.ref_name ? ` (${data.ref_name})` : ""}
           {data.last_review
-            ? ` — last review by ${data.last_review.reviewed_by} on ${new Date(
+            ? ` — last review by ${data.last_review.reviewed_by} on ${localDate(
                 data.last_review.reviewed_at,
-              ).toLocaleDateString()}`
+              )}`
             : " — never reviewed"}
         </span>
         <button
@@ -154,87 +192,43 @@ export default function ReviewTab({
         </button>
       </div>
 
+      <FoldSection
+        title="Parts"
+        count={data.rows.length}
+        foldKey={`project:${project.id}:review-parts`}
+        forceOpen={selected.size > 0}
+        chips={
+          <>
+            {data.unmatched_lines ? <StatChip n={data.unmatched_lines} tone="err">no library match</StatChip> : null}
+            {data.unsigned.length ? <StatChip n={data.unsigned.length} tone="warn">not signed</StatChip> : null}
+            {data.unreviewed.length ? <StatChip n={data.unreviewed.length} tone="warn">not verified</StatChip> : null}
+            {data.deprecated.length ? <StatChip n={data.deprecated.length} tone="warn">deprecated</StatChip> : null}
+          </>
+        }
+      >
       <div className="table-wrap">
-        <table className="data data-fixed project-review-table">
-          <thead>
-            <tr>
-              <th className="ctr" aria-label="Select" />
-              <th>Component</th>
-              <th>Refs</th>
-              <th>Value</th>
-              <th>Drawn with</th>
-              <th>Review</th>
-              <th>Sign-off</th>
-              <th>Lifecycle</th>
-            </tr>
-          </thead>
-          <tbody>
-            {data.rows.map((r, i) => (
-              <tr key={i}>
-                <td className="ctr">
-                  {r.matched && r.signoff_state !== "signed" && r.component_id !== null ? (
-                    <input
-                      type="checkbox"
-                      checked={selected.has(r.component_id)}
-                      disabled={busy}
-                      onChange={() => toggle(r.component_id as number)}
-                      aria-label={`Select ${r.component_name ?? r.value}`}
-                    />
-                  ) : null}
-                </td>
-                <td title={r.component_name ?? `${r.value} (unmatched)`}>
-                  {r.matched && r.component_id !== null ? (
-                    <Link className="comp-link" to={`/library/components/${r.component_id}`}>
-                      {r.component_name}
-                    </Link>
-                  ) : (
-                    <span className="muted">{r.mpn || r.value || "?"} (no library match)</span>
-                  )}
-                </td>
-                <td className="mono" title={r.refs}>
-                  {r.refs}
-                </td>
-                <td className="mono" title={r.value}>
-                  {r.value}
-                </td>
-                <td
-                  className="mono"
-                  title={
-                    r.lib_version
-                      ? `Library versions in the committed schematic vs current v${r.current_version_no ?? "?"}`
-                      : "The committed schematic predates the version field"
-                  }
-                >
-                  {r.lib_version || "—"}
-                  {r.current_version_no !== null ? ` / v${r.current_version_no}` : ""}
-                </td>
-                <td title={r.review_blockers.join("; ")}>
-                  {r.matched ? <ReviewPill state={r.review_state} /> : null}
-                </td>
-                <td>{r.matched ? <SignoffPill state={r.signoff_state} /> : null}</td>
-                <td>{r.matched ? <LifecyclePill state={r.lifecycle} /> : null}</td>
-              </tr>
-            ))}
-            {data.rows.length === 0 ? (
-              <tr>
-                <td colSpan={8} className="empty">
-                  No BOM lines in this snapshot.
-                </td>
-              </tr>
-            ) : null}
-          </tbody>
-        </table>
+        <DataTable
+          rows={data.rows}
+          rowKey={(r) => `${r.refs}|${r.value}|${r.component_id}`}
+          columns={columns}
+          empty="No BOM lines in this snapshot."
+        />
       </div>
+      </FoldSection>
 
       {data.past_reviews.length > 0 ? (
-        <details className="card pad">
-          <summary>Past reviews ({data.past_reviews.length})</summary>
+        <FoldSection
+          title="Past reviews"
+          count={data.past_reviews.length}
+          foldKey={`project:${project.id}:past-reviews`}
+          chips={data.last_review ? <StatChip n={localDate(data.last_review.reviewed_at)}>last</StatChip> : undefined}
+        >
           <ul className="notes-list">
             {data.past_reviews.map((r) => (
               <li key={r.id} className="note">
                 <div className="note-head mono">
                   <span className="note-author">{r.reviewed_by}</span>
-                  <span className="note-date">{new Date(r.reviewed_at).toLocaleString()}</span>
+                  <span className="note-date">{localWhen(r.reviewed_at)}</span>
                   <span className="mono">{r.sha.slice(0, 8)}</span>
                 </div>
                 <p className="muted">
@@ -248,7 +242,7 @@ export default function ReviewTab({
               </li>
             ))}
           </ul>
-        </details>
+        </FoldSection>
       ) : null}
     </div>
   );

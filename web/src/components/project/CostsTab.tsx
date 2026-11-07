@@ -32,11 +32,15 @@ import {
 } from "../../api";
 import { usd } from "../../format";
 import DataTable from "../DataTable";
+import Field from "../Field";
+import FoldSection, { StatChip } from "../FoldSection";
+import NumberInput from "../NumberInput";
+import { useDialog } from "../Dialog";
 import { ErrorBanner, Spinner } from "../Ui";
 import { StepSelect } from "../costs";
 
 const EMPTY_COST: CostItemIn = {
-  label: "", basis: "per_device", price: 0, steps: [], currency: "USD", step_key: "",
+  label: "", basis: "per_device", price: 0, steps: [], currency: "PLN", step_key: "",
   company: "", mpn: "", notes: "", position: 0,
 };
 
@@ -72,6 +76,7 @@ export default function CostsTab({
   projectId: number;
   snapshot: SnapshotInfo | null;
 }) {
+  const dialog = useDialog();
   const [costs, setCosts] = useState<CostItem[] | null>(null);
 
   const [stepCatalog, setStepCatalog] = useState<CostStepCatalog | null>(null);
@@ -210,8 +215,33 @@ export default function CostsTab({
         )
       ) : null}
 
-      <div className="card pad">
-        <div className="card-title">Manufacturing costs</div>
+      <FoldSection
+        title="Manufacturing costs"
+        count={costs?.length ?? 0}
+        foldKey={`project:${projectId}:cost-items`}
+        forceOpen={showCostForm}
+        chips={costs?.length ? (
+          <>
+            <StatChip n={costs.filter((c) => c.basis === "per_run").length}>per run</StatChip>
+            <StatChip n={costs.filter((c) => c.basis !== "per_run").length}>per device</StatChip>
+            <StatChip n={costs.filter((c) => c.step_key).length}>on a step</StatChip>
+          </>
+        ) : undefined}
+        actions={
+          <button
+            className="btn btn-sm btn-primary"
+            onClick={() => {
+              if (showCostForm) {
+                setEditCostId(null);
+                setCostDraft(EMPTY_COST);
+              }
+              setShowCostForm(!showCostForm);
+            }}
+          >
+            {showCostForm ? "Close" : "＋ Add cost item"}
+          </button>
+        }
+      >
         <p className="muted">
           Free-form cost positions — PCB fab, assembly, enclosure rework, programming…
           "Per run" items are amortized over the production volume in the BOM view.
@@ -222,11 +252,11 @@ export default function CostsTab({
             rows={costs}
             rowKey={(c) => c.id}
             columns={[
-              { key: "label", label: "Item", width: 17, get: (c) => c.label },
+              { key: "label", label: "Item", width: 15, get: (c) => c.label },
               {
                 key: "step_key",
                 label: "Step",
-                width: 13,
+                width: 17,
                 get: (c) => c.step_key,
                 render: (c) => c.step_key ? (
                   <span className="pill neutral" title={stepLabel(c.step_key)}>
@@ -276,16 +306,16 @@ export default function CostsTab({
               {
                 key: "mpn",
                 label: "MPN",
-                width: 10,
+                width: 9,
                 className: "mono",
                 get: (c) => c.mpn,
                 render: (c) => c.mpn || "—",
               },
-              { key: "notes", label: "Notes", width: 9, className: "muted", get: (c) => c.notes },
+              { key: "notes", label: "Notes", width: 8, className: "muted", get: (c) => c.notes },
               {
                 key: "actions",
                 label: "",
-                width: 12,
+                width: "138px",
                 interactive: false,
                 get: () => "",
                 render: (c) => (
@@ -307,14 +337,17 @@ export default function CostsTab({
                     </button>{" "}
                     <button
                       className="btn btn-sm btn-danger"
-                      onClick={() =>
+                      onClick={async () => {
+                        const ok = await dialog.confirm(`Delete the cost item "${c.label}" from the plan?`,
+                          { title: "Delete cost item", confirmLabel: "Delete", tone: "danger" });
+                        if (!ok) return;
                         deleteCostItem(c.id, snapshotId)
                           .then(() => load())
                           .catch((err) => {
                             setError(errorMessage(err));
                             load();
-                          })
-                      }
+                          });
+                      }}
                     >
                       Delete
                     </button>
@@ -324,39 +357,22 @@ export default function CostsTab({
             ]}
           />
         ) : null}
-        <div className="btn-row">
-          <button
-            className="btn btn-sm btn-primary"
-            onClick={() => {
-              if (showCostForm) {
-                setEditCostId(null);
-                setCostDraft(EMPTY_COST);
-              }
-              setShowCostForm(!showCostForm);
-            }}
-          >
-            {showCostForm ? "Close" : "＋ Add cost item"}
-          </button>
-        </div>
         {showCostForm && (
         <div className="card pad edit-card">
         <div className="card-title">{editCostId ? "Edit cost item" : "New cost item"}</div>
         <div className="field-grid">
-          <label>
-            Label
+          <Field label="Label">
             <input className="text" value={costDraft.label} placeholder="PCB assembly"
               onChange={(e) => setCostDraft({ ...costDraft, label: e.target.value })} />
-          </label>
-          <label>
-            Basis
+          </Field>
+          <Field label="Basis">
             <select className="text" value={costDraft.basis}
               onChange={(e) => setCostDraft({ ...costDraft, basis: e.target.value })}>
               <option value="per_device">per device</option>
               <option value="per_run">per production run</option>
             </select>
-          </label>
-          <label>
-            Production step
+          </Field>
+          <Field label="Production step">
             <StepSelect
               catalog={stepCatalog}
               className="text"
@@ -370,32 +386,27 @@ export default function CostsTab({
                 setCostDraft({ ...costDraft, step_key: key, basis: def ?? costDraft.basis });
               }}
             />
-          </label>
-          <label>
-            Price
-            <input className="text" type="number" step="0.01" value={costDraft.price}
-              onChange={(e) => setCostDraft({ ...costDraft, price: Number(e.target.value) })} />
-          </label>
-          <label>
-            Currency
+          </Field>
+          <Field label="Price">
+            <NumberInput className="text" step={0.01} value={costDraft.price}
+              onChange={(v) => setCostDraft({ ...costDraft, price: v })} />
+          </Field>
+          <Field label="Currency">
             <input className="text" value={costDraft.currency} maxLength={3}
               onChange={(e) => setCostDraft({ ...costDraft, currency: e.target.value.toUpperCase() })} />
-          </label>
-          <label>
-            Company / manufacturer
+          </Field>
+          <Field label="Company / manufacturer">
             <input className="text" value={costDraft.company}
               onChange={(e) => setCostDraft({ ...costDraft, company: e.target.value })} />
-          </label>
-          <label>
-            MPN <span className="muted">(if applies)</span>
+          </Field>
+          <Field label={<>MPN <span className="muted">(if applies)</span></>}>
             <input className="text" value={costDraft.mpn}
               onChange={(e) => setCostDraft({ ...costDraft, mpn: e.target.value })} />
-          </label>
-          <label>
-            Notes
+          </Field>
+          <Field label="Notes">
             <input className="text" value={costDraft.notes}
               onChange={(e) => setCostDraft({ ...costDraft, notes: e.target.value })} />
-          </label>
+          </Field>
         </div>
         <div className="cost-steps">
           <span className="muted">
@@ -404,20 +415,20 @@ export default function CostsTab({
           {costDraft.steps.map((s, i) => (
             <span key={i} className="cost-step-row">
               ≥
-              <input className="text step-qty" type="number" min="2" value={s.qty_from}
-                aria-label={`Step ${i + 1} from quantity`}
-                onChange={(e) => {
+              <NumberInput className="text step-qty" min={2} value={s.qty_from}
+                title={`Step ${i + 1} from quantity`}
+                onChange={(v) => {
                   const steps = costDraft.steps.map((st, j) =>
-                    j === i ? { ...st, qty_from: Number(e.target.value) } : st,
+                    j === i ? { ...st, qty_from: v } : st,
                   );
                   setCostDraft({ ...costDraft, steps });
                 }} />
               pcs:
-              <input className="text step-price" type="number" step="0.01" min="0" value={s.price}
-                aria-label={`Step ${i + 1} price`}
-                onChange={(e) => {
+              <NumberInput className="text step-price" step={0.01} min={0} value={s.price}
+                title={`Step ${i + 1} price`}
+                onChange={(v) => {
                   const steps = costDraft.steps.map((st, j) =>
-                    j === i ? { ...st, price: Number(e.target.value) } : st,
+                    j === i ? { ...st, price: v } : st,
                   );
                   setCostDraft({ ...costDraft, steps });
                 }} />
@@ -459,11 +470,17 @@ export default function CostsTab({
         </div>
         </div>
         )}
-      </div>
+      </FoldSection>
 
       {fromProcess ? (
-        <div className="card pad">
-          <div className="card-title">Materials from the process</div>
+        <FoldSection
+          title="Materials from the process"
+          count={fromProcess.length}
+          foldKey={`project:${projectId}:process-materials`}
+          chips={fromProcess.some((m) => m.unit_price_usd == null) ? (
+            <StatChip n={fromProcess.filter((m) => m.unit_price_usd == null).length} tone="warn">no pool price</StatChip>
+          ) : undefined}
+        >
           <p className="muted">
             This project has a process, so a device's materials are the inputs of its process steps
             (decision 0060). Change them on the Process tab. The extra items below no longer price the
@@ -474,17 +491,46 @@ export default function CostsTab({
             rowKey={(m) => m.key}
             empty="The process adds no parts."
             columns={[
-              { key: "label", label: "Step: part", width: 50, get: (m) => m.label, title: (m) => m.notes },
-              { key: "qty", label: "Per device", width: 12, numeric: true, get: (m) => m.qty },
-              { key: "price", label: "Pool average", width: 14, numeric: true, get: (m) => m.unit_price_usd ?? 0,
+              { key: "label", label: "Step: part", width: 60, get: (m) => m.label, title: (m) => m.notes },
+              { key: "qty", label: "Per device", width: 18, numeric: true, get: (m) => m.qty },
+              { key: "price", label: "Pool average", width: 22, numeric: true, get: (m) => m.unit_price_usd ?? 0,
                 render: (m) => (m.unit_price_usd != null ? usd(m.unit_price_usd) : "—") },
             ]}
           />
-        </div>
+        </FoldSection>
       ) : null}
 
-      <div className="card pad">
-        <div className="card-title">Extra BOM items</div>
+      <FoldSection
+        title="Extra BOM items"
+        count={extras?.length ?? 0}
+        foldKey={`project:${projectId}:extra-items`}
+        forceOpen={showExtraForm}
+        chips={extras?.length ? (
+          <>
+            <StatChip n={extras.filter((x) => x.component_id).length}>linked to a part</StatChip>
+            {extras.some((x) => !x.component_id && x.unit_price == null) ? (
+              <StatChip n={extras.filter((x) => !x.component_id && x.unit_price == null).length} tone="warn">no price</StatChip>
+            ) : null}
+          </>
+        ) : undefined}
+        actions={
+          <button
+            className="btn btn-sm btn-primary"
+            disabled={!!fromProcess && !showExtraForm}
+            title={fromProcess ? "this project has a process: add the part to a process step" : undefined}
+            onClick={() => {
+              if (showExtraForm) {
+                setEditExtraId(null);
+                setExtraDraft(EMPTY_EXTRA);
+                setComponentQuery("");
+              }
+              setShowExtraForm(!showExtraForm);
+            }}
+          >
+            {showExtraForm ? "Close" : "＋ Add extra item"}
+          </button>
+        }
+      >
         <p className="muted">
           Parts not in the schematic — cables, enclosures, fasteners. Link a library
           component (including BOM-only parts, priced from its LCSC/manual ladder) or
@@ -496,11 +542,11 @@ export default function CostsTab({
             rows={extras}
             rowKey={(x) => x.id}
             columns={[
-              { key: "label", label: "Item", width: 19, get: (x) => x.label },
+              { key: "label", label: "Item", width: 15, get: (x) => x.label },
               {
                 key: "step",
                 label: "Step",
-                width: 5,
+                width: 12,
                 interactive: false,
                 get: () => "parts:pool",
                 render: () => (
@@ -522,7 +568,7 @@ export default function CostsTab({
               {
                 key: "manufacturer",
                 label: "Manufacturer",
-                width: 15,
+                width: 12,
                 className: "muted",
                 get: (x) => x.manufacturer,
                 render: (x) => x.manufacturer || "—",
@@ -548,7 +594,7 @@ export default function CostsTab({
               {
                 key: "actions",
                 label: "",
-                width: 12,
+                width: "138px",
                 interactive: false,
                 get: () => "",
                 render: (x) => (
@@ -569,14 +615,17 @@ export default function CostsTab({
                     </button>{" "}
                     <button
                       className="btn btn-sm btn-danger"
-                      onClick={() =>
+                      onClick={async () => {
+                        const ok = await dialog.confirm(`Delete the extra item "${x.label || x.mpn}" from the plan?`,
+                          { title: "Delete extra item", confirmLabel: "Delete", tone: "danger" });
+                        if (!ok) return;
                         deleteExtraItem(x.id, snapshotId)
                           .then(() => load())
                           .catch((err) => {
                             setError(errorMessage(err));
                             load();
-                          })
-                      }
+                          });
+                      }}
                     >
                       Delete
                     </button>
@@ -586,39 +635,19 @@ export default function CostsTab({
             ]}
           />
         ) : null}
-        <div className="btn-row">
-          <button
-            className="btn btn-sm btn-primary"
-            disabled={!!fromProcess && !showExtraForm}
-            title={fromProcess ? "this project has a process: add the part to a process step" : undefined}
-            onClick={() => {
-              if (showExtraForm) {
-                setEditExtraId(null);
-                setExtraDraft(EMPTY_EXTRA);
-                setComponentQuery("");
-              }
-              setShowExtraForm(!showExtraForm);
-            }}
-          >
-            {showExtraForm ? "Close" : "＋ Add extra item"}
-          </button>
-        </div>
         {showExtraForm && (
         <div className="card pad edit-card">
         <div className="card-title">{editExtraId ? "Edit extra item" : "New extra item"}</div>
         <div className="field-grid">
-          <label>
-            Label
+          <Field label="Label">
             <input className="text" value={extraDraft.label} placeholder="SMA – u.FL cable"
               onChange={(e) => setExtraDraft({ ...extraDraft, label: e.target.value })} />
-          </label>
-          <label>
-            Qty per device
-            <input className="text" type="number" step="0.1" min="0" value={extraDraft.qty}
-              onChange={(e) => setExtraDraft({ ...extraDraft, qty: Number(e.target.value) })} />
-          </label>
-          <label>
-            Link component <span className="muted">(search; empty = freehand)</span>
+          </Field>
+          <Field label="Qty per device">
+            <NumberInput className="text" step={0.1} min={0} value={extraDraft.qty}
+              onChange={(v) => setExtraDraft({ ...extraDraft, qty: v })} />
+          </Field>
+          <Field label={<>Link component <span className="muted">(search; empty = freehand)</span></>}>
             <input className="text" value={componentQuery}
               placeholder={extraDraft.component_id ? `linked #${extraDraft.component_id}` : "search by name / LCSC…"}
               onChange={(e) => setComponentQuery(e.target.value)} />
@@ -645,38 +674,29 @@ export default function CostsTab({
                 </button>
               </span>
             ) : null}
-          </label>
-          <label>
-            Unit price <span className="muted">(ignored when linked)</span>
-            <input className="text" type="number" step="0.0001" min="0"
-              value={extraDraft.unit_price ?? ""}
-              onChange={(e) =>
-                setExtraDraft({
-                  ...extraDraft,
-                  unit_price: e.target.value === "" ? null : Number(e.target.value),
-                })
-              } />
-          </label>
-          <label>
-            Currency
+          </Field>
+          <Field label={<>Unit price <span className="muted">(ignored when linked)</span></>}>
+            <NumberInput className="text" step={0.0001} min={0}
+              value={extraDraft.unit_price ?? null}
+              onChange={(v) => setExtraDraft({ ...extraDraft, unit_price: v })}
+              onEmpty={() => setExtraDraft({ ...extraDraft, unit_price: null })} />
+          </Field>
+          <Field label="Currency">
             <input className="text" value={extraDraft.currency} maxLength={3}
               onChange={(e) => setExtraDraft({ ...extraDraft, currency: e.target.value.toUpperCase() })} />
-          </label>
-          <label>
-            Manufacturer
+          </Field>
+          <Field label="Manufacturer">
             <input className="text" value={extraDraft.manufacturer}
               onChange={(e) => setExtraDraft({ ...extraDraft, manufacturer: e.target.value })} />
-          </label>
-          <label>
-            MPN
+          </Field>
+          <Field label="MPN">
             <input className="text" value={extraDraft.mpn}
               onChange={(e) => setExtraDraft({ ...extraDraft, mpn: e.target.value })} />
-          </label>
-          <label>
-            Notes
+          </Field>
+          <Field label="Notes">
             <input className="text" value={extraDraft.notes}
               onChange={(e) => setExtraDraft({ ...extraDraft, notes: e.target.value })} />
-          </label>
+          </Field>
         </div>
         <div className="btn-row">
           <button className="btn btn-primary btn-sm" disabled={!extraDraft.label.trim()} onClick={saveExtra}>
@@ -691,7 +711,7 @@ export default function CostsTab({
         </div>
         </div>
         )}
-      </div>
+      </FoldSection>
     </div>
   );
 }

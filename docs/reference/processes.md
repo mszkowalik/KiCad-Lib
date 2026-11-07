@@ -13,7 +13,8 @@ batches into twins), `api/app/services/bench_links.py` (old bench runs linked
 to their devices by topic),
 `api/app/routers/process.py`, `web/src/components/process/`,
 `web/src/components/project/ProcessTab.tsx`,
-`web/src/components/run/RunProcess.tsx` (the crafting screen),
+`web/src/components/run/` (`RunFloor.tsx` the board and work panel, `ScanGroup.tsx`
+the scan group, `craftDialogs.tsx` its dialogs),
 `web/src/components/TwinCard.tsx` (the device page).
 
 ## The process document
@@ -170,7 +171,7 @@ serials (0059, Consequences).
 
 ## The assembly step
 
-The person records it, from "Record assembly" on Batch → Process (decision
+The person records it, from "Record assembly" on Batch → Floor (decision
 0072). Nothing records it on its own: receiving the boards only counts them,
 and applying the JLC order only moves its positions and draws onto the batch.
 
@@ -363,11 +364,8 @@ adjustment, which deposits a stored lot that `lots.py` reads (`A<lot id>`). Do
 not add an event kind for process work: that forks `_pool_events`, which
 decision 0058 forbids.
 
-- **A prepared part always takes a lot. A bought part takes lots only while
-  `lot_pricing` is on.** With the switch off, a bought part takes the moving
-  average. With it on, a bought part takes its lots oldest first, like every
-  other draw ([production-economics.md](production-economics.md), "Lots and
-  FIFO pricing"). A lot's remaining value is what it held minus what the draws
+- **A prepared part always takes a lot. A bought part takes the moving average**,
+  like every other draw (decision 0105). A lot's remaining value is what it held minus what the draws
   took at their frozen prices.
 - **A conversion cost is an invoice position with `transformation_id`**
   (0058 §4). `run_actuals.conversion_extras_usd` adds it to the output lot on
@@ -388,6 +386,12 @@ decision 0058 forbids.
 savepoint, so the dry run is the real code path. A real write is one journal
 batch (`craft.rebuild`, `source_ref` `run:<id>`), and `…/rebuild/undo`
 reverses it.
+
+The controls are "Link old bench runs…" on Project → Process, and "Move devices
+into this batch…", "Rebuild twins…" and "Undo rebuild…" on Batch → Settings. The
+rebuild dialog has plain fields for `version_id` and `append`. Its advanced box
+takes every other input below as one JSON object, and refuses a key it does not
+know, because the API would ignore a misspelt one.
 
 ### The rework order of one batch
 
@@ -489,7 +493,7 @@ quantity, label copies for a bench label).
 - Every other difference above `tolerance` needs a statement, or the real
   write is refused (`unsettled`).
 - `return` makes the newest draws smaller (`lots.resize_bound` gives back
-  their newest bindings, whatever the lot pricing switch says) and voids a
+  their newest bindings) and voids a
   draw that goes back whole. `loss` leaves the rest unlinked in the origin batch cost
   (`left_in_origin.loss`).
 
@@ -566,6 +570,29 @@ quantity, label copies for a bench label).
 - **Not resolved, only reported:** a batch whose devices outnumber its
   order's boards (`more_units_than_boards`), steps with no record, and
   positions left in the origin batch cost.
+
+## The board and the scan group
+
+Decision [0103](../decisions/0103-a-job-is-a-section-and-a-batch-is-a-board.md).
+`twins.board` is the batch's process as figures, one row per step: `done`,
+`waiting` (active units that meet the needs and lack the step), `still_to_do`,
+`can_go` (`waiting`, limited by stock) and `state`. `process.input_stock` finds the
+stock of an input the way `check_shortages` does, so the figure on a field is the
+one the click is judged by. A list reuses one stock replay per company.
+
+- **The board says how many, and the scan group says which.** Before programming
+  a unit has no name, so a field takes N from a stack. After programming a field
+  points at the scan group.
+- **`craft/check-codes` judges each code on the server.** The page's list is as
+  old as the page, and a gap is not on it.
+- **`craft/steps` runs several steps on one group in route order, as one journal
+  batch.** One Undo takes back all of them, and the question names each. Each step
+  writes its own click and judges each device on its own, as `skip_refused` does. A
+  dry run writes inside a savepoint it rolls back, because a later step's plan
+  depends on the earlier one: Instruction leaflet needs Pack into carton.
+- **A bench link only pre-sets.** `/production/bench?project=&batch=&steps=&stack=`
+  sets the bench once, and a change by hand drops the parameters. Firmware and
+  parameters are not in it: the procedure version pins them.
 
 ## What software cannot know
 

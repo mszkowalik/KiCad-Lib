@@ -1,48 +1,43 @@
-/** Orders — every customer order, and the finished devices on the shelf.
+/** Orders — every customer order, and what is asked for against what is held.
  *
  *  Decision record 0003. An order sits above the project (an Aqua and a
  *  dongle on one order), is closed by invoices, and is fulfilled by shipments
  *  whose content is a set of devices. Its status is derived from shipments
- *  and never set by hand. The stock card is this number's ONE home: a count
- *  of devices in `in_stock` per batch, and nothing else. A batch that recorded
- *  no devices holds nothing — the legacy pool it used to hold, and the "No
- *  serial" column that showed it, are gone with the shipments that drew from
- *  it (decision 0049).
+ *  and never set by hand. What the shelf holds is on Stock → Finished devices.
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import {
   createOrder,
   errorMessage,
   getDemand,
-  getFinishedStock,
   isAbortError,
-
-
   listCustomers,
   listOrders,
   getProjects,
   type CustomerRow,
   type DemandRow,
-  type FinishedStock,
-  type FinishedStockRow,
   type OrderLineIn,
   type OrderRow,
   type ProjectInfo,
 } from "../api";
+import AutoTextarea from "../components/AutoTextarea";
 import DataTable, { type Column } from "../components/DataTable";
+import Field, { FieldGrid } from "../components/Field";
+import DemandCard from "../components/DemandCard";
+import { NarrowChip } from "../components/FoldSection";
 import { ErrorBanner, Spinner, StatusPill } from "../components/Ui";
 import { useAuth } from "../auth";
-import { amount, plain, usd } from "../format";
+import { amount, plain, today, plural } from "../format";
 
 export default function Orders() {
   const [orders, setOrders] = useState<OrderRow[] | null>(null);
-  const [stock, setStock] = useState<FinishedStock | null>(null);
   const [demand, setDemand] = useState<DemandRow[] | null>(null);
   const [customers, setCustomers] = useState<CustomerRow[]>([]);
   const [projects, setProjects] = useState<ProjectInfo[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
+  const [narrow, setNarrow] = useState<"" | "open" | "partial" | "fulfilled" | "unpaid">("");
   const navigate = useNavigate();
 
   const reload = useCallback(() => {
@@ -52,11 +47,6 @@ export default function Orders() {
         setOrders(rows);
         setError(null);
       })
-      .catch((err) => {
-        if (!isAbortError(err)) setError(errorMessage(err));
-      });
-    getFinishedStock(undefined, ac.signal)
-      .then(setStock)
       .catch((err) => {
         if (!isAbortError(err)) setError(errorMessage(err));
       });
@@ -79,22 +69,22 @@ export default function Orders() {
       // about the window: at 8% it was cut to `2026-09-0…` at 1280px, which is
       // exactly the case `Column.width`'s string form exists for.
       { key: "order_date", label: "Date", width: "104px", get: (o) => o.order_date, className: "mono" },
-      { key: "customer", label: "Customer", width: 15, get: (o) => o.customer },
-      { key: "company", label: "Company", width: 8, get: (o) => companyName(o.company_id) },
-      { key: "order_ref", label: "Reference", width: 15, get: (o) => o.order_ref || "—", className: "mono" },
+      { key: "customer", label: "Customer", width: 9, get: (o) => o.customer },
+      { key: "company", label: "Company", width: 7, get: (o) => companyName(o.company_id) },
+      { key: "order_ref", label: "Reference", width: 10, get: (o) => o.order_ref || "—", className: "mono" },
       {
         key: "products",
         // A concatenated list with no maximum — it truncates by design and the
         // cell's title carries the whole of it. Everything else on this row
         // fits, so this is the column that pays for them.
         label: "Products",
-        width: 13,
+        width: 8,
         get: (o) => o.lines.map((l) => `${l.qty_ordered} × ${l.product || l.project}`).join(", "),
       },
       {
         key: "shipped",
         label: "Shipped",
-        width: 13,
+        width: 11,
         numeric: true,
         get: (o) => o.qty_shipped,
         render: (o) => (
@@ -106,7 +96,8 @@ export default function Orders() {
       {
         key: "total",
         label: "Net total",
-        width: 13,
+        // An amount with its currency may not be cut, as "300,000.00 PLN" was at 10.
+        width: 14,
         numeric: true,
         get: (o) => o.total_net ?? "",
         render: (o) => <>{amount(o.total_net, o.currency)}</>,
@@ -115,7 +106,7 @@ export default function Orders() {
         key: "invoiced",
         // Holds an amount AND an "· n unpaid" tail.
         label: "Invoiced",
-        width: 19,
+        width: 20,
         numeric: true,
         get: (o) => o.invoiced_net ?? "",
         title: (o) =>
@@ -133,7 +124,7 @@ export default function Orders() {
         key: "status",
         // StatusPill is inline-block — an ellipsis cannot shorten it.
         label: "Status",
-        width: 12,
+        width: 11,
         get: (o) => o.status,
         render: (o) => <StatusPill status={o.status} />,
       },
@@ -147,7 +138,7 @@ export default function Orders() {
         <div className="toolbar">
           <h1>Orders</h1>
           <span className="toolbar-total">
-            {orders ? `${orders.length} order${orders.length === 1 ? "" : "s"}` : ""}
+            {orders ? `${plural(orders.length, "order")}` : ""}
           </span>
           <button type="button" className="btn btn-primary btn-sm" onClick={() => setCreating((v) => !v)}>
             {creating ? "Close" : "New order"}
@@ -161,13 +152,12 @@ export default function Orders() {
             projects={projects}
             onCreated={(o) => {
               setCreating(false);
-              navigate(`/production/orders/${o.id}`);
+              navigate(`/sales/orders/${o.id}`);
             }}
           />
         ) : null}
 
         <DemandCard rows={demand} />
-        <StockCard stock={stock} />
 
         <div className="card pad">
           <h2 className="card-title">Customer orders</h2>
@@ -178,249 +168,28 @@ export default function Orders() {
           {orders === null ? (
             <Spinner label="Loading orders…" />
           ) : (
+            <>
+            <div className="stat-row">
+              <NarrowChip n={orders.filter((o) => o.status === "open").length} tone="acc" value="open" current={narrow} onNarrow={setNarrow}>open</NarrowChip>
+              <NarrowChip n={orders.filter((o) => o.status === "partial").length} tone="warn" value="partial" current={narrow} onNarrow={setNarrow}>partly shipped</NarrowChip>
+              <NarrowChip n={orders.filter((o) => o.status === "fulfilled").length} tone="ok" value="fulfilled" current={narrow} onNarrow={setNarrow}>fulfilled</NarrowChip>
+              <NarrowChip n={orders.filter((o) => o.unpaid_count > 0).length} tone={orders.some((o) => o.unpaid_count > 0) ? "warn" : undefined} value="unpaid" current={narrow} onNarrow={setNarrow}>with unpaid invoices</NarrowChip>
+            </div>
             <DataTable
-              rows={orders}
+              rows={orders.filter((o) => !narrow || (narrow === "unpaid" ? o.unpaid_count > 0 : o.status === narrow))}
               columns={columns}
               rowKey={(o) => o.id}
               defaultSort={{ key: "order_date", dir: "desc" }}
-              onRowClick={(o) => navigate(`/production/orders/${o.id}`)}
+              onRowClick={(o) => navigate(`/sales/orders/${o.id}`)}
               persistKey="orders"
             />
+            </>
           )}
         </div>
       </div>
     </div>
   );
 }
-
-/** Open demand per project against the shelf and the planned batches. */
-export function DemandCard({ rows, title = "Demand" }: { rows: DemandRow[] | null; title?: string }) {
-  const live = useMemo(() => (rows ? rows.filter((r) => r.open || r.on_shelf || r.planned) : []), [rows]);
-  return (
-    <div className="card pad">
-      <h2 className="card-title">{title}</h2>
-      {/* `.card-subtitle` is an uppercase mono LABEL, 11px with letter-spacing.
-          A paragraph in it is five lines of shouting — which is what this card
-          and the one below had until 2026-09-21. Explanations go in
-          `muted dim`, the way the devices tab already did it. */}
-      <p className="muted dim">
-        Open is what customers ordered and have not received. <b>Sellable now</b> counts
-        only devices a shipment may draw — condition <code>ok</code>. A faulty or prototype
-        unit is on the shelf and can never leave, so counting it as supply would say an
-        order can be filled by devices that cannot go out of the door; every device we
-        hold, whatever condition, is on <Link to="/production/stock">Stock</Link>. Planned
-        counts every batch still in the planned state, and Short is what nothing covers
-        yet.
-      </p>
-      {!rows ? (
-        <Spinner label="Counting…" />
-      ) : live.length === 0 ? (
-        <p className="muted">Nothing open.</p>
-      ) : (
-        <div className="table-wrap">
-          <table className="data data-fixed demand-table">
-            <thead>
-              <tr>
-                <th>Project</th>
-                <th className="num">Open</th>
-                <th className="num">Orders</th>
-                <th className="num" title="Devices that can actually be sold — condition `ok`. A faulty or prototype unit is on the shelf and a shipment may never draw it, so it is not supply.">
-                  Sellable now
-                </th>
-                <th className="num">Planned</th>
-                <th className="num">Short</th>
-                <th>Planned batches</th>
-              </tr>
-            </thead>
-            <tbody>
-              {live.map((r) => (
-                <tr key={r.project_id}>
-                  <td title={r.project}>
-                    <Link className="comp-link" to={`/projects/${r.project_id}`}>{r.project}</Link>
-                  </td>
-                  <td className="num">{r.open.toLocaleString()}</td>
-                  <td className="num">{r.open_orders}</td>
-                  <td className="num">{r.on_shelf.toLocaleString()}</td>
-                  <td className="num">{r.planned.toLocaleString()}</td>
-                  <td className={`num ${r.shortfall ? "err-text" : ""}`}>
-                    {r.shortfall ? r.shortfall.toLocaleString() : r.surplus ? <span className="muted">+{r.surplus.toLocaleString()}</span> : "—"}
-                  </td>
-                  <td>
-                    {r.planned_runs.length === 0
-                      ? <span className="muted">—</span>
-                      : r.planned_runs.map((b, i) => (
-                          <span key={b.run_id}>
-                            {i ? ", " : ""}
-                            <Link className="comp-link" to={`/runs/${b.run_id}`}>{b.label}</Link>
-                            <span className="muted"> ({b.qty.toLocaleString()})</span>
-                          </span>
-                        ))}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-    </div>
-  );
-}
-
-/** More devices passed programming than the batch is recorded to hold. The one
- *  arithmetic in the card that is impossible rather than merely unlucky: the run
- *  quantity is wrong, or devices were filed under the wrong batch. Under-building
- *  is normal attrition and is not flagged. */
-function overbuilt(r: FinishedStockRow): boolean {
-  return r.devices_produced > 0 && r.qty_recorded > 0 && r.built > r.qty_recorded;
-}
-
-/** Finished devices per batch: recorded devices next to legacy units.
- *
- *  Every batch that was actually built gets a row, empty or not. Filtering by
- *  what is LEFT deleted a batch from the card the moment its last device
- *  shipped — six of seven dongle batches vanished the day `built` started
- *  counting passed devices instead of the typed quantity (2026-09-10). A batch
- *  is a fact; its remaining stock is a number on it. Planned batches hold
- *  nothing yet and stay out. */
-function StockCard({ stock }: { stock: FinishedStock | null }) {
-  const rows = useMemo(
-    () => (stock ? stock.runs.filter((r) => (r.status || "").trim().toLowerCase() !== "planned") : []),
-    [stock],
-  );
-  return (
-    <div className="card pad">
-      <div className="toolbar">
-        <h2 className="card-title">Devices on the shelf, by batch</h2>
-        {stock ? (
-          <span className="toolbar-total">
-            {stock.totals.stock.toLocaleString()} devices
-            {stock.totals.stock_value_usd != null ? ` · ${usd(stock.totals.stock_value_usd, 0)} at cost` : ""}
-          </span>
-        ) : null}
-      </div>
-      <p className="muted dim">
-        Recorded is the quantity on the production run — boards ordered or assembled. Built
-        counts the devices that passed, so it is normally the smaller of the two; built
-        above recorded is impossible and is marked in red. Every batch stays listed after
-        its last device ships. For the shelf by PRODUCT, and what is sellable, see{" "}
-        <Link to="/production/stock">Stock</Link>.
-      </p>
-      {stock?.totals.no_batch ? (
-        <div className="banner-warn">
-          <b>{stock.totals.no_batch} device(s) on the shelf name no batch</b>, so no row
-          below holds them and this card&rsquo;s total is that many short of what we
-          actually have. They are counted on{" "}
-          <Link to="/production/stock">Stock</Link>.
-        </div>
-      ) : null}
-      {!stock ? (
-        <Spinner label="Counting…" />
-      ) : rows.length === 0 ? (
-        <p className="muted">Nothing on the shelf.</p>
-      ) : (
-        <div className="table-wrap">
-          <DataTable
-            columns={shelfCols}
-            rows={rows}
-            rowKey={(r) => r.run_id}
-            rowClass={() => ""}
-            defaultSort={{ key: "date", dir: "desc" }}
-            persistKey="finished-stock"
-            empty="No batch has been built yet."
-          />
-        </div>
-      )}
-    </div>
-  );
-}
-
-/* Was a hand-rolled `<table className="data">` — the same header font as the
-   DataTables around it, but no sort control and no filter row, so it read as a
-   different kind of table (reported 2026-09-12). Every `title` the hand-rolled
-   version carried is kept: they are the only place the arithmetic is
-   explained. */
-const shelfCols: Column<FinishedStockRow>[] = [
-  { key: "project", label: "Project", width: 12, get: (r) => r.project },
-  {
-    key: "label",
-    label: "Batch",
-    // 21, so the nine widths sum to 100. `Prototypes 1 — PROFORMA 1/11/2023`
-    // still clips by ~20px and keeps its full text in the cell title: the
-    // remaining width is in eight columns of figures, which is what this card
-    // is for, and none of them has room to give.
-    width: 21,
-    get: (r) => r.label,
-    render: (r) => (
-      <Link className="comp-link" to={`/runs/${r.run_id}`} onClick={(e) => e.stopPropagation()}>
-        {r.label}
-      </Link>
-    ),
-  },
-  // The batch's own date, so the shelf reads newest batch first like every
-  // other batch list. It was sorted by whatever order the API returned.
-  { key: "date", label: "Date", width: 10, className: "mono", get: (r) => r.run_date || "—" },
-  {
-    key: "recorded",
-    label: "Recorded",
-    width: 9,
-    numeric: true,
-    get: (r) => r.qty_recorded,
-    title: () => "the quantity on the production run — boards ordered or assembled",
-    render: (r) => (
-      <span className={overbuilt(r) ? "err-text" : undefined}>{r.qty_recorded.toLocaleString()}</span>
-    ),
-  },
-  {
-    key: "built",
-    label: "Built",
-    width: 9,
-    numeric: true,
-    get: (r) => r.built,
-    title: (r) =>
-      overbuilt(r)
-        ? `${r.built} devices passed programming but the batch is recorded as ${r.qty_recorded} boards — the run quantity is wrong, or devices from another batch were filed here`
-        : r.devices_produced
-          ? `${r.built} devices passed programming; ${r.qty_recorded - r.built} of the recorded boards never did`
-          : "no device records on this batch — record them, as placeholders if the units were never serialised",
-    render: (r) => (
-      <span className={overbuilt(r) ? "err-text" : undefined}>{r.built.toLocaleString()}</span>
-    ),
-  },
-  {
-    key: "shipped",
-    label: "Shipped",
-    width: 9,
-    numeric: true,
-    get: (r) => r.devices_shipped,
-    render: (r) => <>{r.devices_shipped.toLocaleString()}</>,
-  },
-  {
-    key: "in_stock",
-    label: "In stock",
-    width: 9,
-    numeric: true,
-    get: (r) => r.devices_in_stock,
-    render: (r) => <>{r.devices_in_stock.toLocaleString()}</>,
-  },
-  {
-    key: "unit_cost",
-    label: "Unit cost",
-    width: 10,
-    numeric: true,
-    get: (r) => r.unit_cost_usd ?? "",
-    render: (r) =>
-      r.unit_cost_usd == null ? <span className="muted">—</span> : <>{usd(r.unit_cost_usd)}</>,
-  },
-  {
-    key: "value",
-    label: "Value",
-    width: 11,
-    numeric: true,
-    get: (r) => r.stock_value_usd ?? "",
-    render: (r) =>
-      r.devices_in_stock ? <>{usd(r.stock_value_usd, 0)}</> : <span className="muted">—</span>,
-  },
-];
 
 function NewOrderCard({
   customers,
@@ -433,7 +202,7 @@ function NewOrderCard({
 }) {
   const [customer, setCustomer] = useState(customers[0]?.name ?? "");
   const [ref, setRef] = useState("");
-  const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
+  const [date, setDate] = useState(today);
   const [currency, setCurrency] = useState("PLN");
   const [notes, setNotes] = useState("");
   const [lines, setLines] = useState<{ project_id: string; product: string; qty: string; price: string }[]>([
@@ -490,29 +259,25 @@ function NewOrderCard({
     <div className="card pad edit-card">
       <h2 className="card-title">New order</h2>
       {error ? <ErrorBanner message={error} /> : null}
-      <div className="field-grid">
-        <label>
-          Customer
+      <FieldGrid>
+        <Field label="Customer">
           <input className="text" list="customer-names" value={customer} onChange={(e) => setCustomer(e.target.value)} />
           <datalist id="customer-names">
             {customers.map((c) => (
               <option key={c.id} value={c.name} />
             ))}
           </datalist>
-        </label>
-        <label>
-          Reference
+        </Field>
+        <Field label="Reference">
           <input className="text" value={ref} placeholder="their PO, or our ZAL number" onChange={(e) => setRef(e.target.value)} />
-        </label>
-        <label>
-          Order date
+        </Field>
+        <Field label="Order date">
           <input className="text" value={date} onChange={(e) => setDate(e.target.value)} />
-        </label>
-        <label>
-          Currency
+        </Field>
+        <Field label="Currency">
           <input className="text" value={currency} maxLength={3} onChange={(e) => setCurrency(e.target.value.toUpperCase())} />
-        </label>
-      </div>
+        </Field>
+      </FieldGrid>
       <div className="table-wrap">
         <table className="data data-fixed order-lines-edit-table">
           <thead>
@@ -589,47 +354,9 @@ function NewOrderCard({
           {busy ? "Creating…" : "Create order"}
         </button>
       </div>
-      <label>
-        Notes
-        <textarea className="note-textarea" value={notes} onChange={(e) => setNotes(e.target.value)} />
-      </label>
+      <Field label="Notes">
+        <AutoTextarea className="text" value={notes} onChange={(e) => setNotes(e.target.value)} />
+      </Field>
     </div>
   );
 }
-
-/* ------------------------------------------------------- counting the shelf */
-
-/** The words a barcode scanner's CSV export puts around the payloads.
- *  Dropping them is safe because none of them can be a device serial; every
- *  other token is offered to the server, which is the only thing that knows
- *  what a serial is. */
-const SCAN_NOISE = new Set([
-  "timestamp", "type", "content", "favorite", "true", "false",
-  "code128", "code39", "code93", "codabar", "ean13", "ean8", "upc_a", "upc_e",
-  "qr_code", "qrcode", "data_matrix", "pdf417", "itf", "aztec",
-]);
-
-/** Serial-looking tokens in a paste, in the order they were scanned.
- *
- *  Takes a plain list, one per line, AND the CSV a scanner exports — nobody
- *  should have to strip quotes and timestamps by hand to use their own scan
- *  sheet. It deliberately does NOT try to decide what a serial looks like:
- *  a payload that is not a device comes back named by the server, which is
- *  the honest place for that answer. The two EAN barcodes in the 2026-09-17
- *  sheet arrived exactly that way. */
-export function parseScanSheet(text: string): string[] {
-  const out: string[] = [];
-  const seen = new Set<string>();
-  for (const raw of text.split(/[\s,;"']+/)) {
-    const tok = raw.trim();
-    if (!tok) continue;
-    if (SCAN_NOISE.has(tok.toLowerCase())) continue;
-    if (tok.includes(":") || tok.includes("-")) continue; // ISO timestamps, MACs with separators
-    if (seen.has(tok)) continue;
-    seen.add(tok);
-    out.push(tok);
-  }
-  return out;
-}
-
-

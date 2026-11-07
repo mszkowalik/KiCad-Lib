@@ -13,7 +13,7 @@ and "np" are read as "0 KR" and "np I".
 from __future__ import annotations
 
 from datetime import date
-from decimal import ROUND_HALF_UP, Decimal
+from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 
 CENT = Decimal("0.01")
 
@@ -107,8 +107,11 @@ def lines(raw: list[dict]) -> list[dict]:
     for i, p in enumerate(raw, 1):
         if not (p.get("name") or "").strip():
             raise ValueError(f"position {i} has no name")
-        out.append(line(i, p["name"], p.get("unit") or "szt.", p.get("qty", 1),
-                        p.get("unit_net", 0), p.get("vat_rate", "23")))
+        try:
+            out.append(line(i, p["name"], p.get("unit") or "szt.", p.get("qty", 1),
+                            p.get("unit_net", 0), p.get("vat_rate", "23")))
+        except InvalidOperation as e:
+            raise ValueError(f"position {i}: the quantity or the price is not a number") from e
     return out
 
 

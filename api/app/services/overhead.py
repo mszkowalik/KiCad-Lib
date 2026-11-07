@@ -109,7 +109,7 @@ def check_key(db: Session, key: str) -> None:
     """Refuse a position's category that is not on the list."""
     if key and key not in keys(db):
         raise OverheadError(f"overhead category {key!r} does not exist — one of {sorted(keys(db))}, "
-                            f"or an admin adds it on Production → Company books → Overhead")
+                            f"or an admin adds it on Finance → Company books → Overhead")
 
 
 def _live_overhead(db: Session):

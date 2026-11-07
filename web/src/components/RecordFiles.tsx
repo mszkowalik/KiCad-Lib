@@ -8,10 +8,11 @@
  *  component serves every owner. It renders inline pieces (a fragment): the
  *  caller's row decides the layout.
  */
-import { useCallback, useEffect, useState, type ChangeEvent } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { errorMessage, isAbortError } from "../api";
 import { fileHref } from "../viewkind";
 import { useDialog } from "./Dialog";
+import FilePick from "./FilePick";
 
 /** What a file row needs here; every owner's list answers at least this. */
 export interface FileItem { id: number; filename: string; size_bytes: number; uploaded_by?: string }
@@ -39,10 +40,7 @@ export default function RecordFiles({ list, upload, pathOf, label = "Files", onC
     return () => ac.abort();
   }, [load]);
 
-  const pick = async (e: ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    e.target.value = "";
-    if (!file) return;
+  const pick = async (file: File) => {
     setBusy(true);
     try {
       await upload(file);
@@ -70,10 +68,9 @@ export default function RecordFiles({ list, upload, pathOf, label = "Files", onC
           </a>
         ))
       )}
-      <label className="btn btn-sm">
+      <FilePick disabled={busy} onPick={(picked) => void pick(picked[0])}>
         {busy ? "Uploading…" : "Attach"}
-        <input type="file" hidden onChange={pick} disabled={busy} />
-      </label>
+      </FilePick>
     </>
   );
 }

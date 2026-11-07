@@ -43,9 +43,12 @@ import InvoiceFields, { EMPTY_TAX, taxFieldsOf, taxSummary, type InvoiceHeader }
 import PrintedInvoice from "../components/PrintedInvoice";
 import InvoiceLinesTable, { blankDraft, draftToLineIn, toDraft, type LineDraft }
   from "../components/invoices/InvoiceLinesTable";
-import PlanLinkDialog from "../components/invoices/PlanLinkDialog";
 import SplitLineDialog from "../components/invoices/SplitLineDialog";
+import DocumentKindDialog from "../components/invoices/DocumentKindDialog";
+import TranscribeDialog from "../components/invoices/TranscribeDialog";
+import RowChangesCard from "../components/RowChangesCard";
 import DataTable, { type Column } from "../components/DataTable";
+import { StatChip, NarrowChip } from "../components/FoldSection";
 import RecordFiles from "../components/RecordFiles";
 import AccountantMark from "../components/AccountantMark";
 import { ErrorBanner, Spinner } from "../components/Ui";
@@ -53,7 +56,8 @@ import { useStickyState } from "../useStickyState";
 import { useAuth } from "../auth";
 import { Link, useSearchParams } from "react-router-dom";
 
-import { amount as money, plain } from "../format";
+import { amount as money, plain, pln, today, plural } from "../format";
+import { useTodayRate } from "../useTodayRate";
 import {
   type RunOption,
 } from "../components/costs";
@@ -132,6 +136,7 @@ function treeOrder(lines: RunCostLineRow[]): RunCostLineRow[] {
 
 
 export default function Invoices() {
+  const rate = useTodayRate();
   const dialog = useDialog();
   const { companyName } = useAuth();
   const [reg, setReg] = useState<InvoiceRegister | null>(null);
@@ -161,9 +166,12 @@ export default function Invoices() {
   const [header, setHeader] = useState<InvoiceHeader | null>(null);
   const [savingDoc, setSavingDoc] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
-  const [linking, setLinking] = useState<RunCostLineRow | null>(null);
+  const [transcribing, setTranscribing] = useState<RunCostDocumentRow | null>(null);
+  const [kindOf, setKindOf] = useState<RunCostDocumentRow | null>(null);
   const [adding, setAdding] = useState(false);
   const [onlyProblems, setOnlyProblems] = useStickyState("invoices:problems", false);
+  /** a state chip above the list, the same word as the State column */
+  const [narrow, setNarrow] = useState("");
   const [stepCatalog, setStepCatalog] = useState<CostStepCatalog | null>(null);
   useEffect(() => {
     const ac = new AbortController();
@@ -285,21 +293,12 @@ export default function Invoices() {
     }
   };
 
-  if (error) {
-    return (
-      <div className="main-solo">
-        <div className="page">
-          <ErrorBanner message={error} />
-        </div>
-      </div>
-    );
-  }
   // Rebuild the editable copy of the open document's lines whenever a different
   // document is opened or the open one is refetched. Keyed on the document id
   // plus its line identities, so an ordinary re-render does not throw away edits
-  // in progress. It sits with the other hooks and ABOVE the loading returns:
-  // placing it after them changed the hook order between renders and blanked the
-  // page (2026-09-19).
+  // in progress. It sits with the other hooks and ABOVE the error and loading
+  // returns: placing it after them changed the hook order between renders and
+  // blanked the page (2026-09-19).
   const rowsKey = `${doc?.id ?? 0}:${(doc?.lines || []).filter((li) => !li.voided)
     .map((li) => li.id).join(",")}`;
   const rowsKeyRef = useRef("");
@@ -316,6 +315,15 @@ export default function Invoices() {
     setSaveError(null);
   }, [rowsKey]);
 
+  if (error) {
+    return (
+      <div className="main-solo">
+        <div className="page">
+          <ErrorBanner message={error} />
+        </div>
+      </div>
+    );
+  }
   if (!reg) {
     return (
       <div className="main-solo">
@@ -334,8 +342,6 @@ export default function Invoices() {
   const liveLines = (doc?.lines || []).filter((li) => !li.voided);
   const docCurrency = doc?.currency || "USD";
 
-  /** The project a line's money belongs to: its own, its run's, or the
-   *  document's. PlanLinkDialog needs it to load that project's cost list. */
   /** Put the open document back the way the server has it. One act, because a
    *  batch that is abandoned is abandoned whole. */
   const cancelDocEdit = () => {
@@ -419,14 +425,6 @@ export default function Invoices() {
     }
   };
 
-  const projectOfLine = (li: RunCostLineRow): number | null => {
-    if (li.project_id) return li.project_id;
-    if (li.run_id) return reg.runs[String(li.run_id)]?.project_id ?? null;
-    if (doc?.project_id) return doc.project_id;
-    if (doc?.run_id) return reg.runs[String(doc.run_id)]?.project_id ?? null;
-    return null;
-  };
-
   /** WHERE this document's money went, as one line of text. It is the column's
    *  sort and filter value as well as what it prints, so a filter matches what
    *  the eye can see. */
@@ -434,7 +432,7 @@ export default function Invoices() {
     const a = d.assignment;
     const dest: string[] = [];
     for (const [rid, amount] of Object.entries(a.by_run)) {
-      dest.push(`${reg.runs[rid]?.label || `run ${rid}`}: ${plain(amount)}`);
+      dest.push(`${reg.runs[rid]?.label || `batch ${rid}`}: ${plain(amount)}`);
     }
     for (const [pid, amount] of Object.entries(a.by_project)) {
       dest.push(`${reg.projects[pid] || `project ${pid}`}: ${plain(amount)}`);
@@ -454,16 +452,8 @@ export default function Invoices() {
    *  (2026-09-18). */
   const whollyExcluded = (d: RunCostDocumentRow): boolean => {
     const a = d.assignment;
-    if (!(a.excluded ?? 0)) return false;
-    const dest: string[] = [];
-    for (const [rid, amount] of Object.entries(a.by_run)) {
-      dest.push(`${reg.runs[rid]?.label || `run ${rid}`}: ${plain(amount)}`);
-    }
-    for (const [pid] of Object.entries(a.by_project)) dest.push(`project ${pid}`);
-    if (a.pool) dest.push("pool");
-    if (a.transformation) dest.push("stages");
-    if (a.overhead) dest.push("overhead");
-    return dest.length === 0;
+    return !!a.excluded && !Object.keys(a.by_run).length && !Object.keys(a.by_project).length
+      && !a.pool && !a.transformation && !a.overhead;
   };
 
   /** ONE word for the state, and it is what the column sorts and filters on.
@@ -479,7 +469,7 @@ export default function Invoices() {
   };
 
   const docCols: Column<RunCostDocumentRow>[] = [
-    { key: "date", label: "Date", width: 9, className: "mono", get: (d) => d.doc_date || "—" },
+    { key: "date", label: "Date", width: 10, className: "mono", get: (d) => d.doc_date || "—" },
     { key: "supplier", label: "Supplier", width: 15, get: (d) => d.supplier || "—" },
     {
       key: "buyer",
@@ -491,7 +481,7 @@ export default function Invoices() {
     {
       key: "number",
       label: "Number",
-      width: 18,
+      width: 15,
       className: "mono",
       get: (d) => `${d.doc_number} ${d.external_id}`.trim(),
       title: (d) => `${d.doc_number} ${d.external_id}`.trim(),
@@ -500,7 +490,7 @@ export default function Invoices() {
     {
       key: "total",
       label: "Total",
-      width: 12,
+      width: 14,
       numeric: true,
       // Sorts on USD and PRINTS the printed currency: sorting 1,651 EUR beside
       // 1,651 USD by the number on the page would order them as equal.
@@ -602,6 +592,22 @@ export default function Invoices() {
                   </>
                 )}
                 {doc.body ? <PrintedInvoice body={doc.body} currency={doc.currency} /> : null}
+                {/* KSeF's XML is the invoice, and a transfer has none: the API
+                    refuses both, so neither is offered (decision 0085). */}
+                {doc.doc_type !== "transfer" && doc.body?.source?.kind !== "ksef" ? (
+                  <div className="btn-row">
+                    <button type="button" className="btn btn-sm" onClick={() => setTranscribing(doc)}
+                      title="Store what this document's own file prints">
+                      Transcribe…
+                    </button>
+                    {(doc.locked || []).length ? (
+                      <button type="button" className="btn btn-sm" onClick={() => setKindOf(doc)}
+                        title="What this document is in law. It moves no money, so a closed batch's document takes it.">
+                        Legal kind…
+                      </button>
+                    ) : null}
+                  </div>
+                ) : null}
                 <CorrectionLinks doc={doc} onOpen={setExpanded} />
                 <div className="btn-row">
                   <AccountantMark companyId={doc.company_id} kind="document" id={d.id} state={doc.accountant}
@@ -625,7 +631,7 @@ export default function Invoices() {
                       <span className="muted">
                         An in-house transfer from {companyName(doc.counterparty_company_id)} to{" "}
                         {companyName(doc.company_id)}. It changes only as a whole: reverse it on{" "}
-                        <Link className="comp-link" to="/production/transfers">Production → Transfers</Link>.
+                        <Link className="comp-link" to="/stock/transfers">Stock → Transfers</Link>.
                       </span>
                     </>
                   ) : (doc.locked || []).length ? (
@@ -706,11 +712,12 @@ export default function Invoices() {
                     <span className="muted">
                       Nothing is written until you save.
                       {deletedLines.size
-                        ? ` ${deletedLines.size} position${deletedLines.size === 1 ? "" : "s"} staged for voiding.`
+                        ? ` ${plural(deletedLines.size, "position")} staged for voiding.`
                         : ""}
                     </span>
                   </div>
                 ) : null}
+                <RowChangesCard table="run_cost_documents" id={d.id} bare />
               </>
             )}
     </>
@@ -720,18 +727,10 @@ export default function Invoices() {
     <div className="main-solo">
       <div className="page">
         <div className="toolbar">
-          <h1>Invoices</h1>
+          <h1>Purchase invoices</h1>
           <span className="toolbar-total">
-            {s.document_count} documents · {money(s.total_usd)} total
+            {s.document_count} documents · {pln(s.total_usd, rate)} total
           </span>
-          <label className="muted">
-            <input
-              type="checkbox"
-              checked={onlyProblems}
-              onChange={(e) => setOnlyProblems(e.target.checked)}
-            />{" "}
-            only unfinished
-          </label>
           <button type="button" className="btn btn-sm" onClick={refreshAll} disabled={busy}>
             Refresh
           </button>
@@ -767,19 +766,32 @@ export default function Invoices() {
         {/* ------------------------------------------------------------ documents */}
         <div className="card pad">
           <h2 className="card-title">Documents</h2>
+          <div className="stat-row">
+            <StatChip n={reg.documents.filter(problem).length} tone={reg.documents.some(problem) ? "warn" : "ok"}
+              on={onlyProblems} onClick={() => setOnlyProblems(!onlyProblems)}
+              title="Does not add up, or part of it is not assigned">unfinished</StatChip>
+            {([["does not add up", "err"], ["unassigned", "warn"], ["residual", "warn"]] as const).map(([word, tone]) => {
+              const n = reg.documents.filter((d) => stateOf(d) === word).length;
+              return n || narrow === word ? (
+                <NarrowChip key={word} n={n} tone={tone} value={word} current={narrow} onNarrow={setNarrow}>{word}</NarrowChip>
+              ) : null;
+            })}
+          </div>
           <div className="table-wrap">
             <DataTable
               columns={docCols}
-              rows={docs}
+              rows={narrow ? docs.filter((d) => stateOf(d) === narrow) : docs}
               rowKey={(d) => d.id}
               persistKey="invoices"
               defaultSort={{ key: "date", dir: "desc" }}
               openKey={expanded}
               onOpenChange={(k) => setExpanded(k == null ? null : Number(k))}
               expand={renderPositions}
-              empty={onlyProblems
-                ? "Nothing unfinished — every document is assigned."
-                : "No documents yet."}
+              empty={narrow
+                ? "No document in this state."
+                : onlyProblems
+                  ? "Nothing unfinished — every document is assigned."
+                  : "No documents yet."}
             />
           </div>
         </div>
@@ -803,15 +815,20 @@ export default function Invoices() {
           }}
         />
       ) : null}
-      {linking && doc ? (
-        <PlanLinkDialog
-          line={linking}
-          projectId={projectOfLine(linking) as number}
-          projectName={reg.projects[String(projectOfLine(linking))] || ""}
-          currency={linking.currency || docCurrency}
-          supplier={doc.supplier}
+      {kindOf ? (
+        <DocumentKindDialog
+          doc={kindOf}
           onClose={(changed) => {
-            setLinking(null);
+            setKindOf(null);
+            if (changed) refreshAll();
+          }}
+        />
+      ) : null}
+      {transcribing ? (
+        <TranscribeDialog
+          doc={transcribing}
+          onClose={(changed) => {
+            setTranscribing(null);
             if (changed) refreshAll();
           }}
         />
@@ -820,7 +837,7 @@ export default function Invoices() {
   );
 }
 
-// --------------------------------------------------------- supplier originals
+// ------------------------------------------------ a document's links and files
 
 /** The correction chain around a document (decision 0044).
  *
@@ -890,7 +907,7 @@ function CustomsUpload({ busy, onDone }: { busy: boolean; onDone: (docId: number
     if (!file) return;
     const day = await dialog.prompt(
       "The day the declaration reached you (YYYY-MM-DD). Its import VAT is deducted no earlier.",
-      { title: "Customs declaration received", initial: new Date().toLocaleDateString("sv-SE") },
+      { title: "Customs declaration received", initial: today() },
     );
     if (day === null) return;
     try {
@@ -984,7 +1001,7 @@ function NewInvoiceCard({
   return (
     <div className="card pad edit-card">
       <h2 className="card-title">New invoice</h2>
-      <p className="card-subtitle">
+      <p className="muted dim">
         Enter it as the supplier printed it. Positions are handed out to batches afterwards — one
         invoice can pay for several batches, and a position can be split.
       </p>

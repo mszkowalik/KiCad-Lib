@@ -10,10 +10,6 @@ class Settings(BaseSettings):
 
     database_url: str = "postgresql+psycopg://kicadlib:kicadlib@127.0.0.1:5434/kicadlib"
 
-    # The existing library repo (mounted read-only at /repo in Docker).
-    # The import station reads Sources/, Symbols/base_library.kicad_symdir/,
-    # Footprints/7Sigma.pretty/ and 3DModels/ from here.
-    repo_dir: Path = Path("/repo")
 
     # Writable data root: file mirror + render cache live here.
     data_dir: Path = Path("./data")
@@ -166,16 +162,13 @@ class Settings(BaseSettings):
     # Encrypts stored git tokens at rest (Fernet key derived via SHA-256).
     secret_key: str = "dev-secret-change-me"
 
-    # Display currency for cost totals when a project has no override.
-    default_currency: str = "USD"
+    # The display currency of every cost total (decision 0103).
+    default_currency: str = "PLN"
 
     # Decision 0064: each company draws only from its own stock. Off until every
     # purchase, draw and adjustment names its company; `appconfig.validate`
     # refuses to turn it on before that.
     stock_per_company: bool = False
-    # Decision 0073: a draw is bound to lots oldest first and takes their cost;
-    # a draw the lots cannot cover is refused. Off until the history is bound.
-    lot_pricing: bool = False
 
     # Exchange-rate auto-refresh (frankfurter.app — ECB daily rates, no key).
     fx_autofetch: bool = True

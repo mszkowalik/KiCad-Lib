@@ -162,7 +162,7 @@ def test_a_document_written_after_the_close_is_editable(db: Session, world):
 
 def test_a_correction_moves_the_batch_cost_and_the_original_is_untouched(db: Session, world):
     _close(db, world["run"], when=M.utcnow() - timedelta(days=1))
-    before = ra.run_actuals(db, world["run"])["total"]
+    before = ra.run_actuals(db, world["run"])["total_usd"]
     fix = M.RunCostDocument(project_id=world["proj"].id, run_id=world["run"].id,
                             doc_type="correction", supplier="ASSEMBLYCO",
                             doc_number="C-0001-C1", doc_date="2026-09-19",
@@ -173,7 +173,7 @@ def test_a_correction_moves_the_batch_cost_and_the_original_is_untouched(db: Ses
     db.add(M.RunCostLine(document_id=fix.id, plan_key="pcba:general", label="overcharge",
                          qty=1, unit_price=-25.0, position=0))
     db.flush()
-    after = ra.run_actuals(db, world["run"])["total"]
+    after = ra.run_actuals(db, world["run"])["total_usd"]
     assert after == pytest.approx(before - 25.0)
     # The original keeps what it printed — the same rule a split parent follows.
     assert world["direct"].total_amount == 500.0

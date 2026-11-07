@@ -31,6 +31,13 @@ export interface FieldProps {
   error?: string;
   /** Take the whole width of a `<FieldRow>` — for a note, a URL, a token. */
   wide?: boolean;
+  /** The field holds labels of its own: a checkbox, a file button. The frame is
+   *  then a `<div>`, because a label must not hold a label. */
+  group?: boolean;
+  /** The label beside the control, not above it: a toolbar has no height to
+   *  spare. With no `label` it frames a checkbox and the text after it. */
+  inline?: boolean;
+  title?: string;
   className?: string;
   children: ReactNode;
 }
@@ -40,19 +47,23 @@ export default function Field({
   hint,
   error,
   wide = false,
+  group = false,
+  inline = false,
+  title,
   className = "",
   children,
 }: FieldProps) {
-  const cls = ["field", wide ? "field-wide" : "", error ? "bad" : "", className]
+  const cls = ["field", wide ? "field-wide" : "", inline ? "field-beside" : "", error ? "bad" : "", className]
     .filter(Boolean)
     .join(" ");
+  const Frame = group ? "div" : "label";
   return (
-    <label className={cls}>
+    <Frame className={cls} title={title}>
       {label !== undefined ? <span>{label}</span> : null}
       {children}
       {error ? <span className="field-error">{error}</span> : null}
       {hint !== undefined && !error ? <span className="field-hint">{hint}</span> : null}
-    </label>
+    </Frame>
   );
 }
 

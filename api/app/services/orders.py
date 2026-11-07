@@ -26,6 +26,7 @@ from sqlalchemy.orm import Session
 from .. import models as M
 from ..models import utcnow
 from . import fx, run_actuals
+from .project_bom import run_pricing_date
 
 STATE_AFTER = {
     "produced": "in_stock",
@@ -306,6 +307,13 @@ def run_stock(db: Session, project_id: int | None = None) -> list[dict]:
     return out
 
 
+def batch_pln_rate(db: Session, run_id: int | None) -> float | None:
+    """PLN per USD at a batch's pricing date: a shelf or an order carries a device
+    at what its own batch cost in PLN (decision 0103)."""
+    run = db.get(M.ProductionRun, run_id) if run_id else None
+    return fx.pln_per_usd(db, run_pricing_date(run)) if run is not None else None
+
+
 def product_stock(db: Session) -> list[dict]:
     """The shelf per PRODUCT, counted from the DEVICE RECORDS.
 
@@ -339,7 +347,7 @@ def product_stock(db: Session) -> list[dict]:
         p = out.setdefault(pid, {
             "project_id": pid, "project": projects.get(pid, "?"),
             "in_stock": 0, "available": 0, "held": {}, "shipped": 0,
-            "allocated": 0, "missing": 0, "value_usd": 0.0, "no_batch": 0, "batches": set(),
+            "allocated": 0, "missing": 0, "value_usd": 0.0, "value_pln": 0.0, "no_batch": 0, "batches": set(),
         })
         cond = cond or "ok"
         if run_id is not None:
@@ -354,6 +362,7 @@ def product_stock(db: Session) -> list[dict]:
                 p["no_batch"] += n
             elif run_id in unit_cost:
                 p["value_usd"] += n * unit_cost[run_id]
+                p["value_pln"] += n * unit_cost[run_id] * (batch_pln_rate(db, run_id) or 0.0)
         elif state == "shipped":
             p["shipped"] += n
         elif state == "allocated":
@@ -370,6 +379,7 @@ def product_stock(db: Session) -> list[dict]:
     for p in out.values():
         p["batches"] = len(p["batches"])
         p["value_usd"] = _round(p["value_usd"])
+        p["value_pln"] = _round(p["value_pln"])
         result.append(p)
     # Biggest shelf first: the page is read to find what there is to sell.
     result.sort(key=lambda r: (-r["in_stock"], r["project"]))
@@ -518,10 +528,13 @@ def invoice_due_date(order: M.SalesOrder, issue_date: str) -> str:
 def create_shipment(db: Session, order: M.SalesOrder, *, kind: str = "delivery", shipped_at: str = "",
                     delivery_note: str = "", tracking: str = "", notes: str = "",
                     lines: list[dict], actor: str = "") -> M.Shipment:
-    """A delivery. Each entry in `lines` names an order line and the DEVICES
-    that left it, as `device_ids` or as `serials` the router resolved. There is
-    no quantity and no automatic pick. A `replaces_device_id` marks a
-    single-device warranty replacement charged to the order (§7)."""
+    """A delivery written in one step. Each entry in `lines` names an order line
+    and the DEVICES that left it as `device_ids`. There is no quantity and no
+    automatic pick. A `replaces_device_id` marks a single-device warranty
+    replacement charged to the order (§7).
+
+    No route calls this any more: shipping is Pack, then Send (decision 0103).
+    Scripts that correct history and the tests call it."""
     if kind != "delivery":
         raise HTTPException(422, "use return_device for returns")
     if order.cancelled:
@@ -693,11 +706,25 @@ def _line_for(order: M.SalesOrder, d: M.DeviceUnit, order_line_id: int | None) -
     return cands[0]
 
 
+def _reserved_line(d: M.DeviceUnit, order: M.SalesOrder) -> int | None:
+    """The line of this order the device is reserved on, or None. A reservation
+    is an `allocated` event that names no shipment."""
+    if d.state != "allocated" or packed_in(d) is not None:
+        return None
+    ev = last_event(d, "allocated")
+    return ev.order_line_id if ev is not None and any(li.id == ev.order_line_id for li in order.lines) else None
+
+
 def _assess(d: M.DeviceUnit, sh: M.Shipment, order_line_id: int | None) -> tuple[M.SalesOrderLine | None, str]:
     """(the line it would go out on, why it may not) — an empty reason means
-    it may go into this box. One answer for the scan check and the pack."""
+    it may go into this box. One answer for the scan check and the pack.
+
+    A device reserved on this order may go in, on the line it is reserved for: the
+    box is the reservation's purpose, and Pack is the only way out of the building
+    (decision 0103). One reserved on another order may not."""
+    reserved = _reserved_line(d, sh.order)
     try:
-        li = _line_for(sh.order, d, order_line_id)
+        li = _line_for(sh.order, d, order_line_id or reserved)
         _refuse_unsellable(d)
     except HTTPException as e:
         det = e.detail
@@ -710,6 +737,10 @@ def _assess(d: M.DeviceUnit, sh: M.Shipment, order_line_id: int | None) -> tuple
     if d.state == "missing":
         # Scanning it into a box proves it is HERE, so the count was wrong.
         return li, "recorded missing at a stock count, but it is here — record it found first"
+    if reserved is not None:
+        return li, ""
+    if d.state == "allocated":
+        return li, "reserved on another order — release it on that order first"
     if d.state != "in_stock":
         return li, f"{d.state or 'unrecorded'}, not in stock"
     return li, ""
@@ -768,6 +799,48 @@ def unpack_devices(db: Session, sh: M.Shipment, device_ids: list[int], *, actor:
     return len(wanted)
 
 
+def mark_replacement(db: Session, sh: M.Shipment, device_id: int, code: str, *, actor: str = "") -> None:
+    """Say that a packed device replaces one already delivered on this order
+    (decision 0003 §7). On Send it goes out with `replaces_device_id`, so it does not
+    count against the ordered quantity. An empty code takes the statement back.
+
+    Two events, because the log is append-only and the newest event is the state."""
+    _require_open(sh)
+    held = {d.id: (ev, d) for ev, d in packed_devices(db, sh)}
+    if device_id not in held:
+        raise HTTPException(409, f"device {device_id} is not in this shipment")
+    ev, d = held[device_id]
+    line_id, replaces = ev.order_line_id, None
+    if (code or "").strip():
+        old = find_device(db, code)
+        if old is None:
+            raise HTTPException(404, f"no device carries the serial {code.strip()}")
+        name = old.serial or old.id
+        if old.id == d.id:
+            raise HTTPException(422, f"device {name} cannot replace itself. A repaired device sent back to "
+                                     "its order counts once by itself")
+        if old.project_id != d.project_id:
+            raise HTTPException(422, f"device {name} is another product")
+        lines = {li.id for li in sh.order.lines}
+        delivered = [e for e in live_shipped_of(old) if e.order_line_id in lines]
+        if not delivered:
+            raise HTTPException(409, f"device {name} was not delivered on this order")
+        taken = (db.query(M.DeviceEvent)
+                 .filter(M.DeviceEvent.replaces_device_id == old.id, M.DeviceEvent.kind == "shipped",
+                         M.DeviceEvent.device_id != d.id).all())
+        if any(e in live_shipped_of(db.get(M.DeviceUnit, e.device_id)) for e in taken):
+            raise HTTPException(409, f"device {name} has a replacement already")
+        # On the line of the device it replaces, which is the line the customer ordered.
+        line_id, replaces = delivered[-1].order_line_id, old.id
+    if replaces == ev.replaces_device_id:
+        return
+    record_event(db, d, "unallocated", actor=actor, order_line_id=ev.order_line_id, shipment_id=sh.id,
+                 note="the replacement statement changed")
+    record_event(db, d, "allocated", actor=actor, order_line_id=line_id, shipment_id=sh.id,
+                 replaces_device_id=replaces)
+    db.flush()
+
+
 def send_shipment(db: Session, sh: M.Shipment, *, shipped_at: str = "", delivery_note: str | None = None,
                   tracking: str | None = None, actor: str = "") -> M.Shipment:
     """Close the box: every device in it is `shipped` on the line it was
@@ -785,7 +858,7 @@ def send_shipment(db: Session, sh: M.Shipment, *, shipped_at: str = "", delivery
     lines = {li.id: li for li in sh.order.lines}
     for ev, d in packed:
         _refuse_unsellable(d)
-        _ship_device(db, sh, lines[ev.order_line_id], d, at=at, actor=actor)
+        _ship_device(db, sh, lines[ev.order_line_id], d, at=at, actor=actor, replaces=ev.replaces_device_id)
     sh.status = "sent"
     db.flush()
     refresh_order_status(sh.order)
@@ -998,11 +1071,49 @@ def allocate_devices(db: Session, line: M.SalesOrderLine, device_ids: list[int],
     n = 0
     for did in device_ids:
         d = db.get(M.DeviceUnit, did)
-        if d is None or d.state != "in_stock":
-            raise HTTPException(409, f"device {did} is not in stock")
+        if d is None:
+            raise HTTPException(404, f"no device {did}")
+        # The same refusal a shipment gives: a scan can name any device there is.
+        if d.project_id != line.project_id:
+            raise HTTPException(422, f"device {d.serial or did} belongs to another project")
+        if d.state != "in_stock":
+            raise HTTPException(409, f"device {d.serial or did} is {d.state or 'unrecorded'}, not in stock")
         record_event(db, d, "allocated", actor=actor, order_line_id=line.id)
         n += 1
     return n
+
+
+def release_devices(db: Session, line: M.SalesOrderLine, device_ids: list[int], actor: str = "") -> int:
+    """Take devices off a reservation on this line, so they are back in stock.
+
+    It writes `unallocated`, the event a box writes when a device leaves it, with
+    no shipment. Both events stay in the device's history. All or nothing: the
+    first device that is not reserved on this line is refused by name and nothing
+    is written. A device packed in a box is refused too, because its shipment page
+    is what takes it out."""
+    plan = []
+    for did in device_ids:
+        d = db.get(M.DeviceUnit, did)
+        if d is None:
+            raise HTTPException(404, f"no device {did}")
+        name = d.serial or did
+        box = packed_in(d)
+        if box is not None:
+            raise HTTPException(409, f"device {name} is packed in open shipment {box}; "
+                                     "take it out on the page of that shipment")
+        ev = last_event(d, "allocated") if d.state == "allocated" else None
+        if ev is None:
+            raise HTTPException(409, f"device {name} is {d.state or 'unrecorded'}, not reserved")
+        if ev.order_line_id != line.id:
+            other = db.get(M.SalesOrderLine, ev.order_line_id) if ev.order_line_id else None
+            where = "another line of this order" if other is not None and other.order_id == line.order_id \
+                else "another order"
+            raise HTTPException(409, f"device {name} is reserved on {where}, not on this line")
+        plan.append(d)
+    for d in plan:
+        record_event(db, d, "unallocated", actor=actor, order_line_id=line.id, note="reservation released")
+    db.flush()
+    return len(plan)
 
 
 # ---------------------------------------------------------------- economics
@@ -1073,6 +1184,7 @@ def order_economics(db: Session, order: M.SalesOrder, unit_cost: dict[int, float
         revenue_usd = _to_usd(db, revenue_net, cur, order.order_date, cache, unknown)
         basis = "order"
     devices_cost = 0.0
+    devices_cost_pln = 0.0
     uncosted = 0
     shipped_devices = 0
     replacements = 0
@@ -1092,15 +1204,19 @@ def order_economics(db: Session, order: M.SalesOrder, unit_cost: dict[int, float
         shipped_devices += 1
         if ev.replaces_device_id is not None:
             replacements += 1
+        rate = batch_pln_rate(db, d.production_run_id) or 0.0
         if twin_cost and d.id in twin_cost:
             devices_cost += twin_cost[d.id]
+            devices_cost_pln += twin_cost[d.id] * rate
         elif d.production_run_id in crafted:
             uncosted += 1
         elif d.production_run_id in unit_cost:
             devices_cost += unit_cost[d.production_run_id]
+            devices_cost_pln += unit_cost[d.production_run_id] * rate
         else:
             uncosted += 1
     repair_usd = 0.0
+    repair_pln = 0.0
     repair_ids = [e.device_id for e, _ in evs]
     if repair_ids:
         for ev in (db.query(M.DeviceEvent).filter(M.DeviceEvent.device_id.in_(repair_ids),
@@ -1111,20 +1227,41 @@ def order_economics(db: Session, order: M.SalesOrder, unit_cost: dict[int, float
             if not prior or prior[-1].order_line_id not in line_ids:
                 continue
             for cl in ev.cost_lines:
-                repair_usd += _to_usd(db, (cl.amount or 0) * (cl.qty or 1), cl.currency,
-                                      ev.at.date().isoformat(), cache, unknown)
+                one = _to_usd(db, (cl.amount or 0) * (cl.qty or 1), cl.currency,
+                              ev.at.date().isoformat(), cache, unknown)
+                repair_usd += one
+                repair_pln += one * (fx.pln_per_usd(db, ev.at) or 0.0)
     cost_usd = devices_cost + repair_usd
     margin = revenue_usd - cost_usd
+    # The same order in PLN (decision 0103). Revenue in PLN is what was invoiced;
+    # another currency converts at its invoice's date. A device costs what its own
+    # batch cost in PLN, at that batch's date.
+    if money_invoices:
+        revenue_pln = sum(
+            (i.net_amount or 0) if (i.currency or cur).upper() == "PLN"
+            else _to_usd(db, i.net_amount or 0, i.currency or cur, i.issue_date, cache, unknown)
+            * (fx.pln_per_usd(db, _as_dt(i.issue_date) if i.issue_date else None) or 0.0)
+            for i in money_invoices)
+    elif cur == "PLN":
+        revenue_pln = revenue_net
+    else:
+        revenue_pln = revenue_usd * (fx.pln_per_usd(db, _as_dt(order.order_date) if order.order_date else None) or 0.0)
+    cost_pln = devices_cost_pln + repair_pln
     return {
         "currency": cur,
         "revenue_net": _round(revenue_net),
+        "revenue_pln": _round(revenue_pln),
+        "devices_cost_pln": _round(devices_cost_pln),
+        "repair_cost_pln": _round(repair_pln),
+        "cost_pln": _round(cost_pln),
+        "margin_pln": _round(revenue_pln - cost_pln),
         "revenue_basis": basis,
         "revenue_usd": _round(revenue_usd),
         "devices_cost_usd": _round(devices_cost),
         "repair_cost_usd": _round(repair_usd),
         "cost_usd": _round(cost_usd),
         "margin_usd": _round(margin),
-        "margin_pct": _round(margin / revenue_usd * 100) if revenue_usd else None,
+        "margin_pct": _round((revenue_pln - cost_pln) / revenue_pln * 100) if revenue_pln else None,
         "shipped_devices": shipped_devices,
         "replacements": replacements,
         "uncosted_units": uncosted,
@@ -1152,7 +1289,7 @@ def invoice_json(i: M.OrderInvoice, order: M.SalesOrder) -> dict:
 
 def _line_counts(db: Session, line_ids: list[int]) -> dict[int, dict]:
     from sqlalchemy import func
-    out = {lid: {"shipped": 0, "replacements": 0, "returned": 0, "allocated": 0}
+    out = {lid: {"shipped": 0, "replacements": 0, "returned": 0, "allocated": 0, "reserved": []}
            for lid in line_ids}
     if not line_ids:
         return out
@@ -1169,6 +1306,10 @@ def _line_counts(db: Session, line_ids: list[int]) -> dict[int, dict]:
         ev = last_event(d, "allocated")
         if ev is not None and ev.order_line_id in out:
             out[ev.order_line_id]["allocated"] += 1
+            # With no shipment it is a reservation, and the order page can release
+            # it. With one it is in a box, and the shipment page takes it out.
+            if ev.shipment_id is None:
+                out[ev.order_line_id]["reserved"].append({"device_id": d.id, "serial": d.serial or ""})
     return out
 
 
@@ -1191,7 +1332,8 @@ def order_json(db: Session, order: M.SalesOrder, *, with_detail: bool = False,
             "net_total": _round((li.qty_ordered or 0) * (li.unit_price or 0)),
             "qty_shipped": fulfilled, "qty_open": max((li.qty_ordered or 0) - fulfilled, 0),
             "qty_replacements": c["replacements"], "qty_returned": c["returned"],
-            "qty_allocated": c["allocated"], "migrated_from_run_id": li.migrated_from_run_id,
+            "qty_allocated": c["allocated"], "reserved_devices": c["reserved"],
+            "migrated_from_run_id": li.migrated_from_run_id,
         })
     money = [i for i in order.invoices if i.kind in MONEY_KINDS]
     invoiced_net = sum(i.net_amount or 0 for i in money)
@@ -1234,9 +1376,14 @@ def shipment_json(db: Session, sh: M.Shipment) -> dict:
             live.pop(ev.device_id, None)
         else:
             live[ev.device_id] = (ev, d)
+    def replaced_serial(ev: M.DeviceEvent) -> str | None:
+        old = db.get(M.DeviceUnit, ev.replaces_device_id) if ev.replaces_device_id else None
+        return (old.serial or str(old.id)) if old is not None else None
+
     devices = [{"device_id": d.id, "serial": d.serial, "mac": d.mac or "", "state": d.state,
                 "order_line_id": ev.order_line_id, "auto": ev.auto,
-                "replaces_device_id": ev.replaces_device_id, "run_id": d.production_run_id}
+                "replaces_device_id": ev.replaces_device_id, "replaces_serial": replaced_serial(ev),
+                "run_id": d.production_run_id}
                for ev, d in live.values()]
     per_line: dict[int, int] = defaultdict(int)
     for dv in devices:
@@ -1253,7 +1400,8 @@ def shipment_json(db: Session, sh: M.Shipment) -> dict:
     packed = []
     if status == "open":
         packed = [{"device_id": d.id, "serial": d.serial, "mac": d.mac or "", "state": d.state,
-                   "order_line_id": ev.order_line_id, "auto": False, "replaces_device_id": None,
+                   "order_line_id": ev.order_line_id, "auto": False,
+                   "replaces_device_id": ev.replaces_device_id, "replaces_serial": replaced_serial(ev),
                    "run_id": d.production_run_id, "packed_at": ev.at.isoformat() if ev.at else None}
                   for ev, d in packed_devices(db, sh)]
         for dv in packed:

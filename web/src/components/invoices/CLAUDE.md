@@ -81,6 +81,13 @@ Three traps this table has already hit:
 - **A header row is never editable.** It is worth zero — its children carry the
   money — so editing its quantity would be editing a number nothing reads.
 
+## ONE row editor for a sales document: `SalesLines.tsx`
+
+The invoice draft and the recurring invoice share `SalesLinesEditor` and
+`CustomerSelect`. Send what `linesBody` returns: the API answers 500 to a comma in
+a number. `RecordHistoryDialog` keeps its own rows, because a document recorded
+from paper states its printed net and VAT, and these rows compute them.
+
 ## A supplier-parts position is filled in place, not in a dialog
 
 A factory bills one figure for the components it sourced itself, and that figure

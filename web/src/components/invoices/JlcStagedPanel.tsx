@@ -14,6 +14,7 @@ import {
 } from "../../api";
 import DataTable from "../DataTable";
 import { useDialog } from "../Dialog";
+import { CheckField } from "../Field";
 import { ErrorBanner, Spinner } from "../Ui";
 
 /**
@@ -32,7 +33,7 @@ import { ErrorBanner, Spinner } from "../Ui";
  * moves the consigned stock its assembly orders used out of the pool, charged
  * to nobody until each order is linked to a batch. An order whose lots are not
  * all known is deferred until its parts invoice is imported. It records no
- * assembly step — that is the person's, on the batch's Process tab (0072).
+ * assembly step — that is the person's, on the batch's Floor tab (0072).
  */
 import { usd as money } from "../../format";
 
@@ -256,14 +257,7 @@ export default function JlcStagedPanel({ onImported }: { onImported?: () => void
             {empty.length} with no value
           </span>
         )}
-        <label className="muted">
-          <input
-            type="checkbox"
-            checked={onlyPending}
-            onChange={(e) => setOnlyPending(e.target.checked)}
-          />{" "}
-          only not-yet-imported
-        </label>
+        <CheckField checked={onlyPending} onChange={setOnlyPending}>only not-yet-imported</CheckField>
       </div>
 
       <div className="table-wrap">
@@ -386,87 +380,55 @@ export default function JlcStagedPanel({ onImported }: { onImported?: () => void
               lots).
             </p>
           ) : (
-            <table className="data data-fixed jlc-parts-table">
-              <thead>
-                <tr>
-                  <th>order</th>
-                  <th className="num">lots</th>
-                  <th className="num">paid</th>
-                  <th>state</th>
-                  <th>import</th>
-                </tr>
-              </thead>
-              <tbody>
-                {parts
-                  .filter((o) => !o.document_id || o.awaiting_on_document > 0 || o.refresh_due)
-                  .map((o) => (
-                    <tr key={o.pob}>
-                      <td className="mono">{o.pob}</td>
-                      <td className="num">
-                        {o.lots}
-                        {o.cancelled_lots > 0 && (
-                          <span className="muted dim" title="Cancelled sub-orders — no parts delivered.">
-                            {" "}
-                            ({o.cancelled_lots} cancelled)
-                          </span>
-                        )}
-                        {o.awaiting_lots > 0 && (
-                          <span
-                            className="muted dim"
-                            title={`Paid (${money(o.awaiting_usd)}) and still being sourced by JLC. ` +
-                              "Imported as money awaiting delivery, never as stock, until a refresh sees them arrive."}
-                          >
-                            {" "}
-                            ({o.awaiting_lots} awaiting)
-                          </span>
-                        )}
-                      </td>
-                      <td className="num">{money(o.paid_usd)}</td>
-                      <td>
-                        {o.near_duplicate_document_id ? (
-                          <span
-                            className="pill err"
-                            title={`Document ${o.near_duplicate_document_id} (${o.near_duplicate_ref}) looks like the same purchase under a mistyped reference.`}
-                          >
-                            maybe already doc {o.near_duplicate_document_id}
-                          </span>
-                        ) : o.document_id ? (
-                          <span
-                            className={`pill ${o.refresh_due ? "warn" : "neutral"}`}
-                            title={o.refresh_due
-                              ? `Document ${o.document_id} is behind JLC: a lot arrived, or JLC ` +
-                                "re-settled a price (refund or supplement) since the import."
-                              : `Document ${o.document_id} holds ${o.awaiting_on_document} line(s) awaiting delivery.`}
-                          >
-                            {o.refresh_due ? "changed at JLC — refresh" : "awaiting delivery"}
-                          </span>
-                        ) : (
-                          <span className="pill warn">not imported</span>
-                        )}
-                      </td>
-                      <td>
-                        {o.document_id ? (
-                          <button
-                            className="btn btn-sm"
-                            disabled={busy === o.pob}
-                            onClick={() => refreshParts(o)}
-                          >
-                            Refresh
-                          </button>
-                        ) : (
-                          <button
-                            className="btn btn-primary btn-sm"
-                            disabled={busy === o.pob}
-                            onClick={() => importParts(o)}
-                          >
-                            Import
-                          </button>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-              </tbody>
-            </table>
+            <DataTable
+              rows={parts.filter((o) => !o.document_id || o.awaiting_on_document > 0 || o.refresh_due)}
+              rowKey={(o) => o.pob}
+              columns={[
+                { key: "order", label: "Order", width: 30, className: "mono", get: (o) => o.pob },
+                { key: "lots", label: "Lots", width: 18, numeric: true, get: (o) => o.lots,
+                  render: (o) => (
+                    <>
+                      {o.lots}
+                      {o.cancelled_lots > 0 && (
+                        <span className="muted dim" title="Cancelled sub-orders — no parts delivered.">
+                          {" "}({o.cancelled_lots} cancelled)
+                        </span>
+                      )}
+                      {o.awaiting_lots > 0 && (
+                        <span className="muted dim"
+                          title={`Paid (${money(o.awaiting_usd)}) and still being sourced by JLC. ` +
+                            "Imported as money awaiting delivery, never as stock, until a refresh sees them arrive."}>
+                          {" "}({o.awaiting_lots} awaiting)
+                        </span>
+                      )}
+                    </>
+                  ) },
+                { key: "paid", label: "Paid", width: 14, numeric: true, get: (o) => o.paid_usd, render: (o) => money(o.paid_usd) },
+                { key: "state", label: "State", width: 26, interactive: false, get: () => "",
+                  render: (o) => (o.near_duplicate_document_id ? (
+                    <span className="pill err"
+                      title={`Document ${o.near_duplicate_document_id} (${o.near_duplicate_ref}) looks like the same purchase under a mistyped reference.`}>
+                      maybe already doc {o.near_duplicate_document_id}
+                    </span>
+                  ) : o.document_id ? (
+                    <span className={`pill ${o.refresh_due ? "warn" : "neutral"}`}
+                      title={o.refresh_due
+                        ? `Document ${o.document_id} is behind JLC: a lot arrived, or JLC ` +
+                          "re-settled a price (refund or supplement) since the import."
+                        : `Document ${o.document_id} holds ${o.awaiting_on_document} line(s) awaiting delivery.`}>
+                      {o.refresh_due ? "changed at JLC — refresh" : "awaiting delivery"}
+                    </span>
+                  ) : (
+                    <span className="pill warn">not imported</span>
+                  )) },
+                { key: "act", label: "Import", width: 12, interactive: false, get: () => "",
+                  render: (o) => (o.document_id ? (
+                    <button className="btn btn-sm" disabled={busy === o.pob} onClick={() => refreshParts(o)}>Refresh</button>
+                  ) : (
+                    <button className="btn btn-primary btn-sm" disabled={busy === o.pob} onClick={() => importParts(o)}>Import</button>
+                  )) },
+              ]}
+            />
           )}
         </div>
       )}

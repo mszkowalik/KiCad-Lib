@@ -1,5 +1,169 @@
 # Changelog
 
+## 2026-11-07 (every function has a screen, and a route can be an agent tool)
+
+- **Every API route has a screen, or a written reason.** `scripts/check-ui-routes.py` fails the build
+  on anything else. The rules for a new function are in `docs/reference/ui-map.md`.
+- **Orders: a reservation can be released.** A line with reserved devices shows Release…. The device
+  goes back to stock, and its history keeps both events.
+- **Shipments: a device reserved on an order can go into a shipment of that order.** A device reserved
+  on another order is refused by name.
+- **Procedures: "Where used: batches" names the batches that ran the version.** It read an old pin that
+  nothing set, so it was always empty.
+- **Batch → Devices: "Programming coverage"** lists attempts that named no device and devices that never
+  passed. It draws nothing when there are none.
+- **Shipments: a warranty replacement.** In an open shipment, "Replacement…" on a packed device names the
+  delivered device it replaces. It goes out as a replacement and does not count against the ordered quantity.
+  The order line shows it as `+1`.
+- **Project → History: open a commit to list its files**, and open a file in a new tab.
+- **Project → Devices: "MQTT accounts"** downloads the broker file for the project.
+- **Reviews → Checklists: a Versions section.** Choose a scope, read a past version, and put it back as
+  a new version.
+- **Sales invoices: "New template…" and "Edit"** create and change a recurring invoice. A draft with a zw
+  position can set its legal basis, which KSeF needs. A half-typed position now stops Save on a new invoice
+  instead of vanishing, and a comma in a quantity or a price is accepted.
+- **Procedures → Files: a firmware row opens to the versions that use it**, and the delete confirm names them.
+- **Bench: the agent strip offers the Chrome profile** for a Mac with managed Chrome.
+- **Stock → Organizers:**
+  - Open a row to edit its box, or to delete a box that never held anything.
+  - "Pieces in no box…" records pieces used for R&D or for a project the platform does not track, or lost.
+  - "Load a list…" loads boxes and contents from pasted rows, with a preview that writes nothing.
+  - The chips sit above the search box, as on Parts, and a row's history is a table.
+- **Every delete asks first.** Cost items, extra items, project notes, voided lines, removed draws, and the
+  JLC session and decision controls did not.
+- **Time reads in local time everywhere**, as `2026-11-07 17:30`. Stored times stay in UTC.
+- **Tiles look the same everywhere:** the figure, and a small label under it. Headings on Admin use the shared
+  card title.
+- **Words:** the screens say "procedure" where they said "deployment".
+- **Removed:** the retired YAML import routes (`/api/import`), the one-step
+  `POST /api/orders/{id}/shipments`, because a delivery is Pack, then Send, and the planned serial routes
+  (`/api/runs/{id}/devices`), which hold no row on production.
+- **Agents: a route tagged `x-agent-tool` is a tool** (decision 0106), with typed arguments and the route's
+  own permissions. 27 routes have a tag, among them parts stock, the JLC ledger, orders, and the organizer
+  writes. `api_request` stays as the fallback, and an installed MCP server needs no new download.
+- **Corrections:**
+  - Deleting a box no longer blocks the undo of the import that made it.
+  - An import row with no box code gets a refusal that names the row, not a server error.
+  - A second recurring invoice with the same key, a bad number in a position, and a template day that some
+    months do not have get a clear refusal.
+  - The project file routes answer a sentence when the repository is not fetched, and a file opens under its
+    own name with the right type.
+  - A channel name that two procedures carry gets a named refusal at run creation.
+
+## 2026-11-07 (placeholders are accepted, one part under two cards)
+
+- **A placeholder document raises no issue on the Overview any more.** Nobody will find those invoices.
+  The note on each document still says why it exists.
+- **Stock compares one part under two library cards once.** C2837531 is both TS3625A and KH-6X6X5H-STM,
+  and each row took JLC's whole count. That showed differences of +3054 and +2250 that did not exist,
+  and counted the pieces twice in the totals.
+- **`POST /api/organizers/research` takes `purpose=loss`.** Pieces in no box that nothing pays for become
+  a scrap adjustment of the company that bought them.
+
+## 2026-11-07 (money reads in PLN, the app opens dark)
+
+- **Every total reads in PLN**: a batch, a device, a project, an order's cost and margin, the stock
+  value at JLCPCB and in the office, the shelf of finished devices, and "Where the money went".
+- **A component's unit price stays in USD**, and an invoice stays in its own currency. So does a
+  sales order, and JLC's own order panels, because JLC bills in USD.
+- **A batch's PLN figure uses the rate of the batch's date**, so a closed batch's cost does not move
+  later. A figure with no batch, such as stock value, uses today's rate.
+- **A project has no display currency any more.** The field, the Currency column on Projects and the
+  currency box on the BOM are gone.
+- **A price override keeps its currency.** An override on Materials is in USD and one on a cost line
+  is in PLN. Batch 8's in-house assembly override stays 7 PLN per device.
+- **The app opens dark for everybody.** An account still on the old default moves to dark on the next
+  start. Light and System stay on Account → Appearance, and an account on Light stays on it.
+- **Supply coverage on Materials shows only a problem.** A batch where every position reconciles has
+  no card.
+- **Tiles on Cost overview print the label under the figure.** It ran into the figure on the same
+  line.
+- **The page review.** Order lines, shipments, invoices, stock adjustments and the device tables moved
+  to the shared table. A batch attachment asks before it is deleted. "Add file" on a component picks
+  the file first. Back from a component goes to the library, because `/` is now Home.
+
+## 2026-11-07 (the boxes that asked for a typewriter font now have it)
+
+- **A box marked for a monospace font now shows one.** Serial numbers, URLs, keys and settings on
+  Admin, the scan box and the procedure editor rendered in the normal font, because a general rule
+  overrode the request. About 80 boxes change. Their height does not.
+- **The Skills editor and the simulator's control block are monospace again**, with the size and
+  spacing their style always stated.
+- **The bench serial box is 18 px**, as stated for reading it at arm's length. It rendered at 14 px.
+- **A cost field that needs an answer has a red tint as well as a red border.**
+- **"New deployment" has its dashed outline.** An ordering error drew it as a solid tile.
+- **The category tree and the settings labels use the theme's muted colour in dark mode.** They
+  used a fixed grey from the light palette.
+
+## 2026-11-07 (FIFO is gone)
+
+- **Every draw takes the pool's moving average.** The "Lot pricing (FIFO)" switch and the "Bind draws
+  to lots" job are gone. The switch was never on, so no new price changes, and a draw that already
+  holds lots keeps them and its price.
+  Decision [0105](docs/decisions/0105-a-draw-takes-the-moving-average.md).
+
+## 2026-11-07 (the office organizers)
+
+- **Henry holds what is in your organizers: Stock → Organizers.** The list shows each box, its
+  part, its company and its quantity, and a search finds a part or a box. You can add an organizer
+  and its boxes. The Google sheet "Stany Magazynowe" is the first load.
+- **A take is a stock movement and a cost.** Take from a box for R&D, which no batch pays, or for a
+  batch. You choose the company only when both companies hold the part in that box. "Used for R&D"
+  lists each take with its reason and its value. A part with no purchase in the records costs 0.
+- **Count writes what the box holds now.** Pieces no purchase covers enter stock at zero value, and
+  missing pieces are written off. Move changes the box and no money.
+- **Stock → Parts keeps the office apart from JLC.** A new "In boxes" column shows what the
+  organizers hold, and Δ qty leaves those pieces out. Parts in the office no longer read as parts JLC
+  has lost. Decision [0104](docs/decisions/0104-an-organizer-box-says-where-the-ledger-says-what-it-cost.md).
+
+## 2026-11-07 (a new site structure, a board for each batch, the scan group)
+
+- **Production is four sections now: Production, Stock, Sales and Finance.** Each job has its own
+  tabs, and a section link opens the tab you used last. `/` is a new Home page. Your name opens a
+  menu with Account, History, Admin and Log out. Every old address still works.
+  Decision [0103](docs/decisions/0103-a-job-is-a-section-and-a-batch-is-a-board.md).
+- **A batch opens on Floor: a board of its process.** Each step is a field with its units done,
+  units waiting, what can go now, and the stock of its parts. Click a field for its work panel.
+- **"Open bench" sets the bench up for a step:** the project, the batch, the steps and the boards.
+- **The scan group chooses named devices for a step.** A wrong code is a red row and a sound. It no
+  longer opens a dialog that loses your next scan. The box keeps the focus, the group survives a
+  reload, the server checks each code, and several ticked steps run as one write with one Undo.
+- **The batch page is shorter.** Devices is one list, Money holds the costs, and Settings holds the
+  batch facts. Batches in work show a small board in the Batches list and on Home.
+- **Project → Process shows the same board, with stock against a number of devices you type.**
+- **Long lists fold.** A secondary list with more than 8 rows starts folded, and its header gives the
+  count, state counts and the main action.
+- **Shipping is Pack, then Send.** The one-step "Ship…" left the order page.
+- **New controls for functions that only the API had:** Sales → Customers, "Delete order…", "Link
+  devices no batch has claimed…" on a batch, "Delete…" on a project's read commit (a batch that uses
+  the commit refuses it), "Fab zip" on a project's Board, "Legal kind…" on a closed batch's document,
+  and the list of requests handed to the agent, with Withdraw.
+- **Four repair jobs are admin-only on the API too:** the JLC fee refresh, the fee split, the
+  adjustment rewrite and the re-compute of programming checks.
+- **New pages:** History (your changes, each with Undo), Library → Datasheets (full-text search over
+  every archived page, and the archive jobs), and Admin → Data jobs.
+- **A batch's Settings tab has Corrections:** "Move devices into this batch…", "Rebuild twins…" and
+  "Undo rebuild…". Each starts with a preview. The rebuild preview shows the money check, the steps,
+  the parts against the units and the plan per device.
+- **More functions have a control:** "Reserve devices…" on an order line, by scanned serial; "Link
+  old bench runs…" on Project → Process; "Transcribe…" on a purchase invoice; and, for an
+  administrator, "Record issued elsewhere…" and "Import register…" on Sales invoices. A reservation
+  now refuses a device of another project, as a shipment does.
+- **Library → Templates has a "3D models" tab.** It lists the files that footprints name, searches
+  them, opens them in the viewer and uploads a file. An upload to a path that exists replaces its
+  content, and it asks first.
+- **Stock → JLCPCB shows "Orders at JLCPCB", read live, with the raw data of each order.** "Draw
+  invoice PDFs…" draws the invoices of the documents you tick. With a dead JLC session, the page
+  prints the server's sentence and keeps working. An administrator also gets three repair jobs:
+  fetch fee breakdowns, split imported batches by fee, and turn old external adjustments into draws.
+- **Stock → Parts has "Sync JLC ledger", and a part's row has "Raw JLC data".**
+- **Admin has new jobs:** on Data jobs, the material ledger's size and state maps, the company
+  backfill and "Re-compute programming checks"; on Companies, "Fill documents from KSeF".
+- **A "Changes" fold lists what changed on a record, and who changed it.** It is on a batch's
+  Settings tab, an order, a component and an open purchase invoice.
+- **Fixed:** "Devices" and "Pinned by" links now open what they name, and a batch's Files tab no
+  longer fails when its project has no git mirror.
+
 ## 2026-11-07 (a logged-out JLCPCB session reads as dead)
 
 - **The JLCPCB session strip now reports a dead session when JLCPCB logs the account out.**

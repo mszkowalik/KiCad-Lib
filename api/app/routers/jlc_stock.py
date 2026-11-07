@@ -14,8 +14,9 @@ from .util import acting_name, audit
 router = APIRouter(prefix="/api/jlc", tags=["jlc-stock"])
 
 
-@router.get("/stock")
+@router.get("/stock", openapi_extra={"x-agent-tool": "get_jlc_stock"})
 def stock(currency: str | None = None, db: Session = Depends(get_db)):
+    """What JLCPCB holds for us: each part, its quantity and its value at the last sync."""
     cur = (currency or settings.default_currency).upper()
     rates = fx.get_rates(db)
     items = db.query(M.JlcStockItem).order_by(M.JlcStockItem.lcsc).all()
@@ -121,7 +122,7 @@ def sync_ledger(only: str = "", db: Session = Depends(get_db)):
     return report
 
 
-@router.get("/stock/ledger")
+@router.get("/stock/ledger", openapi_extra={"x-agent-tool": "get_jlc_ledger"})
 def ledger(lcsc: str = "", db: Session = Depends(get_db)):
     """What JLC's ledger and the platform cannot say about each other.
 
@@ -133,7 +134,7 @@ def ledger(lcsc: str = "", db: Session = Depends(get_db)):
     return out
 
 
-@router.get("/stock/ledger/{lcsc}")
+@router.get("/stock/ledger/{lcsc}", openapi_extra={"x-agent-tool": "get_jlc_part_ledger"})
 def ledger_for_part(lcsc: str, db: Session = Depends(get_db)):
     """One part's ledger as JLC keeps it, oldest first."""
     rows = (db.query(M.JlcStockChange).filter(M.JlcStockChange.lcsc == lcsc.upper())

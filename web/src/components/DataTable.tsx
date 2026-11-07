@@ -300,7 +300,7 @@ export default function DataTable<T>({
             ) : c.interactive === false ? (
               <th key={c.key} className={headClass(c)}>
                 {c.label}
-                <button type="button" className="th-sort" onClick={() => cycleSort(c.key)}
+                <button type="button" className="th-sort th-sort-tail" onClick={() => cycleSort(c.key)}
                   title={typeof c.label === "string" ? `Sort by ${c.label}` : "Sort"}>
                   {sort?.key === c.key ? (
                     <span className="sort-ind">{sort.dir === "asc" ? "▲" : "▼"}</span>

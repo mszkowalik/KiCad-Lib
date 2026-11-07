@@ -71,6 +71,10 @@ JOURNALLED = {
     "device_events",
     # "Relink run" moves a bench run to another device (decision 0074).
     "programming_runs",
+    # The office organizers (decision 0104): a take writes a box move and a draw
+    # together, so undoing it must give both back.
+    "organizer_boxes",
+    "organizer_moves",
 }
 
 

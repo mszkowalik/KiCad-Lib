@@ -76,6 +76,9 @@ def get_process(project_id: int, version_id: int | None = None, db: Session = De
         "current_version_id": (svc.current_version(db, project_id) or M.ProcessVersion()).id,
         "shown": svc.version_json(db, shown, with_check=True) if shown else None,
         "stock": svc.prepared_view(db, project_id, shown) if shown else None,
+        # What the plan board prints per input (decision 0103).
+        "input_stock": svc.input_stock(db, svc._graph(shown), run_actuals.project_scope(db, project_id))
+        if shown else {},
         "transformations": [svc.transformation_json(db, t, names, conversion) for t in ts],
         "internal_parts": [{"id": c.id, "name": c.name} for c in svc.internal_parts(db)],
         "deployments": svc.deployments_for(db, project_id),
@@ -422,6 +425,39 @@ def craft_step(run_id: int, body: StepIn, db: Session = Depends(get_db)):
         lambda res: {"step": body.step_key, "units": res["units"], "chosen": res["chosen"],
                      "value_usd": res["value_usd"], "step_run_id": res.get("step_run_id"),
                      "stated": body.stated, "skipped": res["refused"]})
+
+
+class StepsIn(Selection):
+    #: the steps ticked on the scan group; they run in route order
+    step_keys: list[str]
+    made_at: str = ""
+    lots: dict[str, int] | None = None
+    note: str = Field(default="", max_length=500)
+    stated: str = Field(default="", max_length=300)
+    dry_run: bool = True
+
+
+@router.post("/runs/{run_id}/craft/steps", openapi_extra={"x-agent-tool": "batch_steps"})
+def craft_steps(run_id: int, body: StepsIn, db: Session = Depends(get_db)):
+    """One or more steps on one group of named devices, as one write, so one
+    Undo takes back all of them (decision 0103)."""
+    r = _run(db, run_id)
+    return _click(db, r, body.dry_run, "craft.steps", lambda: twins_svc.apply_steps(
+        db, r, step_keys=body.step_keys, device_ids=body.device_ids, codes=body.codes, chosen=body.chosen,
+        made_at=body.made_at, lots=body.lots, note=body.note, actor=acting_name(), dry_run=body.dry_run,
+        stated=body.stated),
+        lambda res: {"steps": [{"step": p["step"], "units": p["units"]} for p in res["steps"]],
+                     "chosen": res["chosen"], "selected": res["selected"]})
+
+
+class CheckCodesIn(BaseModel):
+    codes: list[str] = Field(max_length=500)
+
+
+@router.post("/runs/{run_id}/craft/check-codes", openapi_extra={"x-agent-tool": "batch_check_codes"})
+def craft_check_codes(run_id: int, body: CheckCodesIn, db: Session = Depends(get_db)):
+    """What each scanned code is to this batch. Reads only."""
+    return twins_svc.check_codes(db, _run(db, run_id), body.codes)
 
 
 class ScrapIn(Selection):

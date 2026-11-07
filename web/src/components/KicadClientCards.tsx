@@ -45,7 +45,7 @@ export default function KicadClientCards() {
     <>
       <ErrorBanner message={error ?? ""} />
       <div className="card pad">
-        <h2>Effective URLs</h2>
+        <h2 className="card-title">Effective URLs</h2>
         <p className="muted">
           Derived from the deployment's <code>Public base URL</code> (an administrator sets it
           on <Link className="comp-link" to="/admin?tab=config">Admin</Link>) — these are what KiCad
@@ -79,7 +79,7 @@ export default function KicadClientCards() {
       </div>
 
       <div className="card pad">
-        <h2>KiCad — install as a plugin (recommended)</h2>
+        <h2 className="card-title">KiCad — install as a plugin (recommended)</h2>
         <p className="muted">
           The platform serves a Plugin and Content Manager repository. Add it once; the
           library then installs from inside KiCad — no scripts. Three packages:{" "}
@@ -129,7 +129,7 @@ export default function KicadClientCards() {
       </div>
 
       <div className="card pad">
-        <h2>KiCad — live part catalog (HTTP library)</h2>
+        <h2 className="card-title">KiCad — live part catalog (HTTP library)</h2>
         <p className="muted">
           KiCad browses parts, fields and prices live from this platform. Symbols and
           footprints still come from the locally synced files — KiCad cannot fetch

@@ -69,6 +69,7 @@ import { useSolverJob } from "./useSolverJob";
 import { useWheel } from "../../useWheel";
 import NumberInput from "../../components/NumberInput";
 import SiInput from "../../components/SiInput";
+import { plural } from "../../format";
 
 const SOLVE_STEPS = [
   { key: "mesh", label: "Mesh the cross-section" },
@@ -688,7 +689,7 @@ export default function FieldSolver() {
                       if (
                         !(await dialog.confirm(
                           `Remove the impedance profile “${p.name}”? Its target, the geometry on every ` +
-                            `copper layer and ${solved ? `${solved} solved result${solved === 1 ? "" : "s"}` : "any work on it"} ` +
+                            `copper layer and ${solved ? `${plural(solved, "solved result")}` : "any work on it"} ` +
                             `go with it, and nothing here can bring them back.`,
                           { title: "Remove profile", confirmLabel: "Remove", tone: "danger" },
                         ))
@@ -1201,7 +1202,7 @@ export default function FieldSolver() {
               </label>
             </div>
             <div className="field-row">
-              <button type="button" className="btn btn-accent" onClick={runSearch} disabled={job.state.running}>
+              <button type="button" className="btn btn-primary" onClick={runSearch} disabled={job.state.running}>
                 Find solutions
               </button>
               <button type="button" className="btn" onClick={forward} disabled={job.state.running}>
@@ -1461,7 +1462,7 @@ export default function FieldSolver() {
                     ))}
                   </ul>
                   <div className="fs-msg">{job.state.message}</div>
-                  <div className="fs-bar">
+                  <div className="progress-bar progress-bar-lg">
                     <i style={{ width: `${Math.round(job.state.fraction * 100)}%` }} />
                   </div>
                   <button type="button" className="btn btn-sm" onClick={job.cancel}>

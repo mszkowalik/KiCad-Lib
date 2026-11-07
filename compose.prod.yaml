@@ -115,9 +115,6 @@ services:
       # Nightly jobs log in server local time; containers are UTC otherwise.
       TZ: ${TZ:-Europe/Warsaw}
     volumes:
-      # No /repo mount: settings.repo_dir is read only by the retired YAML
-      # importer (services/importer.py). Mount the repo read-only at /repo if
-      # you ever need to re-run that.
       - apidata:/data
     depends_on:
       db:

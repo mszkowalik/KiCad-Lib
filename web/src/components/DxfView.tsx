@@ -67,7 +67,7 @@ export default function DxfView({ url }: { url: string }) {
 
   return (
     <div className="meshview">
-      <div ref={mountRef} className="meshview-canvas dxf-canvas">
+      <div ref={mountRef} className="meshview-canvas">
         {status === "loading" ? (
           <span className="meshview-status">Loading drawing…</span>
         ) : status === "error" ? (

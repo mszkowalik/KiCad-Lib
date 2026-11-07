@@ -5,7 +5,7 @@ Decision record 0003. Thin handlers: every rule lives in `services/orders.py`.
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.orm import Session
 
 from .. import models as M
@@ -27,7 +27,7 @@ def _order(db: Session, order_id: int) -> M.SalesOrder:
 def _by_serial(db: Session, serials: list[str]) -> list[M.DeviceUnit]:
     """Resolve the serials a scanner read. A scan sheet names devices by the
     string on the label, never by our row id, so every path a sheet reaches —
-    a shipment, a stock count — takes both."""
+    a reservation, a release, a move between batches — takes both."""
     wanted = [s.strip() for s in serials if s and s.strip()]
     if not wanted:
         return []
@@ -35,7 +35,8 @@ def _by_serial(db: Session, serials: list[str]) -> list[M.DeviceUnit]:
              .filter(M.DeviceUnit.serial.in_(wanted)).all()}
     missing = [s for s in wanted if s not in found]
     if missing:
-        raise HTTPException(404, {"error": "no device carries these serials", "serials": missing})
+        raise HTTPException(404, {"error": f"no device carries these serials: {', '.join(missing)}",
+                                  "serials": missing})
     out, seen = [], set()
     for s in wanted:
         if found[s].id not in seen:
@@ -102,8 +103,9 @@ def _same_nip(db: Session, tax_id: str, exclude: int | None = None) -> M.Custome
                  if c.id != exclude and re.sub(r"\D", "", c.tax_id or "") == want), None)
 
 
-@router.get("/customers")
+@router.get("/customers", openapi_extra={"x-agent-tool": "list_customers"})
 def list_customers(db: Session = Depends(get_db)):
+    """Every customer."""
     return [svc.customer_json(c) for c in db.query(M.Customer).order_by(M.Customer.name).all()]
 
 
@@ -189,9 +191,11 @@ class OrderPatch(BaseModel):
     company_id: int | None = None
 
 
-@router.get("/orders")
+@router.get("/orders", openapi_extra={"x-agent-tool": "list_orders"})
 def list_orders(request: Request = None, customer_id: int | None = None, project_id: int | None = None,
                 db: Session = Depends(get_db)):
+    """Sales orders in the caller's company scope, newest first, with totals and
+    what is invoiced. Filter by customer or by project."""
     q = db.query(M.SalesOrder)
     scope = company_svc.scope_ids(db, request)   # the header switcher (decision 0063)
     q = q.filter(M.SalesOrder.company_id.in_(scope) | M.SalesOrder.company_id.is_(None))
@@ -254,8 +258,9 @@ def _add_line(db: Session, o: M.SalesOrder, li: LineIn, position: int) -> M.Sale
     return row
 
 
-@router.get("/orders/{order_id}")
+@router.get("/orders/{order_id}", openapi_extra={"x-agent-tool": "get_order"})
 def get_order(order_id: int, db: Session = Depends(get_db)):
+    """One sales order with its lines, shipments, invoices and economics."""
     return svc.order_json(db, _order(db, order_id), with_detail=True)
 
 
@@ -349,7 +354,7 @@ def delete_line(line_id: int, request: Request, db: Session = Depends(get_db)):
     if li is None:
         raise HTTPException(404, "order line not found")
     if db.query(M.DeviceEvent).filter(M.DeviceEvent.order_line_id == li.id).count():
-        raise HTTPException(409, "devices were shipped against this line")
+        raise HTTPException(409, "device events name this line, and a device's history stays")
     o = li.order
     audit(db, "order.line.delete", "sales_order", o.id, {"line_id": li.id}, actor=actor_of(request))
     db.delete(li)
@@ -444,40 +449,6 @@ def delete_invoice(invoice_id: int, request: Request, db: Session = Depends(get_
 # --------------------------------------------------------------- shipments
 
 
-class ShipmentLineIn(BaseModel):
-    """One order line's worth of a delivery: the DEVICES that left, by id or by
-    scanned serial.
-
-    **THERE IS NO QUANTITY FIELD.** Not `qty`, not `qty_unserialized`. A shipment
-    is a set of serials (decisions 0032, 0049), so a quantity is never a valid
-    input — and a parameter that is never valid should not be on the schema, in
-    the OpenAPI document, or in a generated client. `extra="forbid"` refuses one
-    and names it; `additionalProperties: false` says so to anything reading the
-    schema.
-
-    `forbid` is doing real work here. Without it pydantic DROPS an unknown key
-    silently, so a caller sending `qty: 20` would get a shipment of nothing and
-    no hint why — which is the only argument for declaring the field, and it is
-    answered better this way.
-    """
-
-    model_config = ConfigDict(extra="forbid")
-
-    order_line_id: int
-    device_ids: list[int] = []
-    serials: list[str] = []  # resolved to device ids; a scan sheet has these
-    replaces_device_id: int | None = None
-    note: str = ""
-
-
-class ShipmentIn(BaseModel):
-    shipped_at: str = ""
-    delivery_note: str = ""
-    tracking: str = ""
-    notes: str = ""
-    lines: list[ShipmentLineIn]
-
-
 @router.get("/orders/{order_id}/stock-options")
 def stock_options(order_id: int, db: Session = Depends(get_db)):
     """What the Ship dialog offers per line: the batches of that project with
@@ -487,26 +458,6 @@ def stock_options(order_id: int, db: Session = Depends(get_db)):
     for li in o.lines:
         out[str(li.id)] = [s for s in svc.run_stock(db, li.project_id) if s["stock"] > 0]
     return out
-
-
-@router.post("/orders/{order_id}/shipments")
-def create_shipment(order_id: int, body: ShipmentIn, request: Request, db: Session = Depends(get_db)):
-    o = _order(db, order_id)
-    actor = actor_of(request)
-    lines = []
-    for ln in body.lines:
-        spec = ln.model_dump()
-        spec.pop("serials", None)
-        ids = [*(spec.get("device_ids") or []), *(d.id for d in _by_serial(db, ln.serials))]
-        spec["device_ids"] = list(dict.fromkeys(ids))
-        lines.append(spec)
-    sh = svc.create_shipment(db, o, shipped_at=body.shipped_at, delivery_note=body.delivery_note,
-                             tracking=body.tracking, notes=body.notes,
-                             lines=lines, actor=actor)
-    audit(db, "order.ship", "sales_order", o.id, {"shipment_id": sh.id}, actor=actor)
-    db.commit()
-    db.expire(o, ["shipments", "lines"])
-    return svc.order_json(db, o, with_detail=True)
 
 
 @router.delete("/shipments/{shipment_id}")
@@ -566,9 +517,9 @@ def reverse_shipment(shipment_id: int, body: ReverseShipmentIn, request: Request
 
 # ------------------------------------------------ open shipments (0053)
 #
-# Production -> Shipments: open a box for one order, pack devices into it as
-# they are scanned, send it. `POST /orders/{id}/shipments` above stays the
-# one-step path for a delivery whose serials are all to hand.
+# Sales -> Shipments: open a box for one order, pack devices into it as they are
+# scanned, send it. This is the only way a delivery is written over HTTP: the
+# one-step route left with the Ship card (decision 0103).
 
 
 def _shipment(db: Session, shipment_id: int) -> M.Shipment:
@@ -622,6 +573,13 @@ class ShipmentPackIn(BaseModel):
 
     device_ids: list[int]
     order_line_id: int | None = None
+
+
+class ShipmentReplacementIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    device_id: int
+    replaces: str = Field("", max_length=120)
 
 
 class ShipmentUnpackIn(BaseModel):
@@ -700,6 +658,21 @@ def pack_shipment(shipment_id: int, body: ShipmentPackIn, request: Request, db: 
     actor = actor_of(request)
     n = svc.pack_devices(db, sh, body.device_ids, order_line_id=body.order_line_id, actor=actor)
     audit(db, "shipment.pack", "sales_order", sh.order_id, {"shipment_id": sh.id, "devices": n}, actor=actor)
+    db.commit()
+    return _shipment_detail(db, sh)
+
+
+@router.post("/shipments/{shipment_id}/replacement", openapi_extra={"x-agent-tool": "mark_shipment_replacement"})
+def mark_shipment_replacement(shipment_id: int, body: ShipmentReplacementIn, request: Request,
+                              db: Session = Depends(get_db)):
+    """Say that a device packed in an open shipment replaces one already delivered
+    on this order, named by its serial. It then does not count against the ordered
+    quantity. An empty `replaces` takes the statement back."""
+    sh = _shipment(db, shipment_id)
+    actor = actor_of(request)
+    svc.mark_replacement(db, sh, body.device_id, body.replaces, actor=actor)
+    audit(db, "shipment.replacement", "sales_order", sh.order_id,
+          {"shipment_id": sh.id, "device_id": body.device_id, "replaces": body.replaces.strip()}, actor=actor)
     db.commit()
     return _shipment_detail(db, sh)
 
@@ -790,12 +763,18 @@ class UnshipIn(BaseModel):
 
 
 class AllocateIn(BaseModel):
+    """Devices to reserve for one line, or to release from it, by id or by
+    scanned serial."""
+
     order_line_id: int
-    device_ids: list[int]
+    device_ids: list[int] = []
+    serials: list[str] = []
 
 
 class ProducedIn(BaseModel):
-    device_ids: list[int]
+    device_ids: list[int] = []
+    serials: list[str] = []
+    dry_run: bool = False
 
 
 @router.get("/devices/{device_id}/history")
@@ -886,15 +865,37 @@ def unship_device(device_id: int, body: UnshipIn, request: Request, db: Session 
     return svc.device_history_json(db, d)
 
 
-@router.post("/orders/{order_id}/allocate")
+@router.post("/orders/{order_id}/allocate", openapi_extra={"x-agent-tool": "reserve_order_devices"})
 def allocate(order_id: int, body: AllocateIn, request: Request, db: Session = Depends(get_db)):
+    """Reserve devices for one line of an order, by id or by scanned serial."""
     o = _order(db, order_id)
     line = next((li for li in o.lines if li.id == body.order_line_id), None)
     if line is None:
         raise HTTPException(404, "order line not found on this order")
+    ids = list(dict.fromkeys([*body.device_ids, *(d.id for d in _by_serial(db, body.serials))]))
+    if not ids:
+        raise HTTPException(422, "name at least one device to reserve")
     actor = actor_of(request)
-    n = svc.allocate_devices(db, line, body.device_ids, actor=actor)
+    n = svc.allocate_devices(db, line, ids, actor=actor)
     audit(db, "order.allocate", "sales_order", o.id, {"line_id": line.id, "devices": n}, actor=actor)
+    db.commit()
+    return svc.order_json(db, o, with_detail=True)
+
+
+@router.post("/orders/{order_id}/release", openapi_extra={"x-agent-tool": "release_order_devices"})
+def release(order_id: int, body: AllocateIn, request: Request, db: Session = Depends(get_db)):
+    """Give reserved devices back to stock. A cancelled order can do this too: its
+    reservations are what a person wants back."""
+    o = _order(db, order_id)
+    line = next((li for li in o.lines if li.id == body.order_line_id), None)
+    if line is None:
+        raise HTTPException(404, "order line not found on this order")
+    ids = list(dict.fromkeys([*body.device_ids, *(d.id for d in _by_serial(db, body.serials))]))
+    if not ids:
+        raise HTTPException(422, "name at least one device to release")
+    actor = actor_of(request)
+    n = svc.release_devices(db, line, ids, actor=actor)
+    audit(db, "order.release", "sales_order", o.id, {"line_id": line.id, "devices": n}, actor=actor)
     db.commit()
     return svc.order_json(db, o, with_detail=True)
 
@@ -906,7 +907,16 @@ def link_produced(run_id: int, body: ProducedIn, request: Request, db: Session =
     if run is None:
         raise HTTPException(404, "run not found")
     actor = actor_of(request)
-    res = svc.link_devices_to_run(db, run, body.device_ids, actor=actor)
+    ids = list(dict.fromkeys([*body.device_ids, *(d.id for d in _by_serial(db, body.serials))]))
+    if not ids:
+        raise HTTPException(422, "name at least one device")
+    if body.dry_run:
+        sp = db.begin_nested()
+        try:
+            return svc.link_devices_to_run(db, run, ids, actor=actor)
+        finally:
+            sp.rollback()
+    res = svc.link_devices_to_run(db, run, ids, actor=actor)
     audit(db, "run.link_devices", "production_run", run.id, {"linked": res["linked"]}, actor=actor)
     db.commit()
     return res
@@ -952,26 +962,31 @@ def rebatch(run_id: int, body: RebatchIn, request: Request, db: Session = Depend
     return plan
 
 
-@router.get("/demand")
+@router.get("/demand", openapi_extra={"x-agent-tool": "get_demand"})
 def demand(project_id: int | None = None, db: Session = Depends(get_db)):
     """Open order quantity against shelf stock and planned batches, per project."""
     return svc.project_demand(db, project_id)
 
 
-@router.get("/finished-products")
+@router.get("/finished-products", openapi_extra={"x-agent-tool": "get_finished_products"})
 def finished_products(db: Session = Depends(get_db)):
     """The shelf per PRODUCT, counted from the device records — including the
     devices that name no batch, which every per-batch figure is blind to."""
     return {"products": svc.product_stock(db)}
 
 
-@router.get("/finished-stock")
+@router.get("/finished-stock", openapi_extra={"x-agent-tool": "get_finished_stock"})
 def finished_stock(project_id: int | None = None, db: Session = Depends(get_db)):
+    """The shelf per BATCH: built, shipped, in stock and value at cost."""
     rows = svc.run_stock(db, project_id)
     unit_cost = svc.per_device_cost_usd(db)
     for r in rows:
         r["unit_cost_usd"] = svc._round(unit_cost.get(r["run_id"]))
         r["stock_value_usd"] = svc._round(r["stock"] * unit_cost[r["run_id"]]) if r["run_id"] in unit_cost else None
+        rate = svc.batch_pln_rate(db, r["run_id"])
+        r["pln_per_usd"] = rate
+        r["unit_cost_pln"] = svc._round(unit_cost[r["run_id"]] * rate) if rate and r["run_id"] in unit_cost else None
+        r["stock_value_pln"] = svc._round(r["stock_value_usd"] * rate) if rate and r["stock_value_usd"] is not None else None
     # `no_batch` is what this endpoint CANNOT see: it counts per batch, so a
     # device naming none is invisible to every row above. Reporting the number
     # here stops the two shelf cards printing different totals with nothing to
@@ -983,4 +998,5 @@ def finished_stock(project_id: int | None = None, db: Session = Depends(get_db))
                        "devices_in_stock": sum(r["devices_in_stock"] for r in rows),
                        "devices_missing": sum(r["devices_missing"] for r in rows),
                        "no_batch": no_batch,
-                       "stock_value_usd": svc._round(sum(r["stock_value_usd"] or 0 for r in rows))}}
+                       "stock_value_usd": svc._round(sum(r["stock_value_usd"] or 0 for r in rows)),
+                       "stock_value_pln": svc._round(sum(r["stock_value_pln"] or 0 for r in rows))}}

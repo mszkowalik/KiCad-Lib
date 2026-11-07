@@ -7,15 +7,13 @@
  *  of the document's original file (decision 0085) — and is never edited in
  *  the UI; the cost positions under it are what the platform computes with.
  */
-import { useState } from "react";
 import type { PrintedSource, SalesInvoiceBody, SalesLine } from "../api";
+import { pl } from "../format";
 import DataTable, { type Column } from "./DataTable";
+import FoldSection from "./FoldSection";
 
-/** An amount as the Polish invoice prints it: two decimals, Polish separators. */
-export function pl(amount: string | number | null | undefined): string {
-  const n = Number(amount ?? 0);
-  return n.toLocaleString("pl-PL", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-}
+/** The VAT rates an invoice position may carry, as FA(3) codes them. */
+export const VAT_RATES = ["23", "8", "5", "0 KR", "0 WDT", "0 EX", "zw", "oo", "np I", "np II"];
 
 /** A figure the page may not print (a unit price, a position's VAT or gross):
  *  empty when it is not there, never a made-up 0,00. */
@@ -48,17 +46,9 @@ export default function PrintedInvoice({ body, currency }: {
   body: SalesInvoiceBody & { source?: PrintedSource };
   currency: string;
 }) {
-  const [open, setOpen] = useState(false);
   const t = body.totals;
   return (
-    <>
-      <div className="btn-row">
-        <button type="button" className="btn btn-sm" onClick={() => setOpen(!open)}>
-          {open ? "▾" : "▸"} Printed invoice ({body.lines.length} positions)
-        </button>
-      </div>
-      {open ? (
-        <>
+    <FoldSection bare title="Printed invoice" count={body.lines.length} limit={-1}>
           {body.source?.kind === "file" && body.source.problems.length ? (
             <div className="banner-warn">
               The page does not agree with the document: {body.source.problems.map((p) => p.text).join("; ")}.
@@ -82,8 +72,6 @@ export default function PrintedInvoice({ body, currency }: {
             ))}
             Gross {pl(t.gross)} {currency}
           </p>
-        </>
-      ) : null}
-    </>
+    </FoldSection>
   );
 }

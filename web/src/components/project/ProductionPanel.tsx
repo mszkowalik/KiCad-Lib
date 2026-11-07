@@ -15,30 +15,36 @@ import {
   type ProductionInfo,
   type ProductionSet,
 } from "../../api";
+import DataTable from "../DataTable";
 import { useDialog } from "../Dialog";
+import FilePick from "../FilePick";
+import { fmtBytes } from "../flasher/common";
+import FoldSection, { StatChip } from "../FoldSection";
 import { ErrorBanner, Spinner } from "../Ui";
+import { LAYER_COLORS } from "./BoardTab";
+import { localWhen } from "../../format";
 
-/** Layer colors matching the KiCad-default board palette, by filename. */
-const GERBER_COLOR_RULES: [RegExp, string][] = [
-  [/f[_-]?cu|\.gtl$/i, "#c83434"],
-  [/b[_-]?cu|\.gbl$/i, "#4d7fc4"],
-  [/in1|\.g2$/i, "#7fc87f"],
-  [/in2|\.g3$/i, "#ce7d2c"],
-  [/f[_-]?silk|\.gto$/i, "#f3eded"],
-  [/b[_-]?silk|\.gbo$/i, "#e8b2a7"],
-  [/f[_-]?mask|\.gts$/i, "#9b26d5"],
-  [/b[_-]?mask|\.gbs$/i, "#02fff8"],
-  [/f[_-]?paste|\.gtp$/i, "#a4a4a4"],
-  [/b[_-]?paste|\.gbp$/i, "#00b3b3"],
-  [/edge|\.gm1$/i, "#d0d2cd"],
-  [/\.drl$|\.xln$/i, "#e0e0e0"],
+/** Which layer a Gerber file holds, by its name, for the board's own colours. */
+const GERBER_LAYERS: [RegExp, string][] = [
+  [/f[_-]?cu|\.gtl$/i, "F.Cu"],
+  [/b[_-]?cu|\.gbl$/i, "B.Cu"],
+  [/in1|\.g2$/i, "In1.Cu"],
+  [/in2|\.g3$/i, "In2.Cu"],
+  [/f[_-]?silk|\.gto$/i, "F.SilkS"],
+  [/b[_-]?silk|\.gbo$/i, "B.SilkS"],
+  [/f[_-]?mask|\.gts$/i, "F.Mask"],
+  [/b[_-]?mask|\.gbs$/i, "B.Mask"],
+  [/f[_-]?paste|\.gtp$/i, "F.Paste"],
+  [/b[_-]?paste|\.gbp$/i, "B.Paste"],
+  [/edge|\.gm1$/i, "Edge.Cuts"],
 ];
 
+/** The colour goes to the server's gerbv render as well as to the swatch, so it
+ *  is a value here and not a CSS variable. */
 function layerColor(filename: string): string {
-  for (const [re, color] of GERBER_COLOR_RULES) {
-    if (re.test(filename)) return color;
-  }
-  return "#c2c2c2";
+  if (/\.drl$|\.xln$/i.test(filename)) return "#e0e0e0";
+  const hit = GERBER_LAYERS.find(([re]) => re.test(filename));
+  return LAYER_COLORS[hit ? hit[1] : "Dwgs.User"];
 }
 
 const DEFAULT_VISIBLE = [/f[_-]?cu|\.gtl$/i, /f[_-]?silk|\.gto$/i, /edge|\.gm1$/i];
@@ -47,7 +53,6 @@ export default function ProductionPanel({ runId }: { runId: number }) {
   const [info, setInfo] = useState<ProductionInfo | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
-  const [showJlcBom, setShowJlcBom] = useState(false);
   const [viewSetId, setViewSetId] = useState<number | null>(null);
   const [selection, setSelection] = useState<Set<string>>(new Set());
   const [gerberUrl, setGerberUrl] = useState<string | null>(null);
@@ -141,15 +146,9 @@ export default function ProductionPanel({ runId }: { runId: number }) {
             {busy === "repo" ? "Importing…" : "Re-import repo production/"}
           </button>
         ) : null}
-        <label className="btn btn-sm">
+        <FilePick multiple onPick={(files) => act("upload", () => uploadProductionFiles(runId, files))}>
           {busy === "upload" ? "Uploading…" : "Upload files…"}
-          <input type="file" multiple hidden
-            onChange={(e) => {
-              const files = Array.from(e.target.files ?? []);
-              if (files.length) act("upload", () => uploadProductionFiles(runId, files));
-              e.target.value = "";
-            }} />
-        </label>
+        </FilePick>
         <button className="btn btn-sm" disabled={busy !== null}
           title="kicad-cli gerbers/drill/position bundle"
           onClick={() => act("gen", () => generateProductionFab(runId))}>
@@ -168,32 +167,34 @@ export default function ProductionPanel({ runId }: { runId: number }) {
 
       {info && info.sets.length > 0 ? (
         <>
-          <table className="data">
-            <thead>
-              <tr>
-                <th>Version</th>
-                <th>Source</th>
-                <th>Comment</th>
-                <th>Added</th>
-                <th className="num">Files</th>
-                <th />
-              </tr>
-            </thead>
-            <tbody>
-              {info.sets.map((s) => (
-                <tr key={s.id} className={viewSet?.id === s.id ? "row-selected" : ""}>
-                  <td className="mono">
+          <FoldSection
+            bare
+            title="Production sets"
+            count={info.sets.length}
+            foldKey={`run:${runId}:production-sets`}
+            chips={<StatChip n={`v${info.sets[0].version_no}`} tone="ok">current</StatChip>}
+          >
+          <DataTable
+            rows={info.sets}
+            rowKey={(s) => s.id}
+            rowClass={(s) => (viewSet?.id === s.id ? "row-selected" : "")}
+            columns={[
+              { key: "version", label: "Version", width: 14, className: "mono", get: (s) => s.version_no,
+                render: (s) => (
+                  <>
                     v{s.version_no}
                     {s.id === info.sets[0].id ? <span className="pill ok">current</span> : null}
-                  </td>
-                  <td>{s.source}</td>
-                  <td className="muted">{s.comment}</td>
-                  <td className="muted">{new Date(s.created_at).toLocaleString()}</td>
-                  <td className="num">{s.files.filter((f) => !f.extracted).length}</td>
-                  <td className="nowrap">
-                    <button className="btn btn-sm" onClick={() => setViewSetId(s.id)}>
-                      View
-                    </button>{" "}
+                  </>
+                ) },
+              { key: "source", label: "Source", width: 12, get: (s) => s.source },
+              { key: "comment", label: "Comment", width: 30, className: "muted", get: (s) => s.comment },
+              { key: "added", label: "Added", width: 18, className: "muted", get: (s) => s.created_at,
+                render: (s) => localWhen(s.created_at) },
+              { key: "files", label: "Files", width: 8, numeric: true, get: (s) => s.files.filter((f) => !f.extracted).length },
+              { key: "act", label: "", width: 18, interactive: false, get: () => "",
+                render: (s) => (
+                  <>
+                    <button className="btn btn-sm" onClick={() => setViewSetId(s.id)}>View</button>{" "}
                     <button className="btn btn-sm btn-danger"
                       onClick={async () => {
                         const confirmed = await dialog.confirm(
@@ -204,11 +205,11 @@ export default function ProductionPanel({ runId }: { runId: number }) {
                       }}>
                       Delete
                     </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+                  </>
+                ) },
+            ]}
+          />
+          </FoldSection>
 
           {viewSet ? (
             <>
@@ -218,7 +219,7 @@ export default function ProductionPanel({ runId }: { runId: number }) {
                   <li key={f.id}>
                     <a href={productionFileUrl(f.id)}>{f.filename}</a>{" "}
                     <span className="pill neutral">{f.kind.replace("_", " ")}</span>{" "}
-                    <span className="muted">{(f.size_bytes / 1024).toFixed(1)} kB</span>
+                    <span className="muted">{fmtBytes(f.size_bytes)}</span>
                   </li>
                 ))}
               </ul>
@@ -228,35 +229,35 @@ export default function ProductionPanel({ runId }: { runId: number }) {
                   <div className="banner-ok">
                     JLCPCB assembles {info.jlc_designators.length} placement(s) across{" "}
                     {info.jlc_bom.rows.length} part(s) — this is the assembly subset, not the
-                    total BOM.{" "}
-                    <button className="btn btn-sm" onClick={() => setShowJlcBom((v) => !v)}>
-                      {showJlcBom ? "Hide" : "Show"} JLC BOM
-                    </button>
+                    total BOM.
                   </div>
-                  {showJlcBom ? (
+                  <FoldSection
+                    bare
+                    title="JLC BOM"
+                    count={info.jlc_bom.rows.length}
+                    foldKey={`run:${runId}:jlc-bom`}
+                    chips={
+                      <>
+                        <StatChip n={info.jlc_designators.length.toLocaleString()}>placements</StatChip>
+                        {info.jlc_bom.rows.some((r) => !r.lcsc) ? (
+                          <StatChip n={info.jlc_bom.rows.filter((r) => !r.lcsc).length} tone="warn">no LCSC code</StatChip>
+                        ) : null}
+                      </>
+                    }
+                  >
                     <div className="table-wrap">
-                      <table className="data">
-                        <thead>
-                          <tr>
-                            <th>Comment</th>
-                            <th>Designators</th>
-                            <th>Footprint</th>
-                            <th>LCSC</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {info.jlc_bom.rows.map((r, i) => (
-                            <tr key={i}>
-                              <td>{r.comment}</td>
-                              <td className="mono cell-fp">{r.designators.join(", ")}</td>
-                              <td className="muted">{r.footprint}</td>
-                              <td className="mono">{r.lcsc || "—"}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
+                      <DataTable
+                        rows={info.jlc_bom.rows}
+                        rowKey={(r) => r.designators.join(",") || r.comment}
+                        columns={[
+                          { key: "comment", label: "Comment", width: 26, get: (r) => r.comment },
+                          { key: "des", label: "Designators", width: 34, className: "mono", get: (r) => r.designators.join(", ") },
+                          { key: "fp", label: "Footprint", width: 26, className: "muted", get: (r) => r.footprint },
+                          { key: "lcsc", label: "LCSC", width: 14, className: "mono", get: (r) => r.lcsc || "—" },
+                        ]}
+                      />
                     </div>
-                  ) : null}
+                  </FoldSection>
                 </>
               ) : null}
 

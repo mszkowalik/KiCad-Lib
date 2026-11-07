@@ -6,6 +6,7 @@ import { Suspense, lazy, useEffect, useMemo, useState } from "react";
 import {
   boardGlbUrl,
   boardStepUrl,
+  fabZipUrl,
   boardLayerSvgUrl,
   errorMessage,
   getBoardChecks,
@@ -19,12 +20,14 @@ import {
 } from "../../api";
 import { Spinner } from "../Ui";
 import PartInfo from "./PartInfo";
+import CountTile from "../CountTile";
+import Field from "../Field";
 
 const ModelViewer = lazy(() => import("../ModelViewer"));
 
 /** KiCad default (dark) theme layer colors — swatches only, so the toggle
  *  list matches what the rendered SVGs actually look like. */
-const LAYER_COLORS: Record<string, string> = {
+export const LAYER_COLORS: Record<string, string> = {
   "F.Cu": "#c83434", "B.Cu": "#4d7fc4", "In1.Cu": "#7fc87f", "In2.Cu": "#ce7d2c",
   "In3.Cu": "#dfcd15", "In4.Cu": "#a7a7a7", "F.SilkS": "#f3eded", "B.SilkS": "#e8b2a7",
   "F.Mask": "#9b26d5", "B.Mask": "#02fff8", "F.Paste": "#a4a4a4", "B.Paste": "#00b3b3",
@@ -128,8 +131,7 @@ export default function BoardTab({ snapshot, board }: Props) {
         </div>
         {mode === "2d" ? (
           <>
-            <label className="proj-inline-field">
-              Zoom
+            <Field inline label="Zoom">
               <input
                 type="range"
                 min={25}
@@ -138,8 +140,8 @@ export default function BoardTab({ snapshot, board }: Props) {
                 onChange={(e) => setZoom(Number(e.target.value))}
               />
               <span className="mono">{zoom}%</span>
-            </label>
-            <label className="proj-inline-field proj-check">
+            </Field>
+            <Field inline className="proj-check">
               <input
                 type="checkbox"
                 checked={clickParts}
@@ -147,12 +149,15 @@ export default function BoardTab({ snapshot, board }: Props) {
                 disabled={!pcbMap}
               />
               click parts
-            </label>
+            </Field>
           </>
         ) : null}
         <span className="toolbar-total" />
         <a className="btn btn-sm" href={boardStepUrl(snapshot.id, board.name)}>
           STEP
+        </a>
+        <a className="btn btn-sm" href={fabZipUrl(snapshot.id, board.name)} title="Gerbers and drill files of this commit">
+          Fab zip
         </a>
         <button className="btn btn-sm" disabled={checksLoading} onClick={loadChecks}>
           {checksLoading ? "Running…" : "ERC / DRC"}
@@ -162,14 +167,8 @@ export default function BoardTab({ snapshot, board }: Props) {
       {checksError ? <div className="banner-error">{checksError}</div> : null}
       {checks ? (
         <div className="counts counts-sm">
-          <div className="count-tile">
-            <div className="v">{violationCount(checks.erc)}</div>
-            <div className="muted">ERC violations</div>
-          </div>
-          <div className="count-tile">
-            <div className="v">{violationCount(checks.drc)}</div>
-            <div className="muted">DRC violations</div>
-          </div>
+          <CountTile value={violationCount(checks.erc)} label="ERC violations" />
+          <CountTile value={violationCount(checks.drc)} label="DRC violations" />
         </div>
       ) : null}
 

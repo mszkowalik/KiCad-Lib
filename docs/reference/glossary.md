@@ -22,7 +22,7 @@ lives here instead. **Say which one you mean.**
 | Programming run | `programming_runs` | One attempt at programming one device, pass or fail, always kept | `/production/flash-runs/:id` | "run", "flash run", "attempt" |
 | Sales order | `sales_orders` | One customer order, closed by invoices, fulfilled by shipments (decision [0003](../decisions/0003-orders-shipments-and-device-history.md)) | `/production/orders/:id` | "order" |
 | Shipment | `shipments` | One delivery against a sales order. Its content is a set of devices | on the order's page | "delivery", "shipment" |
-| JLC order | `jlc_imports` | A purchase from JLCPCB, staged before its money is assigned to a run | `/production/jlc` | "order", "JLC invoice" |
+| JLC order | `jlc_imports` | A purchase from JLCPCB, staged before its money is assigned to a run | `/stock/jlc` | "order", "JLC invoice" |
 | Device | `device_units` | One physical unit, identified by the MAC read out of its chip | `/production/devices/:id` | "device", "unit", "serial", "dongle" |
 | Project | `projects` | A KiCad design tracked from a git repository | `/projects/:id` | "project", "product" |
 

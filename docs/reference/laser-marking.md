@@ -85,8 +85,9 @@ engine, the same run record and the same publish gate as flashing.
    working, and `--no-browser-setup` turns it off.
 
    A profile installed in `/Library/Managed Preferences` still outranks this, so
-   a managed machine can keep using `bench-policy.mobileconfig` instead. Only
-   macOS is automated; elsewhere, answer Chrome's local-network prompt.
+   a managed machine can keep using `bench-policy.mobileconfig` instead. Its
+   link is beside the agent download on the bench page. Only macOS is automated;
+   elsewhere, answer Chrome's local-network prompt.
 4. The Laser panel reports the two hops separately. "Agent down" is fixed on the
    bench machine; "LightBurn is not answering" is fixed in LightBurn.
 

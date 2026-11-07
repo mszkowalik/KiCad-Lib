@@ -19,11 +19,15 @@ import {
   type RunEffective,
 } from "../../api";
 import { getCostSteps, type CostStepCatalog } from "../../api";
+import DataTable from "../DataTable";
 import { useDialog } from "../Dialog";
+import Field, { CheckField } from "../Field";
+import FoldSection, { StatChip } from "../FoldSection";
 import { ErrorBanner, Spinner } from "../Ui";
 import { StepSelect } from "../costs";
 import { PART_STEPS } from "../invoices/InvoiceLinesTable";
-import { amount as money, plain } from "../../format";
+import { amount as money, pln } from "../../format";
+import { runAct } from "./runAct";
 
 type Props = {
   projectId: number;
@@ -35,10 +39,13 @@ type Props = {
   overrides: Record<string, unknown> | undefined;
   onOverride: (overrides: Record<string, unknown>) => void;
   onChanged: () => void;
+  /** The tab holds more than 4 cards (a crafted batch), so these cards fold at
+   *  any length unless they hold a problem. */
+  quiet?: boolean;
 };
 
 export default function RunCosts({
-  projectId, runId, qty, runDate, effective, overrides, onOverride, onChanged,
+  quiet, projectId, runId, qty, runDate, effective, overrides, onOverride, onChanged,
 }: Props) {
   const dialog = useDialog();
   const [docs, setDocs] = useState<RunCostDocumentRow[] | null>(null);
@@ -93,18 +100,7 @@ export default function RunCosts({
     return () => ac.abort();
   }, [reload]);
 
-  const act = async (fn: () => Promise<unknown>) => {
-    setBusy(true);
-    try {
-      await fn();
-      reload();
-      onChanged();
-    } catch (err) {
-      setError(errorMessage(err));
-    } finally {
-      setBusy(false);
-    }
-  };
+  const act = runAct(setBusy, setError, () => { reload(); onChanged(); });
 
   const submitDoc = () =>
     act(async () => {
@@ -145,7 +141,7 @@ export default function RunCosts({
     const raw = overrideDrafts[key];
     const next = { ...(overrides ?? {}) } as Record<string, unknown>;
     if (raw === "" || raw == null) delete next[key];
-    else next[key] = { price: Number(raw) };
+    else next[key] = { price: Number(raw), currency: effective?.currency ?? "PLN" };
     onOverride(next);
   };
 
@@ -158,120 +154,148 @@ export default function RunCosts({
       {error && <ErrorBanner message={error} />}
 
       {(actuals.steps ?? []).length > 0 && (
-        <div className="card pad">
-          <h2 className="card-title">Where the money goes — plan vs billed, per step (USD)</h2>
+        <FoldSection
+          title="Where the money goes: plan and billed, per step"
+          count={(actuals.steps ?? []).length}
+          // On a batch with no process this table IS the tab: it never folds there.
+          limit={quiet ? -1 : Number.MAX_SAFE_INTEGER}
+          foldKey={`run:${runId}:money-steps`}
+          chips={(actuals.steps ?? []).some((st) => (st.delta_usd ?? 0) > 0.01) ? (
+            <StatChip n={(actuals.steps ?? []).filter((st) => (st.delta_usd ?? 0) > 0.01).length} tone="warn">above plan</StatChip>
+          ) : undefined}
+        >
           <div className="table-wrap">
-            <table className="data data-fixed run-steps-table">
-              <thead>
-                <tr>
-                  <th>Step</th>
-                  <th className="num">Planned</th>
-                  <th className="num">Billed</th>
-                  <th className="num">Δ</th>
-                  <th>Billed by</th>
-                </tr>
-              </thead>
-              <tbody>
-                {(actuals.steps ?? []).map((st) => (
-                  <tr key={st.key}>
-                    <td title={st.label}>
-                      <span className="mono">{st.key.startsWith("~") ? "" : st.key}</span>
-                      {st.key.startsWith("~") ? <span className="dim">{st.label}</span> : null}
-                    </td>
-                    <td className="num muted">{st.planned_usd == null ? "—" : plain(st.planned_usd)}</td>
-                    <td className="num">{st.actual_usd == null ? "—" : plain(st.actual_usd)}</td>
-                    <td className="num">
-                      {st.delta_usd == null ? (
-                        <span className="dim">—</span>
-                      ) : Math.abs(st.delta_usd) < 0.01 ? (
-                        <span className="pill ok">0.00</span>
-                      ) : (
-                        <span className={`pill ${st.delta_usd > 0 ? "warn" : "neutral"}`}>
-                          {st.delta_usd > 0 ? "+" : ""}{plain(st.delta_usd)}
+            <DataTable
+              rows={actuals.steps ?? []}
+              rowKey={(st) => st.key}
+              columns={[
+                { key: "step", label: "Step", width: 22, get: (st) => (st.key.startsWith("~") ? st.label : st.key),
+                  title: (st) => st.label,
+                  render: (st) => (st.key.startsWith("~") ? <span className="dim">{st.label}</span> : <span className="mono">{st.key}</span>) },
+                { key: "planned", label: "Planned", width: 14, numeric: true, className: "muted", get: (st) => st.planned_usd,
+                  render: (st) => (st.planned_usd == null ? "—" : pln(st.planned_usd, actuals.pln_per_usd)) },
+                { key: "billed", label: "Billed", width: 14, numeric: true, get: (st) => st.actual_usd,
+                  render: (st) => (st.actual_usd == null ? "—" : pln(st.actual_usd, actuals.pln_per_usd)) },
+                { key: "delta", label: "Δ", width: 16, numeric: true, get: (st) => st.delta_usd,
+                  render: (st) => (st.delta_usd == null ? (
+                    <span className="dim">—</span>
+                  ) : Math.abs(st.delta_usd) < 0.01 ? (
+                    <span className="pill ok">0.00</span>
+                  ) : (
+                    <span className={`pill ${st.delta_usd > 0 ? "warn" : "neutral"}`}>
+                      {st.delta_usd > 0 ? "+" : ""}{pln(st.delta_usd, actuals.pln_per_usd)}
+                    </span>
+                  )) },
+                { key: "by", label: "Billed by", width: 34, interactive: false, get: () => "",
+                  title: (st) => (st.sources ?? [])
+                    .map((so) => `${so.supplier} ${so.doc_number} (${so.doc_date}): ${pln(so.amount_usd, actuals.pln_per_usd)}`)
+                    .join(" · "),
+                  render: (st) => (st.key === "parts:pool" ? (
+                    <span className="dim">pool draws — see the Materials tab</span>
+                  ) : (st.sources ?? []).length === 0 ? (
+                    <span className="dim">—</span>
+                  ) : (
+                    <span className="state-facts">
+                      {(st.sources ?? []).map((so) => (
+                        <span key={so.document_id} className="pill neutral"
+                              title={`${so.supplier} ${so.doc_number} — ${pln(so.amount_usd, actuals.pln_per_usd)} of this step`}>
+                          {so.supplier || "?"} {so.doc_date}
                         </span>
-                      )}
-                    </td>
-                    <td title={(st.sources ?? [])
-                        .map((so) => `${so.supplier} ${so.doc_number} (${so.doc_date}): $${so.amount_usd?.toFixed(2)}`)
-                        .join(" · ")}>
-                      {st.key === "parts:pool" ? (
-                        <span className="dim">pool draws — see the Materials tab</span>
-                      ) : (st.sources ?? []).length === 0 ? (
-                        <span className="dim">—</span>
-                      ) : (
-                        (st.sources ?? []).map((so) => (
-                          <span key={so.document_id} className="pill neutral"
-                                title={`${so.supplier} ${so.doc_number} — $${so.amount_usd?.toFixed(2)} of this step`}>
-                            {so.supplier || "?"} {so.doc_date}
-                          </span>
-                        ))
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+                      ))}
+                    </span>
+                  )) },
+              ]}
+            />
           </div>
           <p className="muted">
             Planned figures come from the project&apos;s Cost plan; billed figures from the
             invoice positions tagged with each step. Hover a supplier chip for the document
             number and its share.
           </p>
-        </div>
+        </FoldSection>
       )}
 
       {effective && effective.costs.length > 0 && (
-        <div className="card pad">
-          <h2 className="card-title">Planned cost items (this batch)</h2>
-          <p className="card-subtitle">
-            Priced from the Cost plan at the run date. Type a final price and press Apply to
+        <FoldSection
+          title="Planned cost items"
+          count={effective.costs.length}
+          limit={quiet ? -1 : undefined}
+          foldKey={`run:${runId}:planned-costs`}
+          chips={
+            <>
+              <StatChip n={money(effective.costs.reduce((a, c) => a + (c.dropped ? 0 : c.run_cost ?? 0), 0), effective.currency)}>run cost</StatChip>
+              {effective.costs.some((c) => c.overridden) ? (
+                <StatChip n={effective.costs.filter((c) => c.overridden).length} tone="warn">override</StatChip>
+              ) : null}
+              {effective.costs.some((c) => c.dropped) ? (
+                <StatChip n={effective.costs.filter((c) => c.dropped).length}>dropped</StatChip>
+              ) : null}
+            </>
+          }
+        >
+          <p className="muted dim">
+            Priced from the Cost plan at the batch date. Type a final price and press Apply to
             override an item; blank + Apply clears it.
           </p>
           <div className="table-wrap">
-            <table className="data">
-              <thead>
-                <tr>
-                  <th>Item</th>
-                  <th className="num">Price</th>
-                  <th className="num">Run cost</th>
-                  <th className="num">Final price override</th>
-                </tr>
-              </thead>
-              <tbody>
-                {effective.costs.map((c) => (
-                  <tr key={c.key} className={c.dropped ? "row-dim" : ""}>
-                    <td className="cell-desc">
+            <DataTable
+              rows={effective.costs}
+              rowKey={(c) => c.key}
+              rowClass={(c) => (c.dropped ? "row-dim" : "")}
+              columns={[
+                { key: "item", label: "Item", width: 50, get: (c) => c.label,
+                  render: (c) => (
+                    <>
                       {c.label}{" "}
-                      <span className="muted">
-                        ({c.basis === "per_run" ? "per run" : "per device"})
-                      </span>
+                      <span className="muted">({c.basis === "per_run" ? "per run" : "per device"})</span>
                       {c.overridden ? <span className="pill warn">override</span> : null}
-                    </td>
-                    <td className="num">{money(c.price, effective.currency)}</td>
-                    <td className="num">{money(c.run_cost ?? null, effective.currency)}</td>
-                    <td className="num nowrap">
+                    </>
+                  ) },
+                { key: "price", label: "Price", width: 14, numeric: true, get: (c) => c.price,
+                  render: (c) => money(c.price, effective.currency) },
+                { key: "run", label: "Run cost", width: 14, numeric: true, get: (c) => c.run_cost,
+                  render: (c) => money(c.run_cost ?? null, effective.currency) },
+                { key: "override", label: "Final price override", width: 22, numeric: true, interactive: false, get: () => "",
+                  render: (c) => (
+                    <>
                       <input
                         className="text num-input"
                         placeholder="price"
                         value={overrideDrafts[c.key] ?? ""}
-                        onChange={(e) =>
-                          setOverrideDrafts({ ...overrideDrafts, [c.key]: e.target.value })
-                        }
+                        onChange={(e) => setOverrideDrafts({ ...overrideDrafts, [c.key]: e.target.value })}
                       />{" "}
-                      <button className="btn btn-sm" onClick={() => applyCostOverride(c.key)}>
-                        Apply
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+                      <button className="btn btn-sm" onClick={() => applyCostOverride(c.key)}>Apply</button>
+                    </>
+                  ) },
+              ]}
+            />
           </div>
-        </div>
+        </FoldSection>
       )}
 
-      <div className="card pad">
-        <h2 className="card-title">Documents on this batch</h2>
+      <FoldSection
+        title="Documents on this batch"
+        count={docs.length}
+        limit={quiet && !docs.some((d) => d.total_amount !== null && !d.reconciled) ? -1 : undefined}
+        foldKey={`run:${runId}:documents`}
+        forceOpen={showDoc || openDoc !== null}
+        chips={docs.length ? (
+          <>
+            {docs.some((d) => d.total_amount !== null && !d.reconciled) ? (
+              <StatChip n={docs.filter((d) => d.total_amount !== null && !d.reconciled).length} tone="err">total does not match</StatChip>
+            ) : null}
+            <StatChip n={docs.reduce((a, d) => a + d.line_count, 0).toLocaleString()}>lines</StatChip>
+            {[...new Set(docs.map((d) => d.supplier || "no supplier"))].slice(0, 2).map((s) => (
+              <StatChip key={s} n={docs.filter((d) => (d.supplier || "no supplier") === s).length}>{s}</StatChip>
+            ))}
+          </>
+        ) : undefined}
+        actions={
+          <button className="btn btn-sm btn-primary" onClick={() => setShowDoc((v) => !v)}>
+            {showDoc ? "Cancel" : "Add invoice / document"}
+          </button>
+        }
+      >
         {actuals.qty_good_source === "typed" && (
           <p className="muted">
             Per-device figures divide by {actuals.qty_good ?? qty} — the quantity typed on the
@@ -279,38 +303,29 @@ export default function RunCosts({
             divides by the devices that passed instead.
           </p>
         )}
-        <div className="btn-row">
-          <button className="btn btn-sm btn-primary" onClick={() => setShowDoc((v) => !v)}>
-            {showDoc ? "Cancel" : "Add invoice / document"}
-          </button>
-        </div>
 
         {showDoc && (
           <div className="card pad edit-card">
             <div className="field-grid">
-              <label>Supplier
+              <Field label="Supplier">
                 <input className="text" value={supplier} onChange={(e) => setSupplier(e.target.value)} />
-              </label>
-              <label>Document no.
+              </Field>
+              <Field label="Document no.">
                 <input className="text" value={docNumber} placeholder="invoice number"
                   onChange={(e) => setDocNumber(e.target.value)} />
-              </label>
-              <label>Date
+              </Field>
+              <Field label="Date">
                 <input className="text" value={docDate} placeholder="YYYY-MM-DD"
                   onChange={(e) => setDocDate(e.target.value)} />
-              </label>
-              <label>Currency
+              </Field>
+              <Field label="Currency">
                 <input className="text" value={currency} onChange={(e) => setCurrency(e.target.value)} />
-              </label>
-              <label>Total as printed
+              </Field>
+              <Field label="Total as printed">
                 <input className="text" value={docTotal} placeholder="optional, reconciles lines"
                   onChange={(e) => setDocTotal(e.target.value)} />
-              </label>
-              <label>
-                <input type="checkbox" checked={forThisRun}
-                  onChange={(e) => setForThisRun(e.target.checked)} />{" "}
-                Belongs to this batch
-              </label>
+              </Field>
+              <CheckField checked={forThisRun} onChange={setForThisRun}>Belongs to this batch</CheckField>
             </div>
             <div className="btn-row">
               <button className="btn btn-sm btn-primary" disabled={busy || !supplier.trim()}
@@ -323,42 +338,32 @@ export default function RunCosts({
           <p className="muted">No documents on this batch yet.</p>
         ) : (
           <div className="table-wrap">
-            <table className="data data-fixed run-docs-table">
-              <thead>
-                <tr>
-                  <th>Supplier</th>
-                  <th>Number</th>
-                  <th>Date</th>
-                  <th>Lines</th>
-                  <th>Sum</th>
-                  <th>Printed</th>
-                  <th />
-                </tr>
-              </thead>
-              <tbody>
-                {docs.map((d) => (
-                  <tr key={d.id} className={openDoc === d.id ? "row-selected" : ""}>
-                    <td title={d.supplier}>{d.supplier || "—"}</td>
-                    <td className="mono" title={d.external_id || d.doc_number}>
-                      {d.doc_number || "—"}
-                    </td>
-                    <td>{d.doc_date || "—"}</td>
-                    <td className="num">{d.line_count}</td>
-                    <td className="num">{money(d.lines_total, d.currency)}</td>
-                    <td className="num">
-                      {d.total_amount === null ? (
-                        <span className="muted">—</span>
-                      ) : d.reconciled ? (
-                        money(d.total_amount, d.currency)
-                      ) : (
-                        <span className="pill err" title="entered total does not match the sum of lines">
-                          {money(d.total_amount, d.currency)}
-                        </span>
-                      )}
-                    </td>
-                    <td className="ctr">
-                      <button className="btn btn-sm"
-                        onClick={() => setOpenDoc(openDoc === d.id ? null : d.id)}>
+            <DataTable
+              rows={docs}
+              rowKey={(d) => d.id}
+              rowClass={(d) => (openDoc === d.id ? "row-selected" : "")}
+              columns={[
+                { key: "supplier", label: "Supplier", width: 20, get: (d) => d.supplier || "—" },
+                { key: "number", label: "Number", width: 22, className: "mono", get: (d) => d.doc_number || "—",
+                  title: (d) => d.external_id || d.doc_number },
+                { key: "date", label: "Date", width: 12, get: (d) => d.doc_date || "—" },
+                { key: "lines", label: "Lines", width: 7, numeric: true, get: (d) => d.line_count },
+                { key: "sum", label: "Sum", width: 14, numeric: true, get: (d) => d.lines_total,
+                  render: (d) => money(d.lines_total, d.currency) },
+                { key: "printed", label: "Printed", width: 14, numeric: true, get: (d) => d.total_amount,
+                  render: (d) => (d.total_amount === null ? (
+                    <span className="muted">—</span>
+                  ) : d.reconciled ? (
+                    money(d.total_amount, d.currency)
+                  ) : (
+                    <span className="pill err" title="entered total does not match the sum of lines">
+                      {money(d.total_amount, d.currency)}
+                    </span>
+                  )) },
+                { key: "act", label: "", width: "142px", interactive: false, className: "ctr", get: () => "",
+                  render: (d) => (
+                    <>
+                      <button className="btn btn-sm" onClick={() => setOpenDoc(openDoc === d.id ? null : d.id)}>
                         {openDoc === d.id ? "Close" : "Lines"}
                       </button>{" "}
                       <button className="btn btn-sm btn-danger" disabled={busy}
@@ -369,11 +374,10 @@ export default function RunCosts({
                           ))) return;
                           void act(() => deleteDocument(d.id, true));
                         }}>Delete</button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+                    </>
+                  ) },
+              ]}
+            />
           </div>
         )}
 
@@ -382,88 +386,77 @@ export default function RunCosts({
           if (!d) return null;
           return (
             <div className="card pad">
-              <div className="card-subtitle">
-                Lines — {d.supplier} {d.doc_number}
-              </div>
+              <FoldSection
+                bare
+                title={`Lines — ${d.supplier} ${d.doc_number}`}
+                count={(d.lines ?? []).filter((li) => !li.voided).length}
+                foldKey={`run:${runId}:doc:${d.id}:lines`}
+                chips={<StatChip n={money(d.lines_total, d.currency)}>sum</StatChip>}
+              >
               {(d.lines ?? []).filter((li) => !li.voided).length === 0 ? (
                 <p className="muted">No lines yet.</p>
               ) : (
                 <div className="table-wrap">
-                  <table className="data data-fixed run-lines-table">
-                    <thead>
-                      <tr>
-                        <th>Kind</th>
-                        <th>Label</th>
-                        <th>MPN</th>
-                        <th>Qty</th>
-                        <th>Unit</th>
-                        <th>Total</th>
-                        <th>Where</th>
-                        <th />
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {(d.lines ?? []).filter((li) => !li.voided).map((li) => (
-                        <tr key={li.id}>
-                          <td><span className="badge">{li.kind}</span></td>
-                          <td title={li.label}>{li.label || "—"}</td>
-                          <td className="mono" title={li.mpn}>{li.mpn || "—"}</td>
-                          <td className="num" title={li.basis === "per_device"
-                            ? `${li.qty} per device x ${li.qty_effective && li.qty
-                                ? Math.round(li.qty_effective / li.qty) : "?"} units`
-                            : undefined}>
-                            {li.basis === "per_device" && li.qty_effective
-                              ? `${li.qty} → ${li.qty_effective}`
-                              : li.qty}
-                          </td>
-                          <td className="num">{li.unit_price}</td>
-                          <td className="num">{money(li.line_total, li.currency)}</td>
-                          <td className="muted">
-                            {li.kind === "part" && li.run_id === null
-                              ? "cost pool"
-                              : li.basis === "per_device" ? "run · per device" : "run"}
-                          </td>
-                          <td className="ctr">
-                            <button className="btn btn-sm btn-danger" disabled={busy}
-                              onClick={() => void act(() => voidCostLine(li.id))}>Void</button>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                  <DataTable
+                    rows={(d.lines ?? []).filter((li) => !li.voided)}
+                    rowKey={(li) => li.id}
+                    columns={[
+                      { key: "kind", label: "Kind", width: 11, get: (li) => li.kind,
+                        render: (li) => <span className="badge">{li.kind}</span> },
+                      { key: "label", label: "Label", width: 22, get: (li) => li.label || "—" },
+                      { key: "mpn", label: "MPN", width: 19, className: "mono", get: (li) => li.mpn || "—" },
+                      { key: "qty", label: "Qty", width: 8, numeric: true, get: (li) => li.qty,
+                        title: (li) => (li.basis === "per_device"
+                          ? `${li.qty} per device x ${li.qty_effective && li.qty ? Math.round(li.qty_effective / li.qty) : "?"} units`
+                          : undefined),
+                        render: (li) => (li.basis === "per_device" && li.qty_effective ? `${li.qty} → ${li.qty_effective}` : li.qty) },
+                      { key: "unit", label: "Unit", width: 10, numeric: true, get: (li) => li.unit_price },
+                      { key: "total", label: "Total", width: 12, numeric: true, get: (li) => li.line_total,
+                        render: (li) => money(li.line_total, li.currency) },
+                      { key: "where", label: "Where", width: 11, className: "muted",
+                        get: (li) => (li.kind === "part" && li.run_id === null
+                          ? "cost pool" : li.basis === "per_device" ? "batch · per device" : "batch") },
+                      { key: "act", label: "", width: 7, interactive: false, className: "ctr", get: () => "",
+                        render: (li) => (
+                          <button className="btn btn-sm btn-danger" disabled={busy}
+                            onClick={async () => {
+                              const ok = await dialog.confirm(`Void "${li.label || li.mpn}"? Its money leaves this batch.`,
+                                { title: "Void line", confirmLabel: "Void", tone: "danger" });
+                              if (ok) void act(() => voidCostLine(li.id));
+                            }}>Void</button>
+                        ) },
+                    ]}
+                  />
                 </div>
               )}
+              </FoldSection>
               <div className="field-grid">
-                <label>What it is
+                <Field label="What it is">
                   <StepSelect
                     catalog={stepCatalog}
                     className="text mono"
                     value={lineStep}
                     onChange={setLineStep}
                   />
-                </label>
-                <label>Label
+                </Field>
+                <Field label="Label">
                   <input className="text" value={lineLabel}
                     onChange={(e) => setLineLabel(e.target.value)} />
-                </label>
-                <label>MPN
+                </Field>
+                <Field label="MPN">
                   <input className="text" value={lineMpn}
                     onChange={(e) => setLineMpn(e.target.value)} />
-                </label>
-                <label>Qty
+                </Field>
+                <Field label="Qty">
                   <input className="text" value={lineQty}
                     onChange={(e) => setLineQty(e.target.value)} />
-                </label>
-                <label>Unit price
+                </Field>
+                <Field label="Unit price">
                   <input className="text" value={linePrice}
                     onChange={(e) => setLinePrice(e.target.value)} />
-                </label>
+                </Field>
                 {!isStockStep && (
-                  <label>
-                    <input type="checkbox" checked={linePerDevice}
-                      onChange={(e) => setLinePerDevice(e.target.checked)} />{" "}
-                    Per device (× {qty})
-                  </label>
+                  <CheckField checked={linePerDevice} onChange={setLinePerDevice}>Per device (× {qty})</CheckField>
                 )}
               </div>
               <p className="muted">
@@ -478,7 +471,7 @@ export default function RunCosts({
             </div>
           );
         })()}
-      </div>
+      </FoldSection>
     </>
   );
 }

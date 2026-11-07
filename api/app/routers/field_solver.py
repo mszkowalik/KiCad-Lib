@@ -25,7 +25,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from .. import models as M
-from ..db import SessionLocal, get_db
+from ..db import get_db
 from ..services import field_state
 from ..services.fieldsolver import design as design_mod
 from ..services.fieldsolver import materials as materials_mod
@@ -478,15 +478,6 @@ def put_workspace(body: dict, request: Request, db: Session = Depends(get_db)):
     else:
         row.data = body
     db.commit()
-    return {"ok": True}
-
-
-@router.delete("/workspace")
-def clear_workspace(request: Request, db: Session = Depends(get_db)):
-    row = db.query(M.FieldWorkspace).filter_by(owner=actor_of(request)).one_or_none()
-    if row is not None:
-        db.delete(row)
-        db.commit()
     return {"ok": True}
 
 

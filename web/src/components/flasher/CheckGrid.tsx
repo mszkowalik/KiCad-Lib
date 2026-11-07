@@ -11,7 +11,7 @@
  */
 import { Link } from "react-router-dom";
 import type { RunCheckRow } from "../../api";
-import { fmtWhen } from "./common";
+import { localWhen } from "../../format";
 
 const CATEGORY_LABEL: Record<string, string> = {
   identity: "Identity",
@@ -68,13 +68,13 @@ export default function CheckGrid({
               const repeats = c.attempts
                 ? Object.entries(c.attempts).map(([s, n]) => `${n}× ${s}`).join(", ")
                 : "";
-              const title = [c.detail, repeats && `attempts: ${repeats}`, c.at && fmtWhen(c.at)]
+              const title = [c.detail, repeats && `attempts: ${repeats}`, c.at && localWhen(c.at)]
                 .filter(Boolean)
                 .join(" — ");
               const body = (
                 <>
                   <span className="check-dot" aria-hidden="true" />
-                  <span className="check-name">{c.label}</span>
+                  <span>{c.label}</span>
                 </>
               );
               return showRun && c.run_id ? (

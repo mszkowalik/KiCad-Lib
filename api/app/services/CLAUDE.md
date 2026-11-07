@@ -12,7 +12,7 @@ in one document. Open the document before you change the module.
 | Topic | Modules | Document |
 |---|---|---|
 | Datasheet identity, fetch, classification, page index | `datasheet_store.py`, `datasheet_pages.py`, `datasheet_migrate.py` | [docs/reference/datasheets.md](../../../docs/reference/datasheets.md) |
-| Cost plans, invoices, stock, orders, sales, the lot ledger and FIFO pricing | `cost_state.py`, `material.py`, `stock.py`, `orders.py`, `lots.py` | [docs/reference/production-economics.md](../../../docs/reference/production-economics.md) |
+| Cost plans, invoices, stock, orders, sales, the lot ledger | `cost_state.py`, `material.py`, `stock.py`, `orders.py`, `lots.py` | [docs/reference/production-economics.md](../../../docs/reference/production-economics.md) |
 | The two companies, project ownership over time, the company scope of a list, stock per company, in-house transfers | `companies.py`, `company_backfill.py`, `transfers.py` | [docs/reference/companies.md](../../../docs/reference/companies.md) |
 | Sales invoices a company issues: amounts, series, FA(3), PDF, import | `invoicing/` | [docs/reference/sales-invoices.md](../../../docs/reference/sales-invoices.md) |
 | A company's books: revenue, costs, VAT and income-tax estimates, the accountant's figures, overhead categories | `company_books.py`, `overhead.py` | [docs/reference/company-books.md](../../../docs/reference/company-books.md) |
@@ -20,6 +20,7 @@ in one document. Open the document before you change the module.
 | Suppliers, and which source prices a part | `suppliers.py`, `ladder.py` | [docs/reference/suppliers.md](../../../docs/reference/suppliers.md) |
 | Production processes, twins, crafting a batch, the assembly step, costs linked to steps, rebuilding old batches into twins, the bench naming and marking, twin prices, the project's materials from the process, prepared parts, conversion costs | `process.py`, `twins.py`, `twin_rebuild.py`, `bench_links.py` | [docs/reference/processes.md](../../../docs/reference/processes.md) |
 | The material ledger (decisions 0097, 0098): the one storage of draws, adjustments, lots, clicks, units and their cost links; the writing helpers and the one-time migration | `material_ledger/` | [docs/reference/material-ledger.md](../../../docs/reference/material-ledger.md) |
+| The office organizers: what a box holds, a take as a draw, a count, how Stock leaves the boxes out of the JLC comparison | `organizers.py` | [docs/reference/organizers.md](../../../docs/reference/organizers.md) |
 | What JLCPCB says moved, and what we booked | `jlc_web.py`, `jlc_import.py`, `jlc_apply.py`, `jlc_ledger.py`, `substitutions.py` | [docs/reference/production-economics.md](../../../docs/reference/production-economics.md) |
 | Sign-off, verification, the review record | `signoff.py`, `review.py`, `material.py` | [docs/reference/review-axis.md](../../../docs/reference/review-axis.md) |
 | Renaming a footprint or a base symbol | `rename.py` | [docs/decisions/0012](../../../docs/decisions/0012-rename-a-footprint-or-base-symbol-in-place.md) |
@@ -27,7 +28,7 @@ in one document. Open the document before you change the module.
 | Simulation models and composition | `simmodel.py`, `sim_store.py`, `simcompose.py` | [docs/reference/simulation-models.md](../../../docs/reference/simulation-models.md) |
 | SPICE runs, netlists, harnesses, the live sketch | `sim_spice.py`, `project_ops.py`, `sch_lib.py`, `sim_scenario.py` | [docs/reference/spice-runs.md](../../../docs/reference/spice-runs.md) |
 | What a publish CORRECTS for you, before it parses | `geometry_proposals.py` | [docs/reference/publish-sanitization.md](../../../docs/reference/publish-sanitization.md) |
-| The agent tool surface (MCP only; no in-platform agent) | `agent_tools.py` | [docs/reference/agent-tools.md](../../../docs/reference/agent-tools.md) |
+| The agent tool surface (MCP only; no in-platform agent) | `agent_tools.py`, `agent_routes.py` | [docs/reference/agent-tools.md](../../../docs/reference/agent-tools.md) |
 | Device presence from the fleet MQTT broker | `mqtt_monitor.py`, `mqtt_config.py` | [docs/reference/mqtt-presence.md](../../../docs/reference/mqtt-presence.md) |
 | PCM package retention and the personal repository | `pcm.py` | [docs/reference/pcm-packaging.md](../../../docs/reference/pcm-packaging.md) |
 | The HTTP catalog and KiCad field visibility | `generator.py`, `mirror.py` | [docs/reference/kicad-integration.md](../../../docs/reference/kicad-integration.md) |
@@ -60,10 +61,8 @@ version (decision 0058) are not library entities and keep their draft gate.
 
 **Nothing files drafts any more, and there is nowhere to approve one.**
 `routers/proposals.py` is DELETED, with the Proposals view, the nav badge and
-`RecheckDialog`; `/proposals` redirects to `/reviews`. `POST
-/api/import/sync` (the retired YAML diff, the one remaining draft producer)
-answers **410** rather than writing rows nothing can act on — the destructive
-full import still works, because it writes published rows. Draft and rejected
+`RecheckDialog`; `/proposals` redirects to `/reviews`. The YAML import, the last
+draft producer, is gone too (2026-11-07). Draft and rejected
 version rows from before all this stay readable as history: never write a new
 one, and never re-introduce an approval queue without reading the review-axis
 section first.
@@ -127,43 +126,6 @@ skips the datasheet pins, the sign-off carry, the review carry and the machine
 validation. Audit actions in use: `publish`, `review.check`, `review.revoke`,
 `signoff.*`, `import`. (`proposal.create` / `proposal.approve` /
 `proposal.reject` appear in history only.)
-
-## Importing from YAML — two modes
-
-`services/importer.py` runs as a background daemon thread (`IMPORT_STATE` +
-`threading.Lock`; progress via `_stage(name)`; status polled at
-`GET /api/import/status`). There are **two** ways to load `Sources/*.yaml`:
-
-1. **Full import (`run_import`, `POST /api/import`)** — DESTRUCTIVE: wipes and
-   reloads everything (categories, rules, base symbols, footprints, 3D models,
-   components) writing rows directly as `published`. Skills and component notes
-   survive. Use for first-time load / clean cutover / refreshing geometry.
-   **Do not casually edit or "test" this — it drops the DB and cannot be run
-   safely against real data.**
-2. **Sync (`run_sync`, `POST /api/import/sync`)** — NON-DESTRUCTIVE: diffs each
-   YAML component against the DB and creates **draft proposals** for new and
-   changed components (reusing the proposal pattern in
-   [docs/reference/agent-tools.md](../../../docs/reference/agent-tools.md)). It never wipes,
-   never deletes, and touches nothing but the drafts it creates + audit rows.
-   Scope and guarantees:
-   - Diffs on versioned component data only: `base_component`, footprint
-     **name**, `category_id`, `removed_properties`, and the ordered plain
-     properties `(key, value, is_null)`. Prices, datasheets, and property
-     visibility/layout are intentionally **not** part of the diff.
-   - Resolves base symbols, footprints, and categories from what is **already
-     in the DB**. A component that references a base symbol / footprint /
-     category not present is **skipped and reported**, never invented — run a
-     full import first to add geometry.
-   - **Idempotent**: components equal to their live version are `unchanged`; if
-     a matching draft already exists it is not duplicated. Re-running a sync
-     over unchanged YAML must create zero proposals.
-   - Components in the DB but absent from YAML are **reported** (`only_in_db`),
-     never auto-deleted.
-
-`_build_desired(...)` builds one component's desired state and mirrors
-`run_import`'s per-component logic; if you change how a component is built from
-YAML, keep both paths consistent.
-
 
 ## The change feed (`services/changes.py`, `routers/changes.py`)
 

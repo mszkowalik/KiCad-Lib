@@ -3,7 +3,7 @@
 The decision, and the options it rejected, are in
 [0055](../decisions/0055-a-component-links-to-suppliers-in-a-register.md). The
 code is `api/app/services/suppliers.py` and the resolution in
-`api/app/services/ladder.py`. The UI is Admin → Suppliers and the component
+`api/app/services/ladder.py`. The UI is Stock → Suppliers and the component
 page's "Suppliers & pricing" card.
 
 ## The three pieces

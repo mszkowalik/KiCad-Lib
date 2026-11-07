@@ -61,7 +61,7 @@ const AuthContext = createContext<AuthContextValue>({
   isAdmin: true,
   signOut: async () => {},
   refresh: async () => {},
-  theme: "system",
+  theme: "dark",
   setTheme: async () => {},
   companies: [],
   scope: "all",

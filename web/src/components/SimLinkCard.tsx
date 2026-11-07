@@ -19,6 +19,7 @@ import {
 } from "../api";
 import { useDialog } from "./Dialog";
 import { ErrorBanner, Spinner } from "./Ui";
+import { localWhen } from "../format";
 
 /** One row per unique pin NUMBER, visible pin's name/type winning over a
  *  hidden stacked duplicate's — the map only has to name each number once
@@ -455,14 +456,14 @@ export default function SimLinkCard({ symbolId }: { symbolId: number }) {
             <div className="seg-toggle" role="group" aria-label="Simulation model mode">
               <button
                 type="button"
-                className={`btn ${mode === "composed" ? "btn-accent" : ""}`}
+                className={`btn ${mode === "composed" ? "btn-primary" : ""}`}
                 onClick={() => setMode("composed")}
               >
                 Composed
               </button>
               <button
                 type="button"
-                className={`btn ${mode === "model" ? "btn-accent" : ""}`}
+                className={`btn ${mode === "model" ? "btn-primary" : ""}`}
                 onClick={() => setMode("model")}
               >
                 Single model
@@ -847,7 +848,7 @@ export default function SimLinkCard({ symbolId }: { symbolId: number }) {
             {mode === "composed" ? (
               <button
                 type="button"
-                className="btn btn-accent"
+                className="btn btn-primary"
                 disabled={saving || !composeReady}
                 onClick={() => void saveComposed()}
               >
@@ -856,7 +857,7 @@ export default function SimLinkCard({ symbolId }: { symbolId: number }) {
             ) : (
               <button
                 type="button"
-                className="btn btn-accent"
+                className="btn btn-primary"
                 disabled={saving || !linkComplete}
                 onClick={() => void saveLink()}
               >
@@ -877,7 +878,7 @@ export default function SimLinkCard({ symbolId }: { symbolId: number }) {
               <span className="muted rail-hint">
                 {info.link.mode === "composed" ? "composed" : "linked"} by {info.link.updated_by}
                 {info.link.updated_at
-                  ? `, ${new Date(info.link.updated_at).toLocaleString()}`
+                  ? `, ${localWhen(info.link.updated_at)}`
                   : ""}
               </span>
             ) : null}

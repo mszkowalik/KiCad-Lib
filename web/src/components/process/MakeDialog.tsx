@@ -2,16 +2,14 @@
  *
  *  Always a dry run first: "Preview" shows every draw with its price, the value
  *  of the lot it will make, and any shortage, and only then "Make it" writes.
- *  The same dialog serves the project's Process tab and a batch page — on a
- *  batch it opens with that batch filled in, which is CONTEXT for the
- *  arithmetic panel and never a charge: the batch pays when it draws the lot.
+ *  The batch a person names here is CONTEXT for the arithmetic panel and never
+ *  a charge: the batch pays when it draws the lot.
  *
  *  An internal input (a prepared part) takes its oldest lot first unless one
  *  is picked: that is the only choice a person makes here, because two lots of
  *  one prepared part can differ (printed or stickered, found at zero value or built
- *  from today's purchases). Bought inputs follow the pool's moving average, or
- *  their lots oldest first while lot pricing is on (decision 0073), like every
- *  other draw in the platform.
+ *  from today's purchases). Bought inputs follow the pool's moving average, like
+ *  every other draw in the platform.
  */
 import { useMemo, useState } from "react";
 import {
@@ -23,35 +21,23 @@ import {
   type StageLot,
   type TransformPlan,
 } from "../../api";
-import { usd } from "../../format";
+import { pln, today, usd } from "../../format";
+import { useTodayRate } from "../../useTodayRate";
 import AutoTextarea from "../AutoTextarea";
 import DataTable, { type Column } from "../DataTable";
 import Field, { FieldGrid } from "../Field";
 import NumberInput from "../NumberInput";
 import { ErrorBanner, Spinner } from "../Ui";
 import { useModal } from "../modal";
-
-/** Today as YYYY-MM-DD in the LOCAL calendar. `toISOString()` is UTC, so
- *  between midnight and 02:00 in Poland it named yesterday. */
-export function today(): string {
-  const d = new Date();
-  return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
-}
-
-export function inputsText(r: PreparedRecipe, parts: ProcessVersionDetail["parts"]): string {
-  return r.inputs
-    .map((i) => `${i.qty} × ${i.component_id ? parts[String(i.component_id)]?.name ?? `part ${i.component_id}` : i.mpn}`)
-    .join(" + ");
-}
+import { inputsText } from "./ProcessMap";
 
 export default function MakeDialog({
-  projectId, version, recipe, runs, runId = null, lotsByPart, onClose,
+  projectId, version, recipe, runs, lotsByPart, onClose,
 }: {
   projectId: number;
   version: ProcessVersionDetail;
   recipe: PreparedRecipe;
   runs: RunInfo[];
-  runId?: number | null;
   /** open lots of every stage, by component id */
   lotsByPart: Record<number, StageLot[]>;
   onClose: (made: boolean) => void;
@@ -60,11 +46,12 @@ export default function MakeDialog({
   const [qty, setQty] = useState<number | null>(null);
   const [scrap, setScrap] = useState<number | null>(0);
   const [madeAt, setMadeAt] = useState(today());
-  const [batch, setBatch] = useState<number | null>(runId);
+  const [batch, setBatch] = useState<number | null>(null);
   const [note, setNote] = useState("");
   // component id -> the lot it takes, or "" = oldest first
   const [lotPick, setLotPick] = useState<Record<number, string>>({});
   const [plan, setPlan] = useState<TransformPlan | null>(null);
+  const rate = useTodayRate();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -121,8 +108,8 @@ export default function MakeDialog({
     { key: "unit", label: "Unit", width: 16, numeric: true, get: (d) => d.unit_cost_usd,
       render: (d) => usd(d.unit_cost_usd, 4) },
     { key: "value", label: "Value", width: 16, numeric: true, get: (d) => d.value_usd,
-      render: (d) => usd(d.value_usd) },
-  ], []);
+      render: (d) => pln(d.value_usd, rate) },
+  ], [rate]);
 
   const blocked = !!plan && (plan.shortages.length > 0 || plan.problems.length > 0);
 
@@ -131,7 +118,7 @@ export default function MakeDialog({
       <div className="card pad modal-card modal-card-mid" {...modal.cardProps}>
         <h2 className="card-title">Make {output?.name ?? recipe.output_component_id}</h2>
         <p className="muted dim">
-          {recipe.label || recipe.key}: {inputsText(recipe, version.parts)} for each unit.
+          {recipe.label || recipe.key}: {inputsText(recipe.inputs, version.parts)} for each unit.
           Process v{version.version_no}.
         </p>
         {error ? <ErrorBanner message={error} /> : null}
@@ -198,7 +185,7 @@ export default function MakeDialog({
             <DataTable rows={plan.draws} columns={columns} rowKey={(d) => `${d.component_id}-${d.lot_adjustment_id ?? "p"}`} />
             <p className="muted">
               The new lot: <b>{plan.output.qty}</b> × {plan.output.name} worth{" "}
-              <b>{usd(plan.output.value_usd)}</b> ({usd(plan.output.unit_cost_usd, 4)} each).
+              <b>{pln(plan.output.value_usd, rate)}</b> ({usd(plan.output.unit_cost_usd, 4)} each).
             </p>
           </>
         ) : null}

@@ -23,6 +23,7 @@ from .. import models as M
 from ..db import get_db
 from ..models import utcnow
 from ..services import jlc_apply, jlc_import, jlc_invoice_pdf, jlc_web, journal, run_actuals
+from .users import require_admin
 from .util import acting_name, audit
 
 log = logging.getLogger(__name__)
@@ -242,24 +243,6 @@ def _staged(db: Session, external_id: str) -> M.JlcImport:
     if row is None or not row.payload:
         raise HTTPException(404, f"{external_id} is not staged — run a sync first")
     return row
-
-
-@router.get("/preview/{external_id}")
-def preview(external_id: str, db: Session = Depends(get_db)):
-    """What importing this batch WOULD do, run through the real write path and
-    rolled back — so the numbers shown are the numbers a real import produces."""
-    row = _staged(db, external_id)
-    from ..services.jlc_invoice import parse
-    inv = parse(row.payload)
-    plan = jlc_import.plan_manufacturing_document(inv, _decisions_map(db),
-                                                  fee_info=row.fee_info)
-    try:
-        res = jlc_apply.apply_manufacturing_document(db, plan, dry_run=True)
-    except jlc_apply.ApplyRefused as e:
-        raise HTTPException(409, str(e)) from e
-    return {"plan": {k: v for k, v in plan.items() if k != "lines"},
-            "line_count": len(plan["lines"]),
-            "lines": plan["lines"], "result": res}
 
 
 @router.post("/documents/{external_id}/apply")
@@ -701,7 +684,8 @@ def _book_external(db: Session, plan: dict, actor: str, dry_run: bool) -> dict:
 
 
 @router.post("/adjustments/to-draws")
-def migrate_external_adjustments(dry_run: bool = True, db: Session = Depends(get_db)):
+def migrate_external_adjustments(dry_run: bool = True, db: Session = Depends(get_db),
+                                 _admin: M.User = Depends(require_admin)):
     """Rewrite the pre-0034 `external_project` adjustments as uncharged draws.
 
     One fact, one shape. Those 27 rows are the invoice's own consumption for
@@ -855,7 +839,7 @@ def apply_decision(smt_order_code: str, dry_run: bool = True, db: Session = Depe
 
 
 @router.post("/fees/refresh")
-def refresh_fees(force: bool = False, db: Session = Depends(get_db)):
+def refresh_fees(force: bool = False, db: Session = Depends(get_db), _admin: M.User = Depends(require_admin)):
     """Fetch the per-order fee breakdown for staged batches that miss it.
 
     The fee cache (`fee_info`) was added after the invoice cache, so batches
@@ -887,7 +871,8 @@ def refresh_fees(force: bool = False, db: Session = Depends(get_db)):
 
 
 @router.post("/fees/backfill")
-def backfill_fees(external_id: str = "", dry_run: bool = True, db: Session = Depends(get_db)):
+def backfill_fees(external_id: str = "", dry_run: bool = True, db: Session = Depends(get_db),
+                  _admin: M.User = Depends(require_admin)):
     """Split ALREADY-imported batch documents into JLC's own fee itemization.
 
     Each document is one reversible journal batch. Children inherit their

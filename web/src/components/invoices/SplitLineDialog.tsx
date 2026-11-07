@@ -32,12 +32,14 @@ import {
 } from "../../api";
 import { ErrorBanner } from "../Ui";
 import ComponentPickDialog from "../ComponentPickDialog";
+import { CheckField } from "../Field";
 import {
   ChargeToSelect,
   ExcludeReasonInput,
   StepSelect,
   type RunOption, type TransformOption } from "../costs";
 import { useModal } from "../modal";
+import { plural } from "../../format";
 
 /** Templates come from the production-step catalog (`/api/cost-steps`): the
  *  vendor's exact wording paired with the vendor-neutral step key, so a split
@@ -298,7 +300,7 @@ export default function SplitLineDialog({
     <div className="modal-backdrop" {...modal.backdropProps}>
       <div className="card pad modal-card modal-card-wide" {...modal.cardProps}>
         <h2 className="card-title">Split “{line.label || line.kind}”</h2>
-        <p className="card-subtitle">
+        <p className="muted dim">
           {fmt(parentAmount)} {currency} on the invoice. The position keeps that figure — the shares
           below carry the money, so nothing is counted twice. Leaving some unallocated is fine; it
           shows up as a residual.
@@ -506,7 +508,7 @@ export default function SplitLineDialog({
 
         {existing.length ? (
           <p className="muted">
-            Editing the {existing.length} existing share{existing.length === 1 ? "" : "s"} in place.
+            Editing the {plural(existing.length, "existing share")} in place.
             A row you remove is voided, not deleted.
           </p>
         ) : null}
@@ -518,28 +520,14 @@ export default function SplitLineDialog({
           <div className="muted">
             These parts came off the supplier's own shelf, so the shares stay charged to this
             batch and never enter the shared pool — their price belongs to this one order.
-            <label className="muted">
-              <input
-                type="checkbox"
-                checked={allowParts}
-                onChange={(e) => setAllowParts(e.target.checked)}
-              />{" "}
-              Split this parts position
-            </label>
+            <CheckField checked={allowParts} onChange={setAllowParts}>Split this parts position</CheckField>
           </div>
         ) : isPart ? (
           <div className="banner-warn">
             This is a component purchase that feeds the shared pool, and the pool is already split
             by what each run consumes — splitting one per run double counts. Only override this for
             parts bought for a single batch, which stay out of the pool.
-            <label className="muted">
-              <input
-                type="checkbox"
-                checked={allowParts}
-                onChange={(e) => setAllowParts(e.target.checked)}
-              />{" "}
-              I know: split this part line anyway
-            </label>
+            <CheckField checked={allowParts} onChange={setAllowParts}>I know: split this part line anyway</CheckField>
           </div>
         ) : null}
 

@@ -13,7 +13,7 @@ Model (user decisions, 2026-07-27):
   step is a direct cost of its run.
 - A run pays for what it **drew** from the pool (a `Draw`, a move of the
   material ledger, decision 0097), valued at a **moving weighted average**
-  while `lot_pricing` is off, and at its lots' cost while it is on (0073).
+  (decision 0105).
 - The goal is **splitting invoice cost, not matching JLC's stock counts**.
   Attrition is expected and first-class (an `Adjustment`), optionally
   charged to a run so its per-device figure carries the real loss. A residual
@@ -1050,6 +1050,7 @@ def component_ledger(db: Session, component_id: int | None = None,
             ref = (f"into a prepared part (transformation #{row.event_id})" if made else
                    "sent to the other company (in-house transfer)"
                    if row.run_id is None and row.transfer_line_id else
+                   "R&D, charged to no batch" if row.run_id is None and row.basis == "research" else
                    "charged to no batch" if row.run_id is None else
                    f"run {row.run_id}" + (f" — {run.label}" if run else ""))
             detail = row.note or ""
@@ -1642,6 +1643,8 @@ def run_actuals(db: Session, run: M.ProductionRun) -> dict:
 
     return {
         "currency": cur,
+        # What a stored USD figure of this batch reads in PLN (decision 0103).
+        "pln_per_usd": fx.pln_per_usd(db, run_pricing_date(run)),
         "qty_planned": qty_plan,
         # The DERIVED figure (decision 0030), so every reader divides by what
         # passed. `qty_good_source` says where it came from: "devices" is the
@@ -1885,10 +1888,11 @@ def parts_stock(db: Session, company_id: int | None = None) -> dict:
 
     The two derived gaps are the useful part:
 
-    - `delta_qty` = held - remaining. Positive means JLC holds more than the
-      platform has paid for; negative means the pool still counts parts JLC no
-      longer has — boards were built without recording the draw, or stock was lost
-      (record it with an `Adjustment`).
+    - `delta_qty` = held - (remaining - what the office organizers hold).
+      Positive means JLC holds more than the platform has paid for; negative
+      means the pool still counts parts JLC no longer has — boards were built
+      without recording the draw, or stock was lost (record it with an
+      `Adjustment`).
     - `delta_value_usd` = `(market_unit - paid_unit) x remaining_qty`, i.e. what
       the unconsumed remainder would be worth at today's price versus what it cost.
       Deliberately valued on the SAME quantity — comparing "held at market" against
@@ -1901,6 +1905,8 @@ def parts_stock(db: Session, company_id: int | None = None) -> dict:
     `company_id` shows one company's money (decision 0064). JLC holds one
     shelf for one account, so its side is always the whole shelf.
     """
+    from . import organizers
+
     pool = pool_state(db, company_id=company_id)
     items = db.query(M.JlcStockItem).all()
 
@@ -1912,6 +1918,11 @@ def parts_stock(db: Session, company_id: int | None = None) -> dict:
     # snapshot, and it hid a real 3,866-piece one.
     sync_date = _jlc_date(max((i.updated_at for i in items), default=None))
     pool_at_sync = pool_state(db, as_of=sync_date, company_id=company_id) if sync_date else {}
+    # What the office organizers hold is in the pool and cannot be at JLC, so the
+    # comparison with JLC leaves it out (decision 0104). Before this, 170 pieces
+    # in boxes read as parts JLC had lost, and the alert never cleared.
+    house_now = organizers.house_index(db, company_id=company_id)
+    house_at_sync = organizers.house_index(db, as_of=sync_date, company_id=company_id) if sync_date else {}
     # How much has moved since, so the page can say the count is out of date
     # instead of quietly reporting a stale comparison as a discrepancy.
     events_since = sum(1 for d, _k, _r in _pool_events(db, company_id)[0]
@@ -1949,6 +1960,11 @@ def parts_stock(db: Session, company_id: int | None = None) -> dict:
         # What WE said we had at the moment JLC counted. A part with no events
         # before the cutoff is absent from that replay, which means zero.
         at_sync = round((pool_at_sync.get(key) or {}).get("qty", 0.0), 4)
+        keys = _identity_keys(p.get("component_id"), p.get("mpn", ""), p.get("lcsc", ""))
+        house_qty, house_boxes = organizers.house_of(house_now, keys)
+        # What the pool says should be at JLC: never below zero, because a box
+        # can hold pieces no purchase in the pool covers.
+        expected_at_jlc = max(0.0, at_sync - organizers.house_of(house_at_sync, keys)[0])
         paid_value = round(p["value_usd"], 4)
         # quantities ADD across codes — two LCSC codes are two reels of one part
         held = sum(c.qty or 0 for c in found.values())
@@ -1959,6 +1975,7 @@ def parts_stock(db: Session, company_id: int | None = None) -> dict:
         remaining_market = round(market_unit * remaining, 4) if market_unit is not None else None
         rows.append({
             "key": key,
+            "jlc_item_ids": sorted(found),
             "component_id": p.get("component_id"),
             "component_name": comp_names.get(p.get("component_id") or -1),
             "mpn": p.get("mpn") or (it.mpn if it is not None else ""),
@@ -1972,6 +1989,9 @@ def parts_stock(db: Session, company_id: int | None = None) -> dict:
             "external": round(p["external"], 4),
             "remaining_qty": remaining,
             "remaining_at_sync_qty": at_sync,
+            "house_qty": round(house_qty, 4),
+            "house_boxes": house_boxes,
+            "expected_at_jlc_qty": round(expected_at_jlc, 4),
             "paid_unit_usd": _round(p["avg_usd"]),
             "paid_value_usd": paid_value,
             "held_qty": held,
@@ -1980,12 +2000,33 @@ def parts_stock(db: Session, company_id: int | None = None) -> dict:
             "remaining_at_market_usd": remaining_market,
             # Both sides as they stood when JLC counted. Comparing today's pool
             # against that snapshot measures elapsed time, not disagreement.
-            "delta_qty": round(held - at_sync, 4) if it is not None else None,
+            "delta_qty": round(held - expected_at_jlc, 4) if it is not None else None,
             "delta_value_usd": (round(remaining_market - paid_value, 4)
                                 if remaining_market is not None else None),
             "state": "both" if it is not None else "pool_only",
             "unknown_rate": p.get("unknown_rate", False),
         })
+
+    # One JLC stock item can feed two rows: the same part under two library
+    # cards (C2837531 is both TS3625A and KH-6X6X5H-STM). Each row then took the
+    # WHOLE count, which reported two differences that do not exist and counted
+    # the pieces twice in the totals. Each row takes what it expects, and what
+    # is left or missing lands on the last row, once.
+    sharing: dict[tuple, list[dict]] = defaultdict(list)
+    for r in rows:
+        if r["jlc_item_ids"]:
+            sharing[tuple(r["jlc_item_ids"])].append(r)
+    for group in sharing.values():
+        if len(group) < 2:
+            continue
+        left = group[0]["held_qty"]
+        for r in group:
+            mine = left if r is group[-1] else min(left, r["expected_at_jlc_qty"])
+            left -= mine
+            r["held_qty"] = mine
+            r["delta_qty"] = round(mine - r["expected_at_jlc_qty"], 4)
+            if r["market_unit_usd"] is not None:
+                r["market_value_usd"] = round(r["market_unit_usd"] * mine, 4)
 
     # JLC holds it, the platform has never paid for it -> the invoice is missing
     for it in items:
@@ -2001,12 +2042,14 @@ def parts_stock(db: Session, company_id: int | None = None) -> dict:
                         if it.unit_price_usd is not None else None)
         rows.append({
             "key": f"jlc{it.id}",
+            "jlc_item_ids": [it.id],
             "component_id": it.component_id,
             "component_name": comp_names.get(it.component_id or -1),
             "mpn": it.mpn or "", "lcsc": it.lcsc or "", "description": it.description or "",
             "bought": 0.0, "drawn": 0.0, "lost": 0.0, "external": 0.0,
             "remaining_qty": 0.0,
             "remaining_at_sync_qty": 0.0,
+            "house_qty": 0.0, "house_boxes": [], "expected_at_jlc_qty": 0.0,
             "paid_unit_usd": None, "paid_value_usd": 0.0,
             "held_qty": it.qty, "market_unit_usd": it.unit_price_usd,
             "market_value_usd": market_value, "remaining_at_market_usd": 0.0,
@@ -2034,6 +2077,7 @@ def parts_stock(db: Session, company_id: int | None = None) -> dict:
                                                 if r["remaining_at_market_usd"] is not None)),
             "jlc_held_value_usd": _round(sum(r["market_value_usd"] or 0.0 for r in rows)),
             "jlc_held_qty": sum(r["held_qty"] for r in rows),
+            "house_qty": round(sum(r["house_qty"] for r in rows), 4),
             # Pool says unconsumed, JLC no longer holds: unrecorded draws or losses.
             "over_pool_parts": sum(1 for r in both if (r["delta_qty"] or 0) < -0.5),
             "missing_invoice_parts": len(jlc_only),
@@ -2181,6 +2225,8 @@ def _invoice_register(db: Session, company_ids: list[int] | None, accountant: bo
     runs = {
         r.id: {"label": r.label or f"run {r.id}", "project_id": r.project_id,
                "run_date": r.run_date or "", "qty": good_units(db, r, _counts),
+               # What this batch's USD figures read in PLN (decision 0103).
+               "pln_per_usd": fx.pln_per_usd(db, run_pricing_date(r)),
                # sale side, so income sits beside cost in the register
                "qty_sold": r.qty_sold, "sale_unit_price": r.sale_unit_price,
                "sale_currency": r.sale_currency or "", "customer": r.customer,
@@ -2286,6 +2332,9 @@ def _invoice_register(db: Session, company_ids: list[int] | None, accountant: bo
     # The sender's side of an in-house transfer (decision 0064): drawn, charged
     # to no batch, and not waiting for one — the receiver's pool holds it.
     transferred_out_usd = 0.0
+    # Taken from an organizer for R&D (decision 0104): a cost no batch will ever
+    # pay, so it must not read as waiting for one.
+    research_usd = 0.0
     kinds = dict(db.query(M.MaterialEvent.id, M.MaterialEvent.kind).all())
     for c in live_consumption(db).all():
         value = c.taken * (c.unit_cost_usd or 0)
@@ -2293,6 +2342,8 @@ def _invoice_register(db: Session, company_ids: list[int] | None, accountant: bo
             into_prepared_usd += value
         elif c.run_id is None and c.transfer_line_id is not None:
             transferred_out_usd += value
+        elif c.run_id is None and c.basis == "research":
+            research_usd += value
         elif c.run_id is None:
             uncharged_usd += value
         else:
@@ -2434,6 +2485,10 @@ def _invoice_register(db: Session, company_ids: list[int] | None, accountant: bo
             # will). The pool identity above still balances — the value left the
             # pool either way — this only says how much of it landed nowhere.
             "uncharged_drawn_usd": _round(uncharged_usd),
+            # Used for R&D, from the organizers (decision 0104). Charged to no
+            # batch on purpose. Stock is a cost when bought in the company's
+            # books, so this adds nothing there.
+            "research_drawn_usd": _round(research_usd),
             # Drawn INTO an internal part by a process transformation: the value
             # is still in the pool, as the output lot (decision 0058).
             "into_prepared_usd": _round(into_prepared_usd),
@@ -2485,9 +2540,7 @@ def consume_from_bom(db: Session, run: M.ProductionRun, basis: str = "bom",
 
     Priced at the pool's moving average per part, snapshotted onto each row.
     Parts with nothing in the pool are reported as `unpriced` rather than
-    silently costed at zero. While `lot_pricing` is on (decision 0073), each
-    part comes from its lots oldest first at their cost instead, and a part no
-    lot covers refuses the whole batch.
+    silently costed at zero.
     """
     # A CRAFTED batch (decision 0059 §10) draws its parts step by step; drawing
     # BOM x produced as well would take the same parts twice.
@@ -2593,34 +2646,18 @@ def consume_from_bom(db: Session, run: M.ProductionRun, basis: str = "bom",
                          "(or a placeholder), record a stock adjustment, or mark the "
                          "part not-used via the run's overrides"}
 
-    # Decision 0073: with lot pricing on, each part comes from its lots, oldest
-    # first, at their cost — and a part no lot covers refuses the whole batch.
-    from . import lots as _lots
-
-    uncovered = _lots.fifo_price(db, planned, as_of=date_iso, company_id=run_scope(db, run))
-    if uncovered:
-        return {"created": 0, "unpriced": [], "volume": volume, "skipped": skipped,
-                "uncovered": uncovered,
-                "error": f"{len(uncovered)} part(s) are in no lot on {date_iso}: {_lots.short_text(uncovered)} "
-                         "— enter the missing purchase (decision 0073)"}
     from .material_ledger import core as _ledger
 
     event = _ledger.stock_event(db, at=date_iso, run_id=run.id, company_id=run.company_id,
                                 project_id=run.project_id, note=f"BOM draw, {basis}") if planned else None
     for d in planned:
-        if d.get("bindings"):
-            avg = d["unit_cost_usd"]
-        else:
-            probe = type("P", (), {"component_id": d["component_id"], "mpn": d["mpn"],
-                                   "lcsc": d["lcsc"]})()
-            avg = pool.get(_key(probe), {}).get("avg_usd", 0.0)
+        probe = type("P", (), {"component_id": d["component_id"], "mpn": d["mpn"], "lcsc": d["lcsc"]})()
+        avg = pool.get(_key(probe), {}).get("avg_usd", 0.0)
         if avg <= 0:
             unpriced.append(d["label"])
         c = _ledger.draw(db, event=event, component_id=d["component_id"], lcsc=d["lcsc"], mpn=d["mpn"],
                          taken=d["qty"], unit_cost_usd=avg, basis=basis, at=d["date"], run_id=run.id,
                          note=d["note"])
-        if d.get("bindings"):
-            _lots.bind(db, c, d)
         created += 1
     return {"created": created, "unpriced": unpriced, "volume": volume,
             "extras_drawn": len([x for x in extras if (x.qty or 0)]),

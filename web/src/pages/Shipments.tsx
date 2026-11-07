@@ -1,9 +1,8 @@
-/** Production → Shipments: every delivery, and the boxes still being packed.
+/** Sales → Shipments: every delivery, and the boxes still being packed.
  *
- *  Decision record 0053. A shipment can be OPENED for one order before anything
+ *  Decision record 0053. A shipment is OPENED for one order before anything
  *  leaves; devices are scanned into it on `ShipmentDetail` and it is sent when
- *  the box is closed. The one-step Ship card on the order page stays for a
- *  delivery whose serials are all to hand.
+ *  the box is closed. Shipping is Pack, then Send (decision 0103).
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
@@ -18,12 +17,15 @@ import {
 } from "../api";
 import DataTable, { type Column } from "../components/DataTable";
 import Field, { FieldRow } from "../components/Field";
+import { StatChip, NarrowChip } from "../components/FoldSection";
 import { ErrorBanner, Spinner, StatusPill } from "../components/Ui";
+import { localDate } from "../format";
 
 export default function Shipments() {
   const [rows, setRows] = useState<ShipmentListRow[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
+  const [narrow, setNarrow] = useState<"" | "open" | "sent" | "cancelled">("");
   const navigate = useNavigate();
 
   const reload = useCallback(() => {
@@ -54,7 +56,7 @@ export default function Shipments() {
       { key: "customer", label: "Customer", width: 15, get: (s) => s.customer },
       { key: "products", label: "Products", width: 16, get: (s) => s.products.join(", ") },
       { key: "qty", label: "Devices", width: 8, numeric: true, get: (s) => s.qty },
-      { key: "created", label: "Recorded", width: 10, className: "mono", get: (s) => (s.created_at ?? "").slice(0, 10) },
+      { key: "created", label: "Recorded", width: 10, className: "mono", get: (s) => localDate(s.created_at) },
       { key: "shipped", label: "Sent", width: 10, className: "mono", get: (s) => s.shipped_at || "" },
       { key: "tracking", label: "Tracking", width: 8, get: (s) => s.tracking },
     ],
@@ -74,7 +76,7 @@ export default function Shipments() {
           </button>
         </div>
         {error ? <ErrorBanner message={error} /> : null}
-        {creating ? <NewShipmentCard onCreated={(id) => navigate(`/production/shipments/${id}`)} /> : null}
+        {creating ? <NewShipmentCard onCreated={(id) => navigate(`/sales/shipments/${id}`)} /> : null}
         <div className="card pad">
           <h2 className="card-title">Shipments</h2>
           <p className="muted dim">
@@ -84,16 +86,24 @@ export default function Shipments() {
           {rows === null ? (
             <Spinner label="Loading shipments…" />
           ) : (
+            <>
+            <div className="stat-row">
+              <NarrowChip n={rows.filter((r) => r.status === "open").length} tone="warn" value="open" current={narrow} onNarrow={setNarrow}>open</NarrowChip>
+              <NarrowChip n={rows.filter((r) => r.status === "sent").length} tone="ok" value="sent" current={narrow} onNarrow={setNarrow}>sent</NarrowChip>
+              <NarrowChip n={rows.filter((r) => r.status === "cancelled").length} value="cancelled" current={narrow} onNarrow={setNarrow}>cancelled</NarrowChip>
+              <StatChip n={rows.reduce((a, r) => a + r.qty, 0).toLocaleString()}>devices</StatChip>
+            </div>
             <DataTable
-              rows={rows}
+              rows={narrow ? rows.filter((r) => r.status === narrow) : rows}
               columns={columns}
               rowKey={(s) => s.id}
               group={(s) => (s.status === "open" ? 0 : 1)}
               defaultSort={{ key: "id", dir: "desc" }}
-              onRowClick={(s) => navigate(`/production/shipments/${s.id}`)}
+              onRowClick={(s) => navigate(`/sales/shipments/${s.id}`)}
               persistKey="shipments"
               empty="No shipments yet."
             />
+            </>
           )}
         </div>
       </div>

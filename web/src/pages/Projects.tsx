@@ -11,14 +11,10 @@ import {
   type ProjectInfo,
 } from "../api";
 import DataTable, { type Column } from "../components/DataTable";
+import Field, { FieldGrid } from "../components/Field";
 import { ErrorBanner, Spinner, StatusPill } from "../components/Ui";
 import { useAuth } from "../auth";
-
-function fmtDate(iso: string | null): string {
-  if (!iso) return "—";
-  const d = new Date(iso);
-  return Number.isNaN(d.getTime()) ? iso : d.toLocaleDateString();
-}
+import { localDate } from "../format";
 
 export default function Projects() {
   const navigate = useNavigate();
@@ -32,7 +28,6 @@ export default function Projects() {
   const [credId, setCredId] = useState<number | "">("");
   const [creds, setCreds] = useState<GitCredential[]>([]);
   const [branch, setBranch] = useState("main");
-  const [currency, setCurrency] = useState("");
   const [creating, setCreating] = useState(false);
   // Decision 0063: a project belongs to a company. The switcher's company is
   // the default, else the user's only company.
@@ -77,7 +72,6 @@ export default function Projects() {
       git_credential_id: credId === "" ? null : credId,
       git_token: token || null,
       default_branch: branch.trim() || "main",
-      display_currency: currency.trim() || null,
       company_id: companyId === "" ? null : companyId,
     })
       .then(() => {
@@ -98,7 +92,7 @@ export default function Projects() {
     {
       key: "name",
       label: "Project",
-      width: 18,
+      width: 16,
       get: (p) => p.name,
       render: (p) => (
         <Link className="comp-link" to={`/projects/${p.id}`}>
@@ -108,11 +102,12 @@ export default function Projects() {
     },
     { key: "company", label: "Company", width: 8, get: (p) => p.company ?? "",
       title: (p) => p.ownership.map((o) => `${o.company} from ${o.from_date}`).join("\n") },
-    { key: "git_url", label: "Repository", width: 22, className: "mono", get: (p) => p.git_url },
+    { key: "git_url", label: "Repository", width: 16, className: "mono", get: (p) => p.git_url },
     {
       key: "snapshot",
       label: "Latest snapshot",
-      width: 20,
+      // A commit name and two pills, and a pill may not be cut.
+      width: 23,
       // A MISSING MIRROR IS SHOWN EVEN WHEN A SNAPSHOT EXISTS. It used to be
       // told only in the no-snapshot branch, so a project that had been
       // ingested and later lost its mirror looked perfectly healthy — which is
@@ -147,19 +142,18 @@ export default function Projects() {
     {
       key: "boards",
       label: "Boards",
-      width: 16,
+      width: 20,
       get: (p) =>
         p.latest_snapshot ? designBoards(p.latest_snapshot).map((b) => b.name).join(", ") || "—" : "—",
     },
-    { key: "runs", label: "Batches", width: 7, numeric: true, get: (p) => p.run_count },
-    { key: "currency", label: "Currency", width: 7, get: (p) => p.effective_currency },
+    { key: "runs", label: "Batches", width: 8, numeric: true, get: (p) => p.run_count },
     {
       key: "created",
       label: "Created",
-      width: 8,
+      width: 9,
       className: "muted",
       get: (p) => p.created_at,
-      render: (p) => <>{fmtDate(p.created_at)}</>,
+      render: (p) => <>{localDate(p.created_at)}</>,
     },
   ];
 
@@ -181,25 +175,21 @@ export default function Projects() {
         {showNew ? (
           <div className="card pad edit-card">
             <div className="card-title">Track a KiCad project from git</div>
-            <div className="field-grid">
-              <label>
-                Name
+            <FieldGrid>
+              <Field label="Name">
                 <input className="text" value={name} onChange={(e) => setName(e.target.value)} placeholder="My Board" />
-              </label>
-              <label>
-                Company
+              </Field>
+              <Field label="Company">
                 <select className="text" value={companyId}
                   onChange={(e) => setCompanyId(e.target.value === "" ? "" : Number(e.target.value))}>
                   <option value="">— choose —</option>
                   {companies.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
                 </select>
-              </label>
-              <label>
-                Git URL
+              </Field>
+              <Field label="Git URL">
                 <input className="text" value={gitUrl} onChange={(e) => setGitUrl(e.target.value)} placeholder="https://github.com/me/my-board.git" />
-              </label>
-              <label>
-                Git account
+              </Field>
+              <Field label="Git account">
                 <select
                   className="text"
                   value={credId}
@@ -212,12 +202,11 @@ export default function Projects() {
                     </option>
                   ))}
                 </select>
-              </label>
+              </Field>
               {/* The account is the normal answer; this is the escape hatch for
                   a one-off repository that does not warrant a named one. The
                   account WINS when both are set, and the project page says so. */}
-              <label>
-                Access token <span className="muted">(only if no account above)</span>
+              <Field label="Access token (only if no account above)">
                 <input
                   className="text"
                   type="password"
@@ -227,16 +216,11 @@ export default function Projects() {
                   placeholder="PAT for this project alone"
                   disabled={credId !== ""}
                 />
-              </label>
-              <label>
-                Default branch
+              </Field>
+              <Field label="Default branch">
                 <input className="text" value={branch} onChange={(e) => setBranch(e.target.value)} />
-              </label>
-              <label>
-                Display currency <span className="muted">(blank = USD)</span>
-                <input className="text" value={currency} onChange={(e) => setCurrency(e.target.value)} placeholder="PLN" />
-              </label>
-            </div>
+              </Field>
+            </FieldGrid>
             {createError ? <ErrorBanner message={createError} /> : null}
             <div className="btn-row">
               <button

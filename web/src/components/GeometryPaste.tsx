@@ -11,6 +11,7 @@ import {
 } from "../api";
 import GeometryPreview from "./GeometryPreview";
 import { ErrorBanner } from "./Ui";
+import Field from "./Field";
 
 /**
  * The clipboard door into symbol/footprint geometry — one widget for all four
@@ -193,14 +194,14 @@ export default function GeometryPaste({
       </div>
       {!creating ? (
         <div className="skill-desc">
-          <label className="proj-inline-field proj-check">
+          <Field inline className="proj-check">
             <input
               type="checkbox"
               checked={minorChange}
               onChange={(e) => setMinorChange(e.target.checked)}
             />
             Small change — keep the existing verifications and production sign-offs
-          </label>
+          </Field>
           <span className="rail-hint">
             Tick only for an edit that cannot change what reaches the board: silkscreen,
             fab, a description. A moved pad or a changed pin must drop them, and leaving
@@ -211,7 +212,7 @@ export default function GeometryPaste({
       <div className="btn-row">
         <button
           type="button"
-          className="btn btn-accent"
+          className="btn btn-primary"
           disabled={busy || !src.trim() || !comment.trim()}
           onClick={() => void file()}
         >

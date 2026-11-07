@@ -17,9 +17,10 @@
  *  engine runs server-side; every line is stored as it arrives.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import {
   benchAgentUrl,
+  benchPolicyUrl,
   errorMessage,
   getRuns,
   getProjects,
@@ -46,6 +47,7 @@ import {
   type AgentRoll,
 } from "../flasher/benchAgent";
 import Field, { CheckField, FieldRow } from "../components/Field";
+import InfoTip from "../components/InfoTip";
 import { ErrorBanner } from "../components/Ui";
 import { useStickyState } from "../useStickyState";
 
@@ -183,6 +185,15 @@ function useBenchAgent(watchMachines: boolean): { state: AgentState; checkedAt: 
 }
 
 export default function Bench() {
+  // A link from a batch's board sets the bench up for one step (decision 0103):
+  // ?project=&batch=&steps=a,b&stack=. The bench reads them, and the operator can
+  // change every one; a change by hand drops them, so a reload keeps that change.
+  const [params, setParams] = useSearchParams();
+  const linkProject = Number(params.get("project")) || null;
+  const linkBatch = Number(params.get("batch")) || null;
+  const linkSteps = useMemo(() => (params.get("steps") ?? "").split(",").filter(Boolean), [params]);
+  const linkStack = params.get("stack");
+  const dropLink = () => { if (linkProject) setParams({}, { replace: true }); };
   const [projects, setProjects] = useState<ProjectInfo[]>([]);
   const [runs, setRuns] = useState<RunInfo[]>([]);
   /** Which project `runs` belongs to: an empty list cannot say whether it is
@@ -226,6 +237,11 @@ export default function Bench() {
     return () => ac.abort();
   }, []);
 
+  useEffect(() => {
+    if (linkProject) setProjectId(linkProject);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [linkProject]);
+
   const validProject = projects.some((p) => p.id === projectId) ? projectId : projects[0]?.id ?? null;
 
   useEffect(() => {
@@ -255,8 +271,8 @@ export default function Bench() {
     if (!validProject || runsFor !== validProject) return;
     if (batchDefaultedFor.current === validProject) return;
     batchDefaultedFor.current = validProject;
-    setRunId(latestRunId);
-  }, [validProject, runsFor, latestRunId]);
+    setRunId(linkBatch && runs.some((r) => r.id === linkBatch) ? linkBatch : latestRunId);
+  }, [validProject, runsFor, latestRunId, linkBatch, runs]);
 
   const validRun = runs.some((r) => r.id === runId) ? runId : null;
   const batch = runs.find((r) => r.id === validRun) ?? null;
@@ -304,7 +320,30 @@ export default function Bench() {
   const toggleStep = (key: string, on: boolean) => {
     const next = on ? [...selectedKeys, key] : selectedKeys.filter((k) => k !== key);
     setChosenKeys({ ...chosenKeys, [String(validProject)]: next });
+    dropLink();
   };
+
+  // The link's steps and stack, once per link, when the batch it names has loaded.
+  const appliedLink = useRef<string | null>(null);
+  useEffect(() => {
+    if (!linkProject || !stacks || validRun !== linkBatch || stacks.run_id !== linkBatch) return;
+    const id = params.toString();
+    if (appliedLink.current === id) return;
+    appliedLink.current = id;
+    if (linkSteps.length) {
+      setChosenKeys((c) => ({ ...c, [String(linkProject)]: linkSteps.filter((k) => stacks.steps.some((s) => s.key === k)) }));
+    }
+    if (linkStack && linkStack !== stacks.selected && stacks.stacks.some((s) => s.stack === linkStack)) {
+      setBenchStack(linkBatch, linkStack)
+        .then(() => getBenchStacks(linkBatch))
+        .then(setStacks)
+        .catch((err) => setLotError(errorMessage(err)));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stacks, validRun, linkBatch, linkProject]);
+  /** What the banner says: where the set-up came from, and any step it could not tick. */
+  const linkRefused = linkProject && stacks && stacks.run_id === linkBatch
+    ? linkSteps.filter((k) => !stacks.steps.some((s) => s.key === k && runnable(s))) : [];
 
   const versionsOf = (depId: number) => deployments.find((d) => d.id === depId)?.versions ?? [];
   const versionLabel = (depId: number, vid: number | null | undefined) => {
@@ -390,12 +429,27 @@ export default function Bench() {
         ) : null}
 
         <div className="card pad stack">
+          {linkProject && batch && validRun === linkBatch ? (
+            <div className="banner-ok">
+              Set up from <b>{batch.label}</b>
+              {linkSteps.length ? <> → {linkSteps.map((k) => steps.find((s) => s.key === k)?.label ?? k).join(" + ")}</> : null}.
+              {" "}You can change any setting.{" "}
+              <Link to={`/production/batches/${batch.id}`}>Back to the batch</Link>
+            </div>
+          ) : null}
+          {linkRefused.length ? (
+            <div className="banner-warn">
+              This bench cannot run {linkRefused.map((k) => steps.find((s) => s.key === k)?.label ?? k).join(", ")}:
+              {" "}the step is no bench step of this batch, or its procedure has no published version.
+            </div>
+          ) : null}
           <FieldRow>
             <Field label="Project">
               <select
                 className="text"
                 value={validProject ?? ""}
                 onChange={(e) => {
+                  dropLink();
                   setProjectId(Number(e.target.value));
                   setRunId(null);
                   // Picking a project asks for its latest batch back.
@@ -412,7 +466,10 @@ export default function Bench() {
                 className="text"
                 value={validRun ?? ""}
                 title="The batch this run belongs to. None = a bench trial: any procedure, drafts included, recorded as a trial."
-                onChange={(e) => setRunId(e.target.value === "" ? null : Number(e.target.value))}
+                onChange={(e) => {
+                  dropLink();
+                  setRunId(e.target.value === "" ? null : Number(e.target.value));
+                }}
               >
                 <option value="">no batch — bench trial</option>
                 {runs.map((r) => (
@@ -426,7 +483,7 @@ export default function Bench() {
                   className="text"
                   value={stacks.selected ?? ""}
                   title="The stack these boards come from. Each board programmed takes one unit of it; when it is used up the bench asks for the next."
-                  onChange={(e) => pickStack(e.target.value)}
+                  onChange={(e) => { dropLink(); pickStack(e.target.value); }}
                 >
                   <option value="">no stack — boards become gaps</option>
                   {stacks.selected && !stacks.stacks.some((s) => s.stack === stacks.selected) ? (
@@ -477,14 +534,15 @@ export default function Bench() {
           {!trial && batch && stacks && !stacks.crafted ? (
             <p className="banner-warn">
               {batch.label} has no process yet, so this bench cannot tell what to do with its devices.
-              Give it one on <Link to={`/runs/${batch.id}?tab=process`}>the batch's Process tab</Link>, or
-              run a bench trial.
+              Give it one with Rebuild twins on <Link to={`/production/batches/${batch.id}?tab=settings`}>the batch's Settings tab</Link>.
+              The project needs a published process first, on <Link to={`/projects/${validProject}?tab=Process`}>its Process tab</Link>.
+              Or run a bench trial.
             </p>
           ) : null}
           {!trial && stacks?.crafted && !steps.length ? (
             <p className="banner-warn">
               The process of {batch?.label} has no step a bench does. Add Program, Test, Laser mark or
-              Label to it on <Link to={`/runs/${validRun}?tab=process`}>the batch's Process tab</Link>.
+              Label to it on <Link to={`/projects/${validProject}?tab=Process`}>the project's Process tab</Link>.
             </p>
           ) : null}
 
@@ -503,7 +561,7 @@ export default function Bench() {
                     disabled={!runnable(s)}
                     title={
                       !s.deployment
-                        ? "The process names no procedure for this step — set one on the batch's Process tab"
+                        ? "The process names no procedure for this step — set one on the project's Process tab"
                         : !s.deployment.current_version_id
                           ? `${s.deployment.name} has no published version`
                           : `${s.deployment.name} ${versionLabel(s.deployment.id, pickedVersion[s.deployment.id] ?? s.deployment.current_version_id)}`
@@ -665,7 +723,7 @@ function AgentStrip({ state, checkedAt, marking }: {
             "err",
             "It does all the serial work, so nothing can run until it is started. Download it, open " +
               "the zip and double-click 7Sigma Agent. If it is running, allow local network access when " +
-              "Chrome asks.",
+              "Chrome asks. If Chrome is managed and does not ask, install the Chrome profile.",
           ]
         : marking && state.cannotPrint
           ? ["out of date", "warn", "This agent marks but cannot print labels. Download it again."]
@@ -689,6 +747,14 @@ function AgentStrip({ state, checkedAt, marking }: {
       <a className="btn btn-sm" href={benchAgentUrl()} download>
         Download the bench agent
       </a>
+      <a className="btn btn-sm" href={benchPolicyUrl()} download>
+        Chrome profile (managed Mac)
+      </a>
+      <InfoTip label="What the Chrome profile does">
+        It lets this site reach the bench agent, so Chrome does not ask. The agent writes the same
+        permission by itself when it first starts, but a profile from an administrator outranks that,
+        so a Mac with managed Chrome needs this file. Open the file to install it, then restart Chrome.
+      </InfoTip>
     </div>
   );
 }

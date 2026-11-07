@@ -15,18 +15,11 @@ import {
   type SkillVersionDetail,
 } from "../api";
 import { useDialog } from "../components/Dialog";
+import Field from "../components/Field";
+import { fmtBytes } from "../components/flasher/common";
 import { ErrorBanner, Spinner } from "../components/Ui";
+import { localDate, localWhen } from "../format";
 import { useStickyState } from "../useStickyState";
-
-function fmtSize(bytes: number): string {
-  return bytes < 1024 ? `${bytes} B` : `${(bytes / 1024).toFixed(1)} kB`;
-}
-
-function fmtDate(iso: string | null): string {
-  if (!iso) return "—";
-  const d = new Date(iso);
-  return Number.isNaN(d.getTime()) ? iso : d.toLocaleString();
-}
 
 /** Draft state for a not-yet-created skill (via "New skill"). */
 interface NewSkillDraft {
@@ -291,12 +284,17 @@ export default function Skills() {
   const viewingOld = viewNo !== null && detail !== null;
 
   const descriptionField = (readOnly: boolean) => (
-    <div className="skill-desc">
-      <label className="card-title" htmlFor="skill-description">
-        When to use — description
-      </label>
+    <Field
+      label="When to use — description"
+      hint={
+        <>
+          Becomes the Claude Code skill's <span className="mono">description</span> — all an
+          agent sees before deciding to open the document. Not versioned; saved on its
+          own. {descText.length}/500
+        </>
+      }
+    >
       <input
-        id="skill-description"
         className="text"
         value={descText}
         readOnly={readOnly}
@@ -305,12 +303,7 @@ export default function Skills() {
         onChange={(e) => setDescText(e.target.value)}
         spellCheck={false}
       />
-      <span className="rail-hint">
-        Goes into Jaravis's system prompt and becomes the Claude Code skill's{" "}
-        <span className="mono">description</span> — all an agent sees before deciding to open
-        the document. Not versioned; saved on its own. {descText.length}/500
-      </span>
-    </div>
+    </Field>
   );
   const editorValue = viewingOld ? (viewVersion?.content ?? "") : editorText;
   const versions = detail ? [...detail.versions].sort((a, b) => a.version_no - b.version_no) : [];
@@ -336,8 +329,7 @@ export default function Skills() {
           >
             <span className="mono skill-name">{s.name}</span>
             <span className="skill-meta">
-              v{s.current_version_no ?? "?"} · {fmtSize(s.size)} ·{" "}
-              {s.updated_at ? new Date(s.updated_at).toLocaleDateString() : "—"}
+              v{s.current_version_no ?? "?"} · {fmtBytes(s.size)} · {localDate(s.updated_at)}
             </span>
           </button>
         ))}
@@ -387,7 +379,7 @@ export default function Skills() {
             <div className="skill-actions">
               <button
                 type="button"
-                className="btn btn-accent"
+                className="btn btn-primary"
                 disabled={saving || editorText.trim() === ""}
                 onClick={() => void save()}
               >
@@ -404,8 +396,7 @@ export default function Skills() {
                 Cancel
               </button>
               <span className="muted skill-caption">
-                Jaravis reads the current version of every skill on each chat — edits apply
-                immediately.
+                An agent reads the current version of a skill — edits apply immediately.
               </span>
             </div>
           </>
@@ -443,7 +434,7 @@ export default function Skills() {
                       (isDraft ? " draft" : "") +
                       (isRejected ? " rejected" : "")
                     }
-                    title={`v${v.version_no} — ${fmtDate(v.created_at)} by ${v.created_by ?? "?"} (${fmtSize(v.size)})${isCurrent ? " (current)" : ""}${statusNote}${commentNote}`}
+                    title={`v${v.version_no} — ${localWhen(v.created_at)} by ${v.created_by ?? "?"} (${fmtBytes(v.size)})${isCurrent ? " (current)" : ""}${statusNote}${commentNote}`}
                     onClick={() => selectVersion(isCurrent ? null : v.version_no)}
                   >
                     v{v.version_no}
@@ -487,7 +478,7 @@ export default function Skills() {
               <div className="skill-actions">
                 <button
                   type="button"
-                  className="btn btn-accent"
+                  className="btn btn-primary"
                   disabled={saving || !dirty || editorText.trim() === ""}
                   onClick={() => void save()}
                 >
@@ -513,8 +504,7 @@ export default function Skills() {
                   Delete skill
                 </button>
                 <span className="muted skill-caption">
-                  Jaravis reads the current version of every skill on each chat — edits apply
-                  immediately.
+                  An agent reads the current version of a skill — edits apply immediately.
                 </span>
               </div>
             ) : null}
@@ -525,7 +515,7 @@ export default function Skills() {
 
         <p className="muted dim">
           Using these skills in Claude Code is set up once — see{" "}
-          <Link to="/admin?tab=system">Admin</Link>.
+          <Link to="/account">Account</Link>.
         </p>
       </main>
     </div>

@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useRef, useState, type ChangeEvent, type ReactNode } from "react";
+import { Fragment, useEffect, useState, type ReactNode } from "react";
 import { Link, useLocation, useParams } from "react-router-dom";
 import {
   addComponentFile,
@@ -54,12 +54,15 @@ import {
 } from "../components/editing";
 import { BackLink, ErrorBanner, LifecyclePill, ReviewPill, SignoffPill, Spinner, StatusPill } from "../components/Ui";
 import CommentsPanel from "../components/CommentsPanel";
+import RowChangesCard from "../components/RowChangesCard";
 import SignoffCard from "../components/SignoffCard";
 import ReviewSubjectRows, { type SubjectRow } from "../components/ReviewSubjectRows";
 import WhereUsedCard from "../components/WhereUsedCard";
-import Field, { FieldRow } from "../components/Field";
+import Field, { CheckField, FieldGrid, FieldRow } from "../components/Field";
+import FilePick from "../components/FilePick";
+import GeometryPreview, { FootprintPreview } from "../components/GeometryPreview";
 import NumberInput from "../components/NumberInput";
-import { price } from "../format";
+import { localDate, localWhen, price } from "../format";
 
 const FP_DATALIST_ID = "fp-options";
 
@@ -132,8 +135,6 @@ function TextLayerTag({
   );
 }
 
-import GeometryPreview, { FootprintPreview } from "../components/GeometryPreview";
-
 /** Renders http(s) values as links (new tab), plain text otherwise. */
 function LinkifyValue({ text }: { text: string }) {
   if (/^https?:\/\//.test(text)) {
@@ -146,10 +147,10 @@ function LinkifyValue({ text }: { text: string }) {
   return <>{text}</>;
 }
 
-// ------------------------------------------------------ proposal diff view
+// --------------------------------------------------------- old draft diff view
 
-/** When a draft proposal is viewed against its current published version, each
- *  property is one of these relative to the current version. Copper = proposed. */
+/** When an old draft is viewed against the current published version, each
+ *  property is one of these relative to the current version. Copper = the draft. */
 type DiffStatus = "same" | "added" | "changed" | "removed";
 
 interface DiffPropRow {
@@ -492,7 +493,7 @@ function ladderShort(points: Tier[]): string {
 /** Where the part is bought, and what it costs there — decision 0055.
  *
  *  The links are listed in the order that picks the BOM price: the part's OWN
- *  order when it has one, else the library order (Admin → Suppliers). The first
+ *  order when it has one, else the library order (Stock → Suppliers). The first
  *  link with prices prices the part, and one source gives the whole ladder —
  *  nothing mixes. Typing prices against a link for the first time moves it to
  *  the top. JLCPCB and LCSC follow the `LCSC Part` property and the platform
@@ -669,7 +670,7 @@ function PriceLadderCard({ compId }: { compId: number }) {
             {data.supply ? (
               <span className="muted">
                 MOQ {data.supply.moq ?? "?"}
-                {data.supply.checked_at ? ` · checked ${data.supply.checked_at.slice(0, 10)}` : ""}
+                {data.supply.checked_at ? ` · checked ${localDate(data.supply.checked_at)}` : ""}
               </span>
             ) : null}
           </div>
@@ -791,7 +792,7 @@ function PriceLadderCard({ compId }: { compId: number }) {
                                 <p className="muted">The platform refreshes these prices; they cannot be typed.</p>
                               )}
                               <div className="btn-row">
-                                <button type="button" className="btn btn-sm btn-accent" disabled={busy !== null}
+                                <button type="button" className="btn btn-sm btn-primary" disabled={busy !== null}
                                   onClick={() => saveEdit(l)}>
                                   {busy === "save" ? "Saving…" : "Save"}
                                 </button>
@@ -941,13 +942,9 @@ export default function ComponentDetail() {
   const { id } = useParams();
   const compId = Number(id);
 
-  // Navigation state set by whoever linked here (Proposals, the filtered Browse
-  // list, …): `backTo` is where "← Back" returns to; `showVersion` pre-selects a
-  // version (a proposal link opens straight on its draft, no chip click needed).
+  // The filtered Browse list says where "← Back" returns to.
   const location = useLocation();
-  const navState = location.state as { backTo?: string; showVersion?: number | null } | null;
-  const backTo = navState?.backTo ?? "/";
-  const requestedVersion = navState?.showVersion ?? null;
+  const backTo = (location.state as { backTo?: string } | null)?.backTo ?? "/library/components";
 
   const [detail, setDetail] = useState<ComponentDetailT | null>(null);
   const [detailError, setDetailError] = useState<string | null>(null);
@@ -955,7 +952,7 @@ export default function ComponentDetail() {
   const [version, setVersion] = useState<VersionDetail | null>(null);
   const [versionLoading, setVersionLoading] = useState(false);
   const [versionError, setVersionError] = useState<string | null>(null);
-  // Current published version to diff a draft proposal against (null = not diffing).
+  // Current published version to diff an old draft against (null = not diffing).
   const [baseline, setBaseline] = useState<VersionDetail | null>(null);
 
   const [dsRows, setDsRows] = useState<DatasheetRow[]>([]);
@@ -987,18 +984,13 @@ export default function ComponentDetail() {
       .then((d) => {
         setDetail(d);
         const fallback = d.versions.length > 0 ? d.versions[d.versions.length - 1].version_no : null;
-        // A proposal link asks for its draft explicitly — honor it when present.
-        const wanted =
-          requestedVersion !== null && d.versions.some((v) => v.version_no === requestedVersion)
-            ? requestedVersion
-            : d.current_version_no ?? fallback;
-        setSelectedNo(wanted);
+        setSelectedNo(d.current_version_no ?? fallback);
       })
       .catch((err) => {
         if (!isAbortError(err)) setDetailError(errorMessage(err));
       });
     return () => ctrl.abort();
-  }, [compId, requestedVersion]);
+  }, [compId]);
 
   useEffect(() => {
     if (!Number.isFinite(compId) || selectedNo === null) return;
@@ -1022,8 +1014,8 @@ export default function ComponentDetail() {
     return () => ctrl.abort();
   }, [compId, selectedNo]);
 
-  // Viewing a draft proposal? Load the current published version so the meta
-  // and properties can be shown as a diff against it (copper = proposed).
+  // Viewing an old draft? Load the current published version so the meta and
+  // properties can be shown as a diff against it (copper = the draft).
   const currentNo = detail?.current_version_no ?? null;
   const baselineNo =
     version?.status === "draft" && currentNo !== null && currentNo !== version.version_no
@@ -1041,6 +1033,11 @@ export default function ComponentDetail() {
       .catch(() => setBaseline(null));
     return () => ctrl.abort();
   }, [compId, baselineNo]);
+
+  /** The header pills, or a version rail that gained a new (current) version. */
+  const reloadDetail = () => {
+    getComponent(compId).then(setDetail).catch(() => {});
+  };
 
   const hasCurrent = detail !== null && detail.current_version_no !== null;
   const isCurrentSelected =
@@ -1147,14 +1144,7 @@ export default function ComponentDetail() {
     try {
       const r = await fetchDatasheet(dsId);
       // Re-read the version's datasheet rows — version history changed server-side.
-      if (selectedNo !== null) {
-        try {
-          const v = await getVersion(compId, selectedNo);
-          setDsRows(v.datasheets);
-        } catch {
-          // keep the stale rows; the hint below still reports the outcome
-        }
-      }
+      await refreshDsRows();
       if (r.result === "skipped_unstable_non_pdf") {
         setDsHints((h) => ({
           ...h,
@@ -1176,10 +1166,7 @@ export default function ComponentDetail() {
             tone: "warn",
           },
         }));
-        // the version rail gained a new (current) version
-        getComponent(compId)
-          .then(setDetail)
-          .catch(() => {});
+        reloadDetail();
       }
     } catch (err) {
       setDsHints((h) => ({ ...h, [dsId]: { msg: errorMessage(err), tone: "err" } }));
@@ -1189,17 +1176,6 @@ export default function ComponentDetail() {
   };
 
   // ---- local file uploads (per-row replace + new attachment rows) ----
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
-  /** Which upload the next picked file belongs to: a row id, or "new". */
-  const uploadTargetRef = useRef<number | "new" | null>(null);
-  const newFileLabelRef = useRef("");
-
-  const pickFile = (target: number | "new", label = "") => {
-    uploadTargetRef.current = target;
-    newFileLabelRef.current = label;
-    fileInputRef.current?.click();
-  };
-
   const refreshDsRows = async () => {
     if (selectedNo === null) return;
     try {
@@ -1212,6 +1188,7 @@ export default function ComponentDetail() {
 
   const uploadDs = async (dsId: number, file: File) => {
     setDsBusyId(dsId);
+    setDsBusyKind("upload");
     setDsHints((h) => {
       const next = { ...h };
       delete next[dsId];
@@ -1233,9 +1210,7 @@ export default function ComponentDetail() {
             tone: "warn",
           },
         }));
-        getComponent(compId)
-          .then(setDetail)
-          .catch(() => {});
+        reloadDetail();
       }
     } catch (err) {
       setDsHints((h) => ({ ...h, [dsId]: { msg: errorMessage(err), tone: "err" } }));
@@ -1255,10 +1230,7 @@ export default function ComponentDetail() {
           [r.id]: { msg: `file added — component version v${r.component_bumped_to}`, tone: "warn" },
         }));
       }
-      // the version rail gained a new (current) version
-      getComponent(compId)
-        .then(setDetail)
-        .catch(() => {});
+      reloadDetail();
     } catch (err) {
       await dialog.alert(errorMessage(err), { title: "Adding the file failed" });
     } finally {
@@ -1266,24 +1238,14 @@ export default function ComponentDetail() {
     }
   };
 
-  const onFilePicked = (e: ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    e.target.value = ""; // allow re-picking the same file later
-    const target = uploadTargetRef.current;
-    uploadTargetRef.current = null;
-    if (!file || target === null) return;
-    if (target === "new") void addFile(newFileLabelRef.current, file);
-    else void uploadDs(target, file);
-  };
-
-  const promptAddFile = async () => {
-    const label = await dialog.prompt("Label for the new file:", {
+  const promptAddFile = async (file: File) => {
+    const label = await dialog.prompt(`Label for ${file.name}:`, {
       title: "Add file",
       placeholder: 'e.g. "2D drawing (DXF)" or "Enclosure STEP"',
-      confirmLabel: "Choose file…",
+      confirmLabel: "Add file",
     });
     if (!label || !label.trim()) return;
-    pickFile("new", label.trim());
+    void addFile(label.trim(), file);
   };
 
   const save = async () => {
@@ -1396,9 +1358,7 @@ export default function ComponentDetail() {
                   : "Verification against the documentation (component + pinned symbol/footprint)"
               }
             />
-            <LifecycleSelect detail={detail} onChanged={() => {
-              getComponent(compId).then(setDetail).catch(() => {});
-            }} />
+            <LifecycleSelect detail={detail} onChanged={reloadDetail} />
           </div>
           <div className="version-rail" role="tablist" aria-label="Versions">
             {versions.map((v) => {
@@ -1419,7 +1379,7 @@ export default function ComponentDetail() {
                   }
                   title={
                     isDraft
-                      ? `v${v.version_no} (draft proposal)`
+                      ? `v${v.version_no} (draft, never published)`
                       : v.created_by === "system"
                         ? `v${v.version_no} — auto: ${v.comment ?? "datasheet update"}`
                         : isCurrent
@@ -1539,7 +1499,7 @@ export default function ComponentDetail() {
                 <StatusPill status={version.status} />
               </MetaRow>
               <MetaRow label="Created">
-                <span className="mono">{new Date(version.created_at).toLocaleString()}</span>
+                <span className="mono">{localWhen(version.created_at)}</span>
                 {version.created_by ? <span className="muted"> by {version.created_by}</span> : null}
               </MetaRow>
               <MetaRow label="Approved by">
@@ -1601,38 +1561,34 @@ export default function ComponentDetail() {
                 </MetaRow>
               ))}
               <MetaRow label="BOM role">
-                <label className="proj-inline-field proj-check">
-                  <input
-                    type="checkbox"
-                    checked={detail.purchasable}
-                    disabled={purchasableBusy}
-                    onChange={(e) => void togglePurchasable(e.target.checked)}
-                  />
+                <CheckField
+                  checked={detail.purchasable}
+                  disabled={purchasableBusy}
+                  onChange={(on) => void togglePurchasable(on)}
+                >
                   purchased part
-                </label>
-                {detail.purchasable ? null : (
-                  <span className="muted">
-                    {" "}
-                    — virtual (test point, logo, fiducial, mounting hole): project BOMs ignore it
-                  </span>
-                )}
+                  {detail.purchasable ? null : (
+                    <span className="muted">
+                      {" "}
+                      — virtual (test point, logo, fiducial, mounting hole): project BOMs ignore it
+                    </span>
+                  )}
+                </CheckField>
               </MetaRow>
               <MetaRow label="Library">
-                <label className="proj-inline-field proj-check">
-                  <input
-                    type="checkbox"
-                    checked={detail.in_library}
-                    disabled={purchasableBusy}
-                    onChange={(e) => void toggleInLibrary(e.target.checked)}
-                  />
+                <CheckField
+                  checked={detail.in_library}
+                  disabled={purchasableBusy}
+                  onChange={(on) => void toggleInLibrary(on)}
+                >
                   visible in KiCad
-                </label>
-                {detail.in_library ? null : (
-                  <span className="muted">
-                    {" "}
-                    — BOM-only: priced and stocked, but hidden from the KiCad catalog
-                  </span>
-                )}
+                  {detail.in_library ? null : (
+                    <span className="muted">
+                      {" "}
+                      — BOM-only: priced and stocked, but hidden from the KiCad catalog
+                    </span>
+                  )}
+                </CheckField>
               </MetaRow>
               {version.comment ? (
                 <MetaRow label="Comment">
@@ -1648,25 +1604,23 @@ export default function ComponentDetail() {
             {pickerError ? (
               <ErrorBanner message={`Pickers failed to load: ${pickerError}`} />
             ) : null}
-            <div className="field-grid">
-              <label>
-                Base symbol
+            <FieldGrid>
+              <Field label="Base symbol">
                 <BaseSymbolSelect
                   value={edit.base_component}
                   pickers={pickers}
                   onChange={(v) => patchEdit({ base_component: v })}
                 />
-              </label>
-              <label>
-                Category
+              </Field>
+              <Field label="Category">
                 <CategorySelect
                   value={edit.category_id}
                   pickers={pickers}
                   fallbackLabel={version.category_path}
                   onChange={(v) => patchEdit({ category_id: v })}
                 />
-              </label>
-            </div>
+              </Field>
+            </FieldGrid>
             <p className="muted edit-hint">
               The <span className="mono">Footprint</span> property drives the pinned footprint —
               its value field suggests <span className="mono">7Sigma:</span> footprints.
@@ -1681,7 +1635,7 @@ export default function ComponentDetail() {
               />
               <button
                 type="button"
-                className="btn btn-accent"
+                className="btn btn-primary"
                 disabled={saving || edit.category_id === "" || !edit.base_component}
                 onClick={() => void save()}
               >
@@ -1767,7 +1721,7 @@ export default function ComponentDetail() {
                                   >
                                     v{v.version_no}
                                   </a>{" "}
-                                  · {new Date(v.fetched_at).toLocaleDateString()} ·{" "}
+                                  · {localDate(v.fetched_at)} ·{" "}
                                   {Math.round(v.size_bytes / 1024)} kB{" "}
                                   {v.doc_revision ? <>· {v.doc_revision} </> : null}
                                   <TextLayerTag
@@ -1802,35 +1756,27 @@ export default function ComponentDetail() {
                         >
                           {dsBusyId === d.id && dsBusyKind === "fetch" ? "Fetching…" : "Fetch"}
                         </button>
-                        <button
-                          type="button"
-                          className="btn btn-sm"
+                        <FilePick
                           disabled={dsBusyId !== null}
                           title="Replace the stored copy with a file from your computer (versioned)"
-                          onClick={() => pickFile(d.id)}
+                          onPick={(files) => void uploadDs(d.id, files[0])}
                         >
                           {dsBusyId === d.id && dsBusyKind === "upload" ? "Uploading…" : "Upload"}
-                        </button>
+                        </FilePick>
                         {hint ? <span className={`ds-hint ${hint.tone}`}>{hint.msg}</span> : null}
                       </li>
                     );
                   })}
                 </ul>
                 )}
-                <div className="ds-addfile">
-                  <button
-                    type="button"
-                    className="btn btn-sm"
-                    disabled={dsBusyId !== null}
-                    onClick={promptAddFile}
-                  >
+                <div className="btn-row pad-note">
+                  <FilePick disabled={dsBusyId !== null} onPick={(files) => void promptAddFile(files[0])}>
                     {dsBusyId === -1 ? "Uploading…" : "＋ Add file…"}
-                  </button>
+                  </FilePick>
                   <span className="muted">
                     PDF, DXF, DWG, STEP, 3MF… — stored versioned, viewable in the browser
                   </span>
                 </div>
-                <input ref={fileInputRef} type="file" hidden onChange={onFilePicked} />
               </>
             ) : edit ? (
               <DatasheetsEditor
@@ -1851,11 +1797,7 @@ export default function ComponentDetail() {
           <VerificationSection
             detail={detail}
             version={version}
-            onChanged={() => {
-              getComponent(compId)
-                .then(setDetail)
-                .catch(() => {});
-            }}
+            onChanged={reloadDetail}
           />
         ) : null}
 
@@ -1865,12 +1807,7 @@ export default function ComponentDetail() {
           <SignoffCard
             componentId={compId}
             reviewState={detail.review?.parts?.component?.state ?? detail.review?.state}
-            onChange={() => {
-              // Keep the page's own badge in step with the card.
-              getComponent(compId)
-                .then(setDetail)
-                .catch(() => {});
-            }}
+            onChange={reloadDetail}
           />
         ) : null}
 
@@ -1878,6 +1815,7 @@ export default function ComponentDetail() {
         {detail ? <WhereUsedCard compId={compId} name={detail.name} /> : null}
 
         <CommentsPanel kind="components" id={compId} noun="component" />
+        <RowChangesCard table="components" id={compId} />
       </div>
 
       <div className="detail-right">

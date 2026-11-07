@@ -1,4 +1,4 @@
-/** Admin → Activity: who changed what, across every user (decision 0050).
+/** History → Everyone: who changed what, across every user (decision 0050).
  *
  *  ONE log — `audit_log` — carrying three kinds of row: a `request` for every
  *  write call, the `event` an endpoint wrote itself, and a `row.*` for every
@@ -22,10 +22,13 @@ import {
   type ActivityWriteBatch,
 } from "../api";
 import { KeyValueDiff } from "./ChangeDetail";
-import { when } from "./ChangesFeed";
+import { KindChips, when } from "./ChangesFeed";
 import DataTable, { type Column } from "./DataTable";
+import { StatChip } from "./FoldSection";
 import { ErrorBanner, Spinner } from "./Ui";
+import { useDebounced } from "./useDebounced";
 import { useInfiniteScroll } from "./useInfiniteScroll";
+import { localWhen, localTime, plural } from "../format";
 
 const PAGE = 100;
 const DEBOUNCE_MS = 300;
@@ -83,8 +86,8 @@ function result(r: ActivityRow) {
   const d = asDetails(r.details);
   const c = r.counts ?? { rows: 0, events: 0 };
   const parts = [
-    c.rows ? `${c.rows} row${c.rows === 1 ? "" : "s"}` : "",
-    c.events ? `${c.events} event${c.events === 1 ? "" : "s"}` : "",
+    c.rows ? `${plural(c.rows, "row")}` : "",
+    c.events ? `${plural(c.events, "event")}` : "",
   ].filter(Boolean);
   return (
     <>
@@ -148,8 +151,8 @@ function RequestDetail({ row }: { row: ActivityRow }) {
           Write batch <span className="mono">#{b.id}</span> ({b.kind}
           {b.source_ref ? ` ${b.source_ref}` : ""})
           {b.reversed_at ? `, reversed by #${b.reversed_by_batch_id}` : ""} —{" "}
-          <Link className="comp-link" to="/production/writes">
-            undo it in Production → Write log
+          <Link className="comp-link" to="/history/writes">
+            undo it in History → Write batches
           </Link>
         </p>
       ))}
@@ -157,7 +160,7 @@ function RequestDetail({ row }: { row: ActivityRow }) {
         <div key={e.id}>
           <div className="change-section-title">
             {e.kind === "request" ? "Request" : what(e)} · {who(e)} ·{" "}
-            <span title={new Date(e.ts).toLocaleString()}>{new Date(e.ts).toLocaleTimeString()}</span>
+            <span title={localWhen(e.ts)}>{localTime(e.ts)}</span>
           </div>
           <DetailsTable row={e} />
         </div>
@@ -176,13 +179,7 @@ export default function ActivityCard() {
   const [error, setError] = useState<string | null>(null);
   const [kinds, setKinds] = useState<ActivityKind[]>(["request", "event"]);
   const [typed, setTyped] = useState({ who: "", q: "" });
-  const [applied, setApplied] = useState({ who: "", q: "" });
-
-  useEffect(() => {
-    if (typed.who === applied.who && typed.q === applied.q) return;
-    const t = window.setTimeout(() => setApplied(typed), DEBOUNCE_MS);
-    return () => window.clearTimeout(t);
-  }, [typed, applied]);
+  const applied = useDebounced(typed, DEBOUNCE_MS);
 
   // A filter change is a different list: drop what is loaded and start again.
   const reqId = useRef(0);
@@ -238,9 +235,6 @@ export default function ActivityCard() {
 
   const sentinel = useInfiniteScroll(loadMore, next !== null, busy);
 
-  const toggleKind = (k: ActivityKind) =>
-    setKinds((prev) => (prev.includes(k) ? prev.filter((x) => x !== k) : [...prev, k]));
-
   const columns: Column<ActivityRow>[] = [
     {
       key: "ts",
@@ -248,7 +242,7 @@ export default function ActivityCard() {
       width: 12,
       interactive: false,
       get: (r) => r.ts,
-      title: (r) => new Date(r.ts).toLocaleString(),
+      title: (r) => localWhen(r.ts),
       render: (r) => when(r.ts),
     },
     {
@@ -294,7 +288,7 @@ export default function ActivityCard() {
           <button
             type="button"
             className="btn btn-sm"
-            onClick={() => setSearchParams({ tab: "activity" }, { replace: true })}
+            onClick={() => setSearchParams({}, { replace: true })}
           >
             Show all activity
           </button>
@@ -302,22 +296,19 @@ export default function ActivityCard() {
       ) : null}
       {requestId ? null : (
         <div className="toolbar">
-          <nav className="chip-row" aria-label="Filter by kind">
-            {KINDS.map((k) => (
-              <button
-                key={k.key}
-                type="button"
-                className={"topbar-link" + (kinds.includes(k.key) ? " active" : "")}
-                onClick={() => toggleKind(k.key)}
-              >
-                {k.label}
-              </button>
-            ))}
-          </nav>
+          <KindChips options={KINDS} on={kinds} onChange={setKinds} />
         </div>
       )}
 
       {error !== null ? <ErrorBanner message={error} /> : null}
+
+      {/* Paged on an id and the server sends no total, so this counts what is
+          loaded and says so. */}
+      {rows.length ? (
+        <div className="stat-row">
+          <StatChip n={`${rows.length.toLocaleString()}${next !== null ? "+" : ""}`}>{next !== null ? "rows loaded" : "rows"}</StatChip>
+        </div>
+      ) : null}
 
       <div className="table-wrap">
         <DataTable

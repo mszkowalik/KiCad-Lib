@@ -45,9 +45,13 @@ EXPECTED = {
     ("PATCH", "/api/companies/{company_id}"),
     ("POST", "/api/companies/backfill"),
     ("POST", "/api/companies/stock-backfill"),
-    ("POST", "/api/companies/lot-history"),
     # Writing the history's in-house transfers in one go — decision 0064.
     ("POST", "/api/transfers/history"),
+    # Repair jobs: the UI offers them on admin-only panels — decision 0103.
+    ("POST", "/api/jlc/import/fees/refresh"),
+    ("POST", "/api/jlc/import/fees/backfill"),
+    ("POST", "/api/jlc/import/adjustments/to-draws"),
+    ("POST", "/api/flasher/checks/recompute"),
     # Importing 7Sigma's old invoice register — decision 0066.
     ("POST", "/api/sales-invoices/import"),
     # The income-tax form by quarter, like the company's one tax_form — decision 0078.

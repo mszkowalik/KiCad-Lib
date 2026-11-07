@@ -30,6 +30,16 @@
      preview is meant to look like KiCad's footprint editor. Keep it equal to
      `board.background` in the same file. */
   --kicad-board-canvas: #001023;
+  /* Words that sit ON one of those dark canvases (a placeholder, a viewer's status
+     line), so they do not change with the theme either. */
+  --kicad-canvas-ink: #8a94a2;
+  /* The 2D board layer viewer's ground, in both themes: the layer SVGs are drawn in
+     KiCad's dark colours (white silkscreen and so on). */
+  --board-layers-canvas: #16191d;
+
+  /* The label on a filled button. White in both themes: the fill changes, this does
+     not. */
+  --on-fill: #fff;
 
   /* trace blue accent */
   --accent: #1f63d6;
@@ -105,7 +115,13 @@
 
   --sans: system-ui, -apple-system, "Segoe UI", "Helvetica Neue", sans-serif;
   --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  /* The radius scale. It does not change with the theme, so it sits here alone. */
+  --radius-lg: 10px;
   --radius: 8px;
+  --radius-sm: 6px;
+  --radius-xs: 4px;
+  --radius-2xs: 3px;
+  --radius-3xs: 2px;
 }
 
 :root[data-theme="dark"] {
@@ -285,7 +301,7 @@ p {
   color: var(--muted);
   padding: 5px 12px;
   border: 0;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   background: none;
   cursor: pointer;
   white-space: nowrap;
@@ -387,16 +403,7 @@ p {
   padding: 16px 18px;
 }
 
-.card-title {
-  font-family: var(--mono);
-  font-size: 11px;
-  font-weight: 500;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--muted);
-  margin: 0 0 12px;
-}
-
+.card-title,
 .card-subtitle {
   font-family: var(--mono);
   font-size: 11px;
@@ -404,6 +411,13 @@ p {
   text-transform: uppercase;
   letter-spacing: 0.08em;
   color: var(--muted);
+}
+
+.card-title {
+  margin: 0 0 12px;
+}
+
+.card-subtitle {
   margin: 16px 0 10px;
 }
 
@@ -462,6 +476,9 @@ table.data {
 }
 
 /* sortable headers */
+/* Every sortable header says so: a faint glyph that brightens on hover, and the
+   whole header cell is the click target — before this the title alone was the
+   button and nothing marked it as one (2026-09-07). */
 .th-sort {
   background: none;
   border: 0;
@@ -471,14 +488,24 @@ table.data {
   text-transform: inherit;
   letter-spacing: inherit;
   cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
+  display: block;
+  width: 100%;
+  text-align: inherit;
+}
+
+/* The sort button of a column with no filter box: it follows the label on its line. */
+.th-sort.th-sort-tail {
+  display: inline;
+  width: auto;
+  margin-left: 4px;
 }
 
 .th-sort:hover {
   color: var(--accent);
 }
+
+.sort-hint { font-size: 9px; margin-left: 4px; opacity: 0.3; }
+.th-sort:hover .sort-hint { opacity: 1; color: var(--accent); }
 
 .sort-ind {
   font-size: 8px;
@@ -490,7 +517,6 @@ table.data {
   padding: 2px 8px 7px;
   border-bottom: 1px solid var(--line);
 }
-
 
 .clear-filters {
   opacity: 1;
@@ -506,89 +532,26 @@ table.data {
   white-space: nowrap;
 }
 
-.cell-desc {
-  max-width: 320px;
+.cell-desc,
+.cell-fp,
+.cell-cat {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.cell-desc {
+  max-width: 320px;
 }
 
 .cell-fp {
   max-width: 220px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .cell-cat {
   max-width: 200px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
   color: var(--muted);
   font-size: 13px;
-}
-
-/* JLC stock table: fixed column widths (sum to 100%) so long descriptions,
-   MPNs, or component names truncate with an ellipsis instead of forcing the
-   table wider than the card — no horizontal scrollbar, no row-height change. */
-
-/* project design-review table (ReviewTab.tsx) */
-.data.project-review-table { table-layout: fixed; }
-.data.project-review-table th:nth-child(1),
-.data.project-review-table td:nth-child(1) { width: 3%; }
-.data.project-review-table th:nth-child(2),
-.data.project-review-table td:nth-child(2) { width: 22%; }
-.data.project-review-table th:nth-child(3),
-.data.project-review-table td:nth-child(3) { width: 15%; }
-.data.project-review-table th:nth-child(4),
-.data.project-review-table td:nth-child(4) { width: 14%; }
-.data.project-review-table th:nth-child(5),
-.data.project-review-table td:nth-child(5) { width: 15%; }
-.data.project-review-table th:nth-child(6),
-.data.project-review-table td:nth-child(6) { width: 11%; }
-.data.project-review-table th:nth-child(7),
-.data.project-review-table td:nth-child(7) { width: 10%; }
-.data.project-review-table th:nth-child(8),
-.data.project-review-table td:nth-child(8) { width: 10%; }
-
-/* review queue tables (Reviews.tsx) — fixed layout, widths sum to 100% */
-.data.reviews-table { table-layout: fixed; }
-.data.reviews-table th:nth-child(1),
-.data.reviews-table td:nth-child(1) { width: 22%; }
-.data.reviews-table th:nth-child(2),
-.data.reviews-table td:nth-child(2) { width: 14%; }
-.data.reviews-table th:nth-child(3),
-.data.reviews-table td:nth-child(3) { width: 10%; }
-.data.reviews-table th:nth-child(4),
-.data.reviews-table td:nth-child(4) { width: 22%; }
-.data.reviews-table th:nth-child(5),
-.data.reviews-table td:nth-child(5) { width: 9%; }
-.data.reviews-table th:nth-child(6),
-.data.reviews-table td:nth-child(6) { width: 9%; }
-.data.reviews-table th:nth-child(7),
-.data.reviews-table td:nth-child(7) { width: 14%; }
-
-.data.reviews-template-table { table-layout: fixed; }
-.data.reviews-template-table th:nth-child(1),
-.data.reviews-template-table td:nth-child(1) { width: 48%; }
-.data.reviews-template-table th:nth-child(2),
-.data.reviews-template-table td:nth-child(2) { width: 16%; }
-.data.reviews-template-table th:nth-child(3),
-.data.reviews-template-table td:nth-child(3) { width: 12%; }
-.data.reviews-template-table th:nth-child(4),
-.data.reviews-template-table td:nth-child(4) { width: 12%; }
-.data.reviews-template-table th:nth-child(5),
-.data.reviews-template-table td:nth-child(5) { width: 12%; }
-
-/* bulk-approve bar above the pending table */
-
-.history-section {
-  margin-top: 28px;
-}
-.history-title {
-  font-size: 16px;
-  margin: 0 0 4px;
 }
 
 /* ================================================================= toolbar */
@@ -645,7 +608,8 @@ textarea.skill-textarea {
      render at 31, 33, 35 and 36 px on four different pages, because each card
      sets its own font size and the control picked it up — so "the inputs are
      different heights" was true while every one of them said `.text`. The
-     FAMILY still inherits, which is what lets `.mono` work. */
+     FAMILY still inherits from the card; `.mono` on the control itself is the
+     rule below. */
   font-family: inherit;
   font-size: 14px;
   font-weight: inherit;
@@ -655,6 +619,17 @@ textarea.skill-textarea {
   border: 1px solid var(--line);
   border-radius: var(--radius);
   padding: 7px 10px;
+}
+
+/* `.mono` on a CONTROL. A bare `.mono` (0,1,0) loses to `input.text`
+   (0,1,1) above, so about 80 `text mono` boxes rendered in the sans font after the
+   control rule was written, and nothing said so (found by a cascade scan, 2026-11-07).
+   The size classes further down still set their own font-size over this one. */
+input.mono,
+select.mono,
+textarea.mono {
+  font-family: var(--mono);
+  font-size: 13px;
 }
 
 /* A <select> computes `line-height: normal` whatever the rule says, and its
@@ -768,6 +743,10 @@ select.text.bad {
 .field-row > .field.field-wide {
   flex-basis: 100%;
 }
+/* A short number or code, where a row holds more than five fields. */
+.field-row > .field.field-narrow {
+  flex-basis: 110px;
+}
 
 /* Many fields at once — an edit form. `.field-row` is for a handful on one
    line; this one lays out a whole form and reflows by available width rather
@@ -789,7 +768,9 @@ select.text.bad {
    written before `<Field>` existed renders identically to markup using it.
    New code should use the component — see web/CLAUDE.md. */
 .field-row > label,
-.field-grid > label {
+.field-grid > label,
+.field-row > div.field,
+.field-grid > div.field {
   display: flex;
   flex-direction: column;
   gap: 3px;
@@ -837,6 +818,29 @@ select.text.bad {
   min-width: 0;
 }
 
+/* `<Field inline>`: the label beside its control, in a toolbar. Not `.field-inline`
+   above, which is a control and its button under a stacked label. */
+label.field-beside {
+  display: inline-flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  min-width: auto;
+  font-size: 12px;
+  color: var(--muted);
+}
+label.field-beside > span:first-child {
+  color: inherit;
+  font-size: inherit;
+}
+label.field-beside > input,
+label.field-beside > select,
+label.field-beside > textarea {
+  width: auto;
+  min-width: auto;
+}
+
 /* SIZE ONLY — see the one control rule above. */
 input.search {
   width: 340px;
@@ -852,7 +856,7 @@ input.search {
   color: var(--text);
   background: var(--surface);
   border: 1px solid var(--line);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   padding: 6px 14px;
   cursor: pointer;
 }
@@ -870,27 +874,25 @@ input.search {
 /* A `<label>` drawn as a button (FilePick) has no :disabled state of its own. */
 .btn.disabled { pointer-events: none; }
 
-.btn-danger {
-  background: var(--err);
-  border-color: var(--err);
-  color: #fff;
+.btn-danger { --btn-fill: var(--err); }
+.btn-ok { --btn-fill: var(--ok); }
+.btn-primary { --btn-fill: var(--accent); }
+
+.btn-danger,
+.btn-ok,
+.btn-primary {
+  background: var(--btn-fill);
+  border-color: var(--btn-fill);
+  color: var(--on-fill);
 }
 
-.btn-danger:hover:not(:disabled) {
-  border-color: var(--err);
-  color: #fff;
-  filter: brightness(1.08);
-}
-
-.btn-ok {
-  background: var(--ok);
-  border-color: var(--ok);
-  color: #fff;
-}
-
-.btn-ok:hover:not(:disabled) {
-  border-color: var(--ok);
-  color: #fff;
+/* `.btn:hover:not(:disabled)` sets the accent as the text colour, which is the
+   background of `.btn-primary`: without the colour here, the label vanishes on hover. */
+.btn-danger:hover:not(:disabled),
+.btn-ok:hover:not(:disabled),
+.btn-primary:hover:not(:disabled) {
+  border-color: var(--btn-fill);
+  color: var(--on-fill);
   filter: brightness(1.08);
 }
 
@@ -906,6 +908,40 @@ a.btn:hover {
   white-space: nowrap;
 }
 
+/* =========================================================== progress bar */
+/* The markup is the same everywhere: `<i>` is the fill, and the call site sets
+   only its width. A place that needs more says so under its own parent class. */
+
+.progress-bar {
+  height: 6px;
+  border-radius: var(--radius-2xs);
+  background: var(--line);
+  overflow: hidden;
+}
+
+.progress-bar > i {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+}
+
+/* A batch board field. Its fill counts finished units, so it is green. */
+.progress-bar-sm {
+  height: 5px;
+  background: var(--surface-2);
+}
+
+.progress-bar-sm > i {
+  background: var(--ok);
+}
+
+/* The field solver's job, alone over the canvas. */
+.progress-bar-lg {
+  height: 10px;
+  border-radius: var(--radius-xs);
+  background: var(--surface-2);
+}
+
 /* =============================================================== cat tree */
 
 .cat-tree ul {
@@ -917,7 +953,7 @@ a.btn:hover {
 .cat-row {
   display: flex;
   align-items: center;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   color: var(--text);
 }
 
@@ -1023,6 +1059,9 @@ a.btn:hover {
 
 .detail-right {
   display: grid;
+  /* The column is the card's limit. Without it a `white-space: pre` log line sizes
+     the card, and the run page runs off the right edge. */
+  grid-template-columns: minmax(0, 1fr);
   grid-template-rows: minmax(0, 1fr) minmax(0, 1fr);
   gap: 16px;
   min-width: 0;
@@ -1032,10 +1071,13 @@ a.btn:hover {
 /* Two cards of EQUAL height is right when both hold a table that can grow. On
    the device page the top card ("Where it is") is four event rows and a button
    row, so half the column was empty while the programming history below it
-   needed a scroll to reach (user report 2026-09-16). Let the top card take
-   what it needs and give the rest to the card under it. */
+   needed a scroll to reach (user report 2026-09-16). The column holds several
+   cards now, and any of them can be folded to one line, so each takes what it
+   needs: a stretched row drew a tall empty card above a folded one. */
 .detail-right-fit {
-  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-rows: none;
+  grid-auto-rows: max-content;
+  align-content: start;
 }
 
 .backlink {
@@ -1238,7 +1280,7 @@ dl.kv {
   align-items: center;
   justify-content: center;
   border: 1px solid var(--line);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   background: var(--kicad-canvas);
   padding: 4px;
   overflow: hidden;
@@ -1264,32 +1306,6 @@ dl.kv {
   padding: 12px;
 }
 
-/* live Jaravis activity while a chat turn runs: interim narration + tool feed */
-.live-note {
-  margin-top: 8px;
-  color: var(--muted);
-  font-size: 13px;
-  white-space: pre-wrap;
-}
-
-.live-feed {
-  margin: 8px 0 0;
-  padding: 8px 10px;
-  list-style: none;
-  font-size: 12px;
-  color: var(--muted);
-  background: var(--surface-2);
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  overflow-x: hidden;
-}
-
-.live-feed li {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 /* template detail: fixed-height preview canvas */
 .template-preview {
   height: 360px;
@@ -1298,7 +1314,7 @@ dl.kv {
 /* placeholder/spinner text sits on the dark canvas in both themes */
 .preview-fill .placeholder,
 .preview-fill .spinner-label {
-  color: #8a94a2;
+  color: var(--kicad-canvas-ink);
 }
 
 /* 2D / 3D segmented toggle */
@@ -1306,7 +1322,7 @@ dl.kv {
   display: flex;
   flex-shrink: 0;
   border: 1px solid var(--line);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   overflow: hidden;
 }
 
@@ -1406,36 +1422,8 @@ dl.kv {
 }
 
 .meta-card,
-.prices-card,
 .ds-card {
   flex-shrink: 0;
-}
-
-/* prices — muted bookkeeping, not identity */
-.prices-card .price-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px 22px;
-}
-
-.price-item {
-  display: flex;
-  flex-direction: column;
-}
-
-.price-item .k {
-  font-family: var(--mono);
-  font-size: 10px;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--muted);
-}
-
-.price-item .v {
-  font-family: var(--mono);
-  font-size: 13px;
-  font-variant-numeric: tabular-nums;
-  color: var(--muted);
 }
 
 /* datasheets */
@@ -1487,7 +1475,7 @@ dl.kv {
   max-width: 100%;
   padding: 5px 12px;
   border: 1px solid var(--line);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   background: var(--surface-2);
   color: var(--text);
   font-size: 13px;
@@ -1641,9 +1629,6 @@ dl.kv {
 .warn-text {
   color: var(--warn);
 }
-.ok-text {
-  color: var(--ok);
-}
 
 .props .prop-key {
   white-space: nowrap;
@@ -1656,7 +1641,7 @@ dl.kv {
   letter-spacing: 0.06em;
   color: var(--muted);
   border: 1px solid var(--line);
-  border-radius: 4px;
+  border-radius: var(--radius-xs);
   padding: 0 5px;
   margin-left: 8px;
   vertical-align: 1px;
@@ -1702,7 +1687,7 @@ dl.kv {
   letter-spacing: 0.06em;
   color: var(--copper);
   border: 1px solid var(--copper);
-  border-radius: 4px;
+  border-radius: var(--radius-xs);
   padding: 0 5px;
   margin-left: 8px;
   vertical-align: 1px;
@@ -1780,7 +1765,7 @@ input.filter-input {
   background: none;
   border: 0;
   padding: 2px 7px;
-  border-radius: 4px;
+  border-radius: var(--radius-xs);
   color: var(--muted);
   font-size: 13px;
   line-height: 1;
@@ -1802,22 +1787,10 @@ input.filter-input {
   font-size: 12px;
 }
 
-.btn-accent {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: #fff;
-}
-
-.btn-accent:hover:not(:disabled) {
-  border-color: var(--accent);
-  color: #fff;
-  filter: brightness(1.08);
-}
-
-.banner-warn {
-  border: 1px solid var(--warn);
-  background: var(--warn-soft);
-  color: var(--warn);
+.banner-warn,
+.banner-ok,
+.banner-error {
+  border: 1px solid currentColor;
   border-radius: var(--radius);
   padding: 10px 14px;
   font-size: 13px;
@@ -1825,123 +1798,24 @@ input.filter-input {
   flex-shrink: 0;
 }
 
+.banner-warn {
+  background: var(--warn-soft);
+  color: var(--warn);
+}
+
+.banner-ok {
+  background: var(--ok-soft);
+  color: var(--ok);
+}
+
+.banner-error {
+  background: var(--err-soft);
+  color: var(--err);
+}
+
 .banner-warn a {
   color: inherit;
   text-decoration: underline;
-}
-
-/* ============================================================ jaravis chat */
-
-.chat-solo {
-  overflow: hidden;
-  display: flex;
-}
-
-.chat-page {
-  display: flex;
-  flex-direction: column;
-  height: 100%;
-  width: 100%;
-  max-width: 820px;
-  padding-bottom: 20px;
-}
-
-.chat-head {
-  display: flex;
-  align-items: baseline;
-  gap: 12px;
-  flex-shrink: 0;
-}
-
-.chat-model {
-  font-size: 12px;
-}
-
-/* jaravis: conversation sidebar */
-.chat-sessions {
-  width: 240px;
-  flex-shrink: 0;
-  border-right: 1px solid var(--line);
-  background: var(--surface);
-  overflow-y: auto;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  padding: 12px 10px;
-}
-
-.chat-new {
-  flex-shrink: 0;
-}
-
-.session-list {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.session-empty {
-  font-size: 12px;
-  padding: 6px 4px;
-}
-
-.session-item {
-  display: flex;
-  align-items: stretch;
-  border: 1px solid transparent;
-  border-radius: 8px;
-}
-
-.session-item:hover {
-  background: var(--surface-2);
-}
-
-.session-item.active {
-  background: var(--accent-soft);
-  border-color: var(--accent);
-}
-
-.session-open {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  background: none;
-  border: 0;
-  padding: 7px 8px;
-  cursor: pointer;
-  text-align: left;
-  color: var(--text);
-}
-
-.session-open:disabled {
-  cursor: default;
-  opacity: 0.6;
-}
-
-.session-title {
-  font-size: 13px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.session-sub {
-  font-size: 10px;
-  color: var(--muted);
-}
-
-.session-actions {
-  display: none;
-  flex-direction: column;
-  justify-content: center;
-  padding-right: 4px;
-}
-
-.session-item:hover .session-actions,
-.session-item.active .session-actions {
-  display: flex;
 }
 
 .icon-btn {
@@ -1952,132 +1826,12 @@ input.filter-input {
   font-size: 12px;
   line-height: 1;
   padding: 2px 4px;
-  border-radius: 4px;
+  border-radius: var(--radius-xs);
 }
 
 .icon-btn:hover {
   color: var(--text);
   background: var(--surface);
-}
-
-.session-loading {
-  padding: 12px 2px;
-}
-
-.chat-thread {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-  padding: 4px 2px;
-}
-
-.chat-empty {
-  font-size: 13px;
-}
-
-.msg {
-  max-width: 85%;
-  margin-bottom: 14px;
-}
-
-.msg.user {
-  margin-left: auto;
-}
-
-.msg.assistant {
-  margin-right: auto;
-}
-
-.msg-meta {
-  font-size: 10px;
-  text-transform: uppercase;
-  letter-spacing: 0.07em;
-  color: var(--muted);
-  margin-bottom: 3px;
-}
-
-.msg.user .msg-meta {
-  text-align: right;
-}
-
-.msg-body {
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  padding: 8px 12px;
-  font-size: 13px;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-  background: var(--surface);
-}
-
-.msg.user .msg-body {
-  background: var(--accent-soft);
-  border-color: var(--accent);
-}
-
-.msg-body.working {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  white-space: normal;
-  color: var(--muted);
-}
-
-.trace {
-  margin-top: 6px;
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  padding: 6px 10px;
-}
-
-.trace summary {
-  cursor: pointer;
-  font-size: 12px;
-  color: var(--muted);
-}
-
-.trace ul {
-  list-style: none;
-  margin: 8px 0 2px;
-  padding: 0;
-}
-
-.trace li {
-  margin-bottom: 8px;
-}
-
-.trace-tool {
-  font-size: 12px;
-  color: var(--accent);
-}
-
-.trace pre {
-  font-family: var(--mono);
-  font-size: 11px;
-  background: var(--surface-2);
-  border-radius: 6px;
-  padding: 6px 8px;
-  margin: 3px 0 0;
-  overflow-x: auto;
-  max-height: 180px;
-  overflow-y: auto;
-}
-
-.chat-input {
-  display: flex;
-  align-items: flex-end;
-  gap: 10px;
-  flex-shrink: 0;
-  padding-top: 10px;
-  border-top: 1px solid var(--line);
-}
-
-.chat-textarea {
-  flex: 1;
-  min-width: 0;
-  resize: vertical;
-  min-height: 40px;
-  font-family: var(--sans);
 }
 
 /* ==================================================================== notes */
@@ -2086,28 +1840,6 @@ input.filter-input {
   flex-shrink: 0;
   margin-top: 16px;
   margin-bottom: 0;
-}
-
-.notes-head {
-  width: 100%;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  background: none;
-  border: 0;
-  padding: 12px 18px;
-  cursor: pointer;
-  font-family: var(--mono);
-  font-size: 11px;
-  font-weight: 500;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--muted);
-  text-align: left;
-}
-
-.notes-head:hover {
-  color: var(--text);
 }
 
 .notes-list {
@@ -2134,7 +1866,7 @@ input.filter-input {
   cursor: pointer;
   user-select: none;
 }
-.note-head.clickable:hover { color: var(--fg); }
+.note-head.clickable:hover { color: var(--text); }
 
 .note-author {
   color: var(--copper);
@@ -2174,8 +1906,6 @@ input.filter-input {
   min-width: 0;
   resize: vertical;
   min-height: 36px;
-  font-family: var(--sans);
-  font-size: 13px;
 }
 
 /* =================================================================== skills */
@@ -2205,7 +1935,7 @@ input.filter-input {
   text-align: left;
   background: none;
   border: 0;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   padding: 7px 10px;
   font: inherit;
   color: var(--text);
@@ -2276,7 +2006,9 @@ input.filter-input {
   flex-shrink: 0;
 }
 
-.skill-textarea {
+/* ELEMENT-QUALIFIED, like `.row-input`: a bare `.skill-textarea` loses to the control
+   rule, so the mono editing surface rendered as a plain sans box. */
+textarea.skill-textarea {
   width: 100%;
   min-height: 60vh;
   flex: 1;
@@ -2366,10 +2098,10 @@ table.kv.sim-map-table select {
 }
 
 .sim-block {
-  border: 1px solid var(--line, #d8dde5);
-  border-radius: 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
   padding: 10px 12px;
-  background: var(--surface-2, transparent);
+  background: var(--surface-2);
 }
 
 .sim-block-head {
@@ -2417,7 +2149,7 @@ table.kv.sim-map-table select {
 /* A pin that is neither wired nor ticked. The composition will not publish
    until every one of these is answered, so the row has to draw the eye. */
 .sim-loose td {
-  background: var(--warn-bg, rgba(200, 130, 75, 0.12));
+  background: var(--warn-soft);
 }
 
 .sim-unmodelled {
@@ -2463,17 +2195,6 @@ table.kv.sim-map-table select {
 
 .skill-desc .rail-hint {
   line-height: 1.5;
-}
-
-.banner-ok {
-  border: 1px solid var(--ok);
-  background: var(--ok-soft);
-  color: var(--ok);
-  border-radius: var(--radius);
-  padding: 10px 14px;
-  font-size: 13px;
-  margin-bottom: 14px;
-  flex-shrink: 0;
 }
 
 /* new component page */
@@ -2568,16 +2289,6 @@ table.kv.sim-map-table select {
   padding: 48px 0;
 }
 
-.banner-error {
-  border: 1px solid var(--err);
-  background: var(--err-soft);
-  color: var(--err);
-  border-radius: var(--radius);
-  padding: 10px 14px;
-  font-size: 13px;
-  margin-bottom: 14px;
-}
-
 /* ========================================================== import station */
 
 .danger-card {
@@ -2599,17 +2310,6 @@ table.kv.sim-map-table select {
   width: 200px;
 }
 
-.live-card {
-  border-color: var(--accent);
-}
-
-.live-stage {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-bottom: 8px;
-}
-
 .counts {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(128px, 1fr));
@@ -2618,7 +2318,7 @@ table.kv.sim-map-table select {
 }
 
 .counts-sm {
-  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
 }
 
 .count-tile {
@@ -2629,6 +2329,7 @@ table.kv.sim-map-table select {
 }
 
 .count-tile .v {
+  display: block;
   font-family: var(--mono);
   font-size: 20px;
   font-variant-numeric: tabular-nums;
@@ -2636,6 +2337,7 @@ table.kv.sim-map-table select {
 }
 
 .count-tile .k {
+  display: block;
   font-family: var(--mono);
   font-size: 10px;
   text-transform: uppercase;
@@ -2644,76 +2346,26 @@ table.kv.sim-map-table select {
   margin-top: 3px;
 }
 
-.warnings {
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  padding: 8px 12px;
-  margin-bottom: 12px;
-}
-
-.warnings summary {
-  cursor: pointer;
-  font-size: 13px;
-  color: var(--warn);
-  font-weight: 500;
-}
-
-.warnings ul {
-  margin: 10px 0 4px;
-  padding-left: 20px;
-  max-height: 320px;
-  overflow-y: auto;
-}
-
-.warnings li {
-  font-size: 12px;
-  margin-bottom: 4px;
-  overflow-wrap: break-word;
-}
-
-.warnings pre {
-  font-family: var(--mono);
-  font-size: 12px;
-  overflow-x: auto;
-  background: var(--surface-2);
-  border-radius: 6px;
-  padding: 10px 12px;
-  margin: 10px 0 4px;
-}
-
-.failed-trace summary {
-  color: var(--err);
-}
-
-.no-warnings {
-  font-size: 13px;
-}
-
-.mirror {
-  border-top: 1px solid var(--line);
-  margin-top: 4px;
-}
-
 /* ------------------------------------------------ category manage mode */
 .cat-head { display: flex; flex-direction: column; }
 .cat-gear {
-  border: 0; background: none; color: var(--ink-3, #697280); cursor: pointer;
+  border: 0; background: none; color: var(--muted); cursor: pointer;
   font-size: 0.9rem; padding: 0 6px; border-radius: 5px; line-height: 1;
 }
-.cat-gear:hover { color: var(--accent, #1f63d6); }
-.cat-gear.on { color: var(--accent, #1f63d6); }
+.cat-gear:hover { color: var(--accent); }
+.cat-gear.on { color: var(--accent); }
 .cat-actions { display: none; gap: 2px; margin-left: auto; flex: none; }
 .cat-row:hover .cat-actions, .cat-actions:focus-within { display: inline-flex; }
 .cat-act {
-  border: 0; background: none; cursor: pointer; color: var(--ink-3, #697280);
-  font-size: 0.72rem; padding: 1px 4px; border-radius: 4px; line-height: 1.4;
+  border: 0; background: none; cursor: pointer; color: var(--muted);
+  font-size: 0.72rem; padding: 1px 4px; border-radius: var(--radius-xs); line-height: 1.4;
 }
-.cat-act:hover { color: var(--accent, #1f63d6); background: var(--surface-2, #f3f6f9); }
-.cat-act-del:hover { color: var(--bad, #cf3f38); }
+.cat-act:hover { color: var(--accent); background: var(--surface-2); }
+.cat-act-del:hover { color: var(--err); }
 .cat-add-root { margin: 8px 10px; }
 .cat-error {
-  margin: 6px 10px; font-size: 0.78rem; color: var(--bad, #cf3f38);
-  font-family: var(--mono-stack, ui-monospace, monospace);
+  margin: 6px 10px; font-size: 0.78rem; color: var(--err);
+  font-family: var(--mono);
 }
 
 /* ----------------------------------------------------------- kicad page */
@@ -2723,17 +2375,12 @@ table.kv.sim-map-table select {
    two different widths depending on which page you opened them from. */
 .admin-page { display: flex; flex-direction: column; gap: 14px; }
 .admin-page h1 { margin: 0 0 2px; }
-.admin-page h2 { margin: 0 0 6px; font-size: 1.05rem; }
 .kicad-steps { margin: 10px 0 0; padding-left: 20px; }
 .kicad-steps li { margin: 3px 0; }
-.btn-primary {
-  background: var(--accent, #1f63d6); color: #fff; border-color: transparent;
-}
-.btn-primary:hover { filter: brightness(1.08); }
 .btn-row { display: flex; gap: 8px; flex-wrap: wrap; margin: 8px 0; }
 .code-block {
-  font-family: var(--mono-stack, ui-monospace, monospace); font-size: 0.8rem;
-  background: var(--surface-2, #f3f6f9); border: 1px solid var(--line, #d3dae2);
+  font-family: var(--mono); font-size: 0.8rem;
+  background: var(--surface-2); border: 1px solid var(--line);
   border-radius: 7px; padding: 10px 12px; overflow-x: auto; margin: 10px 0;
   white-space: pre;
 }
@@ -2758,7 +2405,7 @@ table.kv.sim-map-table select {
 /* The <table> flavour of `.kv` — see the note on `dl.kv` above. */
 table.kv { border-collapse: collapse; }
 table.kv td { padding: 3px 14px 3px 0; vertical-align: top; }
-table.kv td:first-child { color: var(--ink-3, #697280); }
+table.kv td:first-child { color: var(--muted); }
 
 /* The Configuration card's settings table (SettingsCard).
    `.kv` has no width, so it shrinks to fit its content — and every value cell
@@ -2833,7 +2480,8 @@ table.kv.settings-table td:nth-child(2) > select {
 }
 /* `.field-check` carries `margin: 6px 0` for a form; in a row it is 12px of
    height on the three boolean settings and nothing else. */
-table.kv.settings-table .field-check {
+table.kv.settings-table .field-check,
+dl.kv .field-check {
   margin: 0;
 }
 /* `.btn-row` brings `margin: 8px 0`, which is half the height of the row it
@@ -2847,7 +2495,7 @@ table.kv.settings-table .btn-row {
 
 /* ------------------------------------------------ datasheet PDF versions */
 .ds-history { flex-shrink: 0; font-size: 0.75rem; }
-.ds-history summary { cursor: pointer; color: var(--ink-3, #697280); }
+.ds-history summary { cursor: pointer; color: var(--muted); }
 .ds-history ul { margin: 4px 0 2px; padding-left: 14px; list-style: none; }
 .ds-history li { margin: 2px 0; }
 
@@ -2914,7 +2562,7 @@ table.kv.settings-table .btn-row {
   flex: 1;
   min-width: 0;
   position: relative;
-  background: #1e2125;
+  background: var(--kicad-canvas);
 }
 .meshview-canvas canvas {
   display: block;
@@ -2924,7 +2572,7 @@ table.kv.settings-table .btn-row {
   inset: 0;
   display: grid;
   place-items: center;
-  color: #8d9db0;
+  color: var(--kicad-canvas-ink);
   font-size: 13px;
   pointer-events: none;
 }
@@ -2968,7 +2616,7 @@ table.kv.settings-table .btn-row {
   flex: none;
   width: 10px;
   height: 10px;
-  border-radius: 2px;
+  border-radius: var(--radius-3xs);
   border: 1px solid var(--line);
 }
 
@@ -2985,25 +2633,37 @@ table.kv.settings-table .btn-row {
 
 /* ------------------------------------------------------------- projects */
 
+/* A strip with groups is long, so its tabs are narrower. It wraps, and never hides
+   a tab: `.seg` clips what does not fit. */
 .proj-tabs {
+  flex-wrap: wrap;
   margin-bottom: 14px;
 }
 
 .proj-tabs button {
   padding: 7px 14px;
+  white-space: nowrap;
 }
 
-.proj-inline-field {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 12px;
+.proj-tabs.grouped button { padding: 7px 8px; }
+
+/* The word before a group of tabs (components/TabStrip.tsx). */
+.seg-group,
+.topbar-group {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
   color: var(--muted);
 }
-
-.proj-inline-field .text {
-  width: auto;
+.seg-group {
+  display: flex;
+  align-items: center;
+  padding: 0 5px;
+  background: var(--surface-2);
 }
+.seg .seg-group + button { border-left: 0; }
+.seg button + .seg-group { border-left: 1px solid var(--line); }
 
 .proj-check {
   cursor: pointer;
@@ -3011,7 +2671,6 @@ table.kv.settings-table .btn-row {
 
 .num-input {
   width: 90px;
-  font-family: var(--mono);
   font-variant-numeric: tabular-nums;
 }
 
@@ -3061,7 +2720,7 @@ table.kv.settings-table .btn-row {
 .boardview {
   overflow: auto;
   max-height: 75vh;
-  background: #16191d;
+  background: var(--board-layers-canvas);
 }
 
 .boardview-3d {
@@ -3089,8 +2748,6 @@ table.kv.settings-table .btn-row {
   pointer-events: none;
 }
 
-/* Schematic viewer: white ground — KiCad schematic SVGs carry their own
-   background from the theme, keep the frame neutral. */
 /* The drawing carries its own background, and the height budget can leave it
    narrower than the page. A card behind it would frame that gap in light
    grey, so there is no card — just the drawing, centred. */
@@ -3153,12 +2810,8 @@ table.kv.settings-table .btn-row {
   flex: 1 1 auto;
 }
 
-.sim-runbar-pick {
-  display: flex;
-  align-items: center;
-  gap: 6px;
+label.sim-runbar-pick {
   font-size: 0.85rem;
-  color: var(--muted);
 }
 
 .sim-runbar-pick > .text {
@@ -3253,16 +2906,6 @@ table.kv.settings-table .btn-row {
   min-height: 0;
 }
 
-.sim-scope-head {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-bottom: 8px;
-}
-
-/* A live trace is a BAND between the min and the max of a column, not a line:
-   the worker sends one column per pixel, and a column of a square wave really
-   does span both rails. */
 /* ------------------------------------------------------------ the scope */
 /* Panes stack and share the X axis; only the bottom one carries its labels,
    because three copies of the same time axis is three chances to read the
@@ -3388,17 +3031,34 @@ table.kv.settings-table .btn-row {
   line-height: 1;
 }
 
-.sim-menu {
+.sim-legend-x:hover {
+  color: var(--text);
+}
+
+/* A small floating menu: the scope's pane menu and the top bar's user menu. */
+.sim-menu,
+.user-menu-list {
   position: absolute;
   z-index: 40;
   display: flex;
   flex-direction: column;
-  min-width: 132px;
   background: var(--surface);
   border: 1px solid var(--line);
-  border-radius: 6px;
-  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.35);
+  box-shadow: var(--modal-shadow);
   padding: 4px;
+}
+
+.sim-menu {
+  min-width: 132px;
+  border-radius: var(--radius-sm);
+}
+
+.user-menu-list {
+  top: calc(100% + 6px);
+  right: 0;
+  align-items: stretch;
+  min-width: 130px;
+  border-radius: var(--radius);
 }
 
 .sim-menu button {
@@ -3406,7 +3066,7 @@ table.kv.settings-table .btn-row {
   border: none;
   text-align: left;
   padding: 5px 10px;
-  border-radius: 4px;
+  border-radius: var(--radius-xs);
   cursor: pointer;
   color: inherit;
   font-size: 0.82rem;
@@ -3414,10 +3074,6 @@ table.kv.settings-table .btn-row {
 
 .sim-menu button:hover { background: var(--surface-2); }
 .sim-menu button:disabled { opacity: 0.4; cursor: default; }
-
-.sim-legend-x:hover {
-  color: var(--text);
-}
 
 /* ----------------------------------------------------- reference, closed */
 
@@ -3476,7 +3132,7 @@ table.kv.settings-table .btn-row {
   background: var(--surface);
   border: 1px solid var(--line);
   border-radius: var(--radius);
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.28);
+  box-shadow: var(--modal-shadow);
   max-height: 70%;
   display: flex;
   flex-direction: column;
@@ -3624,21 +3280,11 @@ table.kv.settings-table .btn-row {
 
 /* Interactive overlays: transparent hotspots positioned in % of the SVG's
    mm viewBox — parts light up on hover, sub-sheet frames navigate. */
-.overlay-wrap {
-  position: relative;
-}
-
-.overlay-wrap img {
-  display: block;
-  width: 100%;
-  height: auto;
-}
-
 .hotspot {
   position: absolute;
   background: transparent;
   border: 1px solid transparent;
-  border-radius: 2px;
+  border-radius: var(--radius-3xs);
   padding: 0;
   cursor: pointer;
 }
@@ -3651,10 +3297,6 @@ table.kv.settings-table .btn-row {
 .hotspot.on {
   border-color: var(--accent);
   box-shadow: 0 0 0 1px var(--accent);
-}
-
-.sheet-hotspot:hover {
-  border-style: dashed;
 }
 
 .partinfo {
@@ -3675,7 +3317,8 @@ table.kv.settings-table .btn-row {
   gap: 8px;
   margin: 10px 0 4px;
 }
-.cost-step-row {
+.cost-step-row,
+.ladder-edit-row {
   display: inline-flex;
   align-items: center;
   gap: 5px;
@@ -3706,6 +3349,9 @@ table.kv.settings-table .btn-row {
   white-space: nowrap;
 }
 
+/* The exception the table rule allows: text that must be read in full (a refusal
+   that names the rows blocking an undo) leaves the one-line clamp, in this element only. */
+.data-fixed .cell-wrap { white-space: normal; overflow: visible; }
 /* Action columns hold a control, not text: a checkbox at 13 px plus the 12 px
    cell padding does not fit a 3%-wide column, and `text-overflow: ellipsis`
    answers that by drawing a stray "…" beside every checkbox. Clip instead, and
@@ -3734,18 +3380,8 @@ table.kv.settings-table .btn-row {
   align-items: flex-start;
   gap: 8px;
 }
-.ladder-edit-row {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  font-family: var(--mono);
-  font-size: 12.5px;
-}
 .ladder-edit-row .step-cur {
   width: 58px;
-}
-.ladder-edit-row .step-src {
-  width: 96px;
 }
 
 /* The two supplier tables (decision 0055). ORDER is their meaning, so they are
@@ -3825,75 +3461,18 @@ table.kv.settings-table .btn-row {
   margin: 18px 0 0;
 }
 
-/* Post-factum run costs (RunCostsPanel). Fixed layouts with widths summing to
-   100% — the .data-fixed helper supplies the single-line ellipsis treatment,
-   these modifiers only carry column widths. */
-.run-actuals-table { table-layout: fixed; }
-.run-actuals-table th:nth-child(1), .run-actuals-table td:nth-child(1) { width: 17%; }
-.run-actuals-table th:nth-child(2), .run-actuals-table td:nth-child(2) { width: 14%; }
-.run-actuals-table th:nth-child(3), .run-actuals-table td:nth-child(3) { width: 12%; }
-.run-actuals-table th:nth-child(4), .run-actuals-table td:nth-child(4) { width: 15%; }
-.run-actuals-table th:nth-child(5), .run-actuals-table td:nth-child(5) { width: 13%; }
-.run-actuals-table th:nth-child(6), .run-actuals-table td:nth-child(6) { width: 13%; }
-.run-actuals-table th:nth-child(7), .run-actuals-table td:nth-child(7) { width: 16%; }
-
-.run-docs-table { table-layout: fixed; }
-.run-docs-table th:nth-child(1), .run-docs-table td:nth-child(1) { width: 20%; }
-.run-docs-table th:nth-child(2), .run-docs-table td:nth-child(2) { width: 22%; }
-.run-docs-table th:nth-child(3), .run-docs-table td:nth-child(3) { width: 12%; }
-.run-docs-table th:nth-child(4), .run-docs-table td:nth-child(4) { width: 7%; }
-.run-docs-table th:nth-child(5), .run-docs-table td:nth-child(5) { width: 14%; }
-.run-docs-table th:nth-child(6), .run-docs-table td:nth-child(6) { width: 14%; }
-.run-docs-table th:nth-child(7), .run-docs-table td:nth-child(7) { width: 11%; }
-
-.run-lines-table { table-layout: fixed; }
-.run-lines-table th:nth-child(1), .run-lines-table td:nth-child(1) { width: 11%; }
-.run-lines-table th:nth-child(2), .run-lines-table td:nth-child(2) { width: 22%; }
-.run-lines-table th:nth-child(3), .run-lines-table td:nth-child(3) { width: 19%; }
-.run-lines-table th:nth-child(4), .run-lines-table td:nth-child(4) { width: 8%; }
-.run-lines-table th:nth-child(5), .run-lines-table td:nth-child(5) { width: 10%; }
-.run-lines-table th:nth-child(6), .run-lines-table td:nth-child(6) { width: 12%; }
-.run-lines-table th:nth-child(7), .run-lines-table td:nth-child(7) { width: 11%; }
-.run-lines-table th:nth-child(8), .run-lines-table td:nth-child(8) { width: 7%; }
-
-.run-cons-table { table-layout: fixed; }
-.run-cons-table th:nth-child(1), .run-cons-table td:nth-child(1) { width: 30%; }
-.run-cons-table th:nth-child(2), .run-cons-table td:nth-child(2) { width: 12%; }
-.run-cons-table th:nth-child(3), .run-cons-table td:nth-child(3) { width: 18%; }
-.run-cons-table th:nth-child(4), .run-cons-table td:nth-child(4) { width: 16%; }
-.run-cons-table th:nth-child(5), .run-cons-table td:nth-child(5) { width: 14%; }
-.run-cons-table th:nth-child(6), .run-cons-table td:nth-child(6) { width: 10%; }
-
 /* Invoices view. Same discipline as the run-cost tables: fixed layout, widths
    summing to 100%, .data-fixed supplying the single-line ellipsis treatment. */
 .invoice-sum-table { table-layout: fixed; }
 /* Ten columns since the overhead bucket (decision 0068). */
-.invoice-sum-table th:nth-child(n), .invoice-sum-table td:nth-child(n) { width: 10%; }
+.invoice-sum-table th:nth-child(n), .invoice-sum-table td:nth-child(n) { width: 10%; padding-left: 4px; padding-right: 4px; }
 
-.invoice-pool-table { table-layout: fixed; }
-.invoice-pool-table th:nth-child(1), .invoice-pool-table td:nth-child(1) { width: 18%; }
-.invoice-pool-table th:nth-child(2), .invoice-pool-table td:nth-child(2) { width: 18%; }
-.invoice-pool-table th:nth-child(3), .invoice-pool-table td:nth-child(3) { width: 18%; }
-.invoice-pool-table th:nth-child(4), .invoice-pool-table td:nth-child(4) { width: 18%; }
-.invoice-pool-table th:nth-child(5), .invoice-pool-table td:nth-child(5) { width: 10%; }
-.invoice-pool-table th:nth-child(6), .invoice-pool-table td:nth-child(6) { width: 18%; }
-
-/* Supply coverage: six columns summing to 100%. Only the problem rows render,
-   so the part column can afford the width — the list is short by design. */
 /* A supplier breakdown can be 45 rows. Scroll the ROWS, never the dialog:
    the Split button below them has to stay reachable. */
 .split-rows-scroll {
   max-height: 46vh;
   overflow-y: auto;
 }
-
-.supply-coverage-table { table-layout: fixed; }
-.supply-coverage-table th:nth-child(1), .supply-coverage-table td:nth-child(1) { width: 34%; }
-.supply-coverage-table th:nth-child(2), .supply-coverage-table td:nth-child(2) { width: 16%; }
-.supply-coverage-table th:nth-child(3), .supply-coverage-table td:nth-child(3) { width: 10%; }
-.supply-coverage-table th:nth-child(4), .supply-coverage-table td:nth-child(4) { width: 10%; }
-.supply-coverage-table th:nth-child(5), .supply-coverage-table td:nth-child(5) { width: 10%; }
-.supply-coverage-table th:nth-child(6), .supply-coverage-table td:nth-child(6) { width: 20%; }
 
 .invoice-lines-table { table-layout: fixed; }
 /* `.invoice-lines-table` has NO per-column widths here, on purpose.
@@ -3909,7 +3488,8 @@ table.kv.settings-table .btn-row {
 /* A question the row has not answered. Not an error — the position may simply
    be new — but it must not read as settled, because the register counts it as
    money nobody pays for. */
-.needs-answer {
+input.needs-answer,
+select.needs-answer {
   border-color: var(--err) !important;
   background: var(--err-soft);
 }
@@ -3969,12 +3549,8 @@ table.kv.settings-table .btn-row {
 .proj-chips { display: inline-flex; gap: 4px; align-items: center; overflow: hidden; }
 .proj-chips .pill { max-width: 15ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-/* Invoices: the run cost/income table now carries the sale side (9 columns). */
 /* the order/price editor needs more room than the 440px default, less than the split editor */
 .modal-card-mid { width: min(720px, 100%); }
-
-.order-preview-table { table-layout: fixed; }
-.order-preview-table th:nth-child(n), .order-preview-table td:nth-child(n) { width: 16.66%; }
 
 /* ---- part stock ledger (stock over time, Parts stock drill-down) ---- */
 .ledger-row { cursor: pointer; }
@@ -3990,15 +3566,6 @@ table.kv.settings-table .btn-row {
 .ledger-dot { fill: var(--accent); }
 .ledger-dot.short { fill: var(--err); }
 .ledger-short-row td { background: var(--err-soft); }
-.ledger-table { table-layout: fixed; }
-.ledger-table th:nth-child(1), .ledger-table td:nth-child(1) { width: 9%; }
-.ledger-table th:nth-child(2), .ledger-table td:nth-child(2) { width: 8%; }
-.ledger-table th:nth-child(3), .ledger-table td:nth-child(3) { width: 35%; }
-.ledger-table th:nth-child(4), .ledger-table td:nth-child(4) { width: 8%; }
-.ledger-table th:nth-child(5), .ledger-table td:nth-child(5) { width: 9%; }
-.ledger-table th:nth-child(6), .ledger-table td:nth-child(6) { width: 11%; }
-.ledger-table th:nth-child(7), .ledger-table td:nth-child(7) { width: 10%; }
-.ledger-table th:nth-child(8), .ledger-table td:nth-child(8) { width: 10%; }
 
 /* The three boxes behind a Stock row: where the part is used, what moved it,
    and what the balance has done. Equal height on purpose — they answer three
@@ -4027,7 +3594,7 @@ table.kv.settings-table .btn-row {
   flex-direction: column;
   min-width: 0;
   border: 1px solid var(--line);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   background: var(--surface);
 }
 .part-box-head {
@@ -4059,30 +3626,18 @@ table.kv.settings-table .btn-row {
 /* the pill columns size to their content so a label is never clipped; the
    text columns take what is left and ellipsis there, which is the right way
    round — a truncated note still reads, a truncated pill does not. */
-.part-box-table td:has(> .pill), .part-box-table th:nth-child(2) {
+.part-box-table td:has(> .pill),
+.part-box-table th:nth-child(2),
+/* a date is fixed-length and unreadable truncated — let it size to itself and
+   spend the saved room on the note beside it */
+.part-box-table td.date-cell {
   width: 1%;
   max-width: none;   /* the td rule above sets 0, which clips the pill to "SHEL" */
   white-space: nowrap;
 }
-/* a date is fixed-length and unreadable truncated — let it size to itself and
-   spend the saved room on the note beside it */
-.part-box-table td.date-cell { width: 1%; max-width: none; white-space: nowrap; }
 .part-box-sub { display: block; color: var(--muted); font-size: 10px; overflow: hidden; text-overflow: ellipsis; }
 .part-box-table td { max-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-/* The SUPPLIER's ledger, shown under ours in the same drill-down. Six columns,
-   not eight, and the last one carries JLC's own wording — which is the whole
-   value of the table, so it gets the room. */
-.jlc-ledger { display: flex; flex-direction: column; gap: 6px; }
-.jlc-ledger h3 { margin: 6px 0 0; font-size: 13px; }
-.jlc-ledger-table { table-layout: fixed; }
-.jlc-ledger-table th:nth-child(1), .jlc-ledger-table td:nth-child(1) { width: 10%; }
-.jlc-ledger-table th:nth-child(2), .jlc-ledger-table td:nth-child(2) { width: 11%; }
-.jlc-ledger-table th:nth-child(3), .jlc-ledger-table td:nth-child(3) { width: 18%; }
-.jlc-ledger-table th:nth-child(4), .jlc-ledger-table td:nth-child(4) { width: 9%; }
-.jlc-ledger-table th:nth-child(5), .jlc-ledger-table td:nth-child(5) { width: 9%; }
-.jlc-ledger-table th:nth-child(6), .jlc-ledger-table td:nth-child(6) { width: 43%; }
-.jlc-ledger-table td:nth-child(6) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 ul.tight { margin: 6px 0; padding-left: 18px; }
 ul.tight li { margin: 2px 0; }
 
@@ -4097,42 +3652,6 @@ ul.tight li { margin: 2px 0; }
 .dash-missing ul { margin: 6px 0 0 18px; }
 .dash-missing li { margin: 3px 0; }
 
-/* run view: plan-vs-billed per production step */
-.run-steps-table { table-layout: fixed; }
-.run-steps-table th:nth-child(1), .run-steps-table td:nth-child(1) { width: 22%; }
-.run-steps-table th:nth-child(2), .run-steps-table td:nth-child(2) { width: 12%; }
-.run-steps-table th:nth-child(3), .run-steps-table td:nth-child(3) { width: 12%; }
-.run-steps-table th:nth-child(4), .run-steps-table td:nth-child(4) { width: 12%; }
-.run-steps-table th:nth-child(5), .run-steps-table td:nth-child(5) { width: 42%; }
-.run-steps-table .pill { margin-right: 4px; }
-
-/* The write journal: what moved money and the undo button. Fixed layout with
-   widths summing to 100%; .data-fixed supplies the ellipsis treatment. The undo
-   column is widest because it carries a refusal message naming the rows that
-   block the reversal — truncating that would hide the only actionable part. */
-.write-log-table { table-layout: fixed; }
-.write-log-table th:nth-child(1), .write-log-table td:nth-child(1) { width: 5%; }
-.write-log-table th:nth-child(2), .write-log-table td:nth-child(2) { width: 15%; }
-.write-log-table th:nth-child(3), .write-log-table td:nth-child(3) { width: 13%; }
-.write-log-table th:nth-child(4), .write-log-table td:nth-child(4) { width: 17%; }
-.write-log-table th:nth-child(5), .write-log-table td:nth-child(5) { width: 15%; }
-.write-log-table th:nth-child(6), .write-log-table td:nth-child(6) { width: 13%; }
-.write-log-table th:nth-child(7), .write-log-table td:nth-child(7) { width: 22%; }
-/* The refusal text is the exception the table rule allows: it must be readable
-   in full, so this one cell opts out of the single-line clamp. */
-.write-log-table td:nth-child(7) .muted.dim { white-space: normal; overflow: visible; }
-
-/* Stock adjustments: stock moving with no invoice behind it. */
-.stock-adj-table { table-layout: fixed; }
-.stock-adj-table th:nth-child(1), .stock-adj-table td:nth-child(1) { width: 6%; }
-.stock-adj-table th:nth-child(2), .stock-adj-table td:nth-child(2) { width: 14%; }
-.stock-adj-table th:nth-child(3), .stock-adj-table td:nth-child(3) { width: 9%; }
-.stock-adj-table th:nth-child(4), .stock-adj-table td:nth-child(4) { width: 8%; }
-.stock-adj-table th:nth-child(5), .stock-adj-table td:nth-child(5) { width: 14%; }
-.stock-adj-table th:nth-child(6), .stock-adj-table td:nth-child(6) { width: 11%; }
-.stock-adj-table th:nth-child(7), .stock-adj-table td:nth-child(7) { width: 28%; }
-.stock-adj-table th:nth-child(8), .stock-adj-table td:nth-child(8) { width: 10%; }
-
 /* Staged JLC batches awaiting import. Fixed layout, widths summing to 100%. */
 .jlc-staged-table { table-layout: fixed; }
 .jlc-staged-table th:nth-child(1), .jlc-staged-table td:nth-child(1) { width: 19%; }
@@ -4143,14 +3662,6 @@ ul.tight li { margin: 2px 0; }
 .jlc-staged-table th:nth-child(6), .jlc-staged-table td:nth-child(6) { width: 14%; }
 .jlc-staged-table th:nth-child(7), .jlc-staged-table td:nth-child(7) { width: 16%; }
 .jlc-staged-table td:nth-child(7) .muted.dim { white-space: normal; overflow: visible; }
-
-/* JLC parts orders awaiting import — the purchases whose lines ARE the lots. */
-.jlc-parts-table { table-layout: fixed; }
-.jlc-parts-table th:nth-child(1), .jlc-parts-table td:nth-child(1) { width: 30%; }
-.jlc-parts-table th:nth-child(2), .jlc-parts-table td:nth-child(2) { width: 18%; }
-.jlc-parts-table th:nth-child(3), .jlc-parts-table td:nth-child(3) { width: 14%; }
-.jlc-parts-table th:nth-child(4), .jlc-parts-table td:nth-child(4) { width: 26%; }
-.jlc-parts-table th:nth-child(5), .jlc-parts-table td:nth-child(5) { width: 12%; }
 
 /* Second-level navigation for the Library and Production sections. Reuses the
    .topbar-link pills; this bar only supplies the strip below the top bar. */
@@ -4164,14 +3675,6 @@ ul.tight li { margin: 2px 0; }
   border-bottom: 1px solid var(--line);
 }
 
-/* Exchange rates on the Admin page. */
-.fx-table { table-layout: fixed; }
-.fx-table th:nth-child(1), .fx-table td:nth-child(1) { width: 16%; }
-.fx-table th:nth-child(2), .fx-table td:nth-child(2) { width: 22%; }
-.fx-table th:nth-child(3), .fx-table td:nth-child(3) { width: 20%; }
-.fx-table th:nth-child(4), .fx-table td:nth-child(4) { width: 24%; }
-.fx-table th:nth-child(5), .fx-table td:nth-child(5) { width: 18%; }
-
 /* Failed schema statements on the Admin page. The result column carries an
    error message that must be readable in full, so it opts out of the clamp. */
 .schema-table { table-layout: fixed; }
@@ -4183,15 +3686,15 @@ ul.tight li { margin: 2px 0; }
    component. Ten columns, widths summing to 100%. The expansion row (draws,
    lots, override editor) reuses the .ledger-cell opt-out. */
 .run-materials-table { table-layout: fixed; }
-.run-materials-table th:nth-child(1), .run-materials-table td:nth-child(1) { width: 21%; }
-.run-materials-table th:nth-child(2), .run-materials-table td:nth-child(2) { width: 7%; }
+.run-materials-table th:nth-child(1), .run-materials-table td:nth-child(1) { width: 16%; }
+.run-materials-table th:nth-child(2), .run-materials-table td:nth-child(2) { width: 6%; }
 .run-materials-table th:nth-child(3), .run-materials-table td:nth-child(3) { width: 7%; }
-.run-materials-table th:nth-child(4), .run-materials-table td:nth-child(4) { width: 8%; }
+.run-materials-table th:nth-child(4), .run-materials-table td:nth-child(4) { width: 9%; }
 .run-materials-table th:nth-child(5), .run-materials-table td:nth-child(5) { width: 7%; }
 .run-materials-table th:nth-child(6), .run-materials-table td:nth-child(6) { width: 7%; }
-.run-materials-table th:nth-child(7), .run-materials-table td:nth-child(7) { width: 8%; }
-.run-materials-table th:nth-child(8), .run-materials-table td:nth-child(8) { width: 8%; }
-.run-materials-table th:nth-child(9), .run-materials-table td:nth-child(9) { width: 10%; }
+.run-materials-table th:nth-child(7), .run-materials-table td:nth-child(7) { width: 10%; }
+.run-materials-table th:nth-child(8), .run-materials-table td:nth-child(8) { width: 10%; }
+.run-materials-table th:nth-child(9), .run-materials-table td:nth-child(9) { width: 11%; }
 .run-materials-table th:nth-child(10), .run-materials-table td:nth-child(10) { width: 17%; }
 /* The Used column is typed in, not read: a batch's material usage for the parts
    no supplier reports can only come from somebody counting it. Sized to the
@@ -4219,15 +3722,6 @@ ul.tight li { margin: 2px 0; }
 }
 .run-materials-table tfoot td { border-top: 1px solid var(--line); }
 
-/* The write log's row-detail expansion reuses the full-width panel opt-out. */
-.write-log-table td.ledger-cell {
-  white-space: normal;
-  overflow: visible;
-  width: auto;
-  padding: 10px 14px 14px;
-  background: var(--surface-2);
-}
-
 /* Three-line clamp for long free text (version comments) with a toggle. */
 .clamp3 {
   display: -webkit-box;
@@ -4247,7 +3741,7 @@ ul.tight li { margin: 2px 0; }
   flex: none;
   width: 64px;
   height: 26px;
-  border-radius: 4px;
+  border-radius: var(--radius-xs);
   padding: 1px;
 }
 .tpl-thumb-pop {
@@ -4355,7 +3849,7 @@ ul.tight li { margin: 2px 0; }
   min-width: 0;
   padding: 12px;
   border: 1px solid var(--line);
-  border-radius: 10px;
+  border-radius: var(--radius-lg);
   background: var(--surface-2);
 }
 /* A bench laptop is the narrow case: the two columns stack. */
@@ -4363,7 +3857,8 @@ ul.tight li { margin: 2px 0; }
   .bench-mark-cols { grid-template-columns: minmax(0, 1fr); }
 }
 
-.bench-action-head {
+.bench-action-head,
+.bench-serial-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -4375,7 +3870,6 @@ ul.tight li { margin: 2px 0; }
 /* What this station last put on a unit, under the button that did it. */
 .bench-did { font-size: 12px; color: var(--muted); }
 
-
 /* One station, so the verdict can be read from where the operator stands. */
 .bench-station.is-mark .bench-verdict { font-size: 32px; padding: 14px 0; }
 .bench-station.is-mark .flash-log { height: 220px; }
@@ -4384,20 +3878,14 @@ ul.tight li { margin: 2px 0; }
    device supplied it or the operator typed it. One box, because it is one
    fact — a separate "engraved" readout said the same thing twice. */
 .bench-serial { display: flex; flex-direction: column; gap: 3px; }
-.bench-serial-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-.bench-serial-box { font-size: 18px; letter-spacing: 0.06em; text-align: center; }
+/* ELEMENT-QUALIFIED: bare, the 18 px lost to `input.text`, and this one is read from
+   arm's length. */
+input.bench-serial-box { font-size: 18px; letter-spacing: 0.06em; text-align: center; }
 /* Read-only is not disabled: it is the device's answer, and it must stay
    readable from arm's length rather than greying out. */
 .bench-serial-box[readonly] { background: var(--surface-2); color: var(--text); }
 .bench-manual-toggle { margin: 0; font-size: 12px; }
 
-@media (max-width: 900px) {
-  .bench-station.is-mark {
-    grid-template-columns: minmax(0, 1fr);
-    grid-template-areas: "head" "serial" "acts" "verdict" "step" "note" "port" "log";
-    grid-template-rows: none;
-  }
-}
 .bench-station .bench-port {
   overflow: hidden;
   text-overflow: ellipsis;
@@ -4415,7 +3903,7 @@ ul.tight li { margin: 2px 0; }
   text-align: center;
   padding: 8px 0;
   margin: 8px 0 6px;
-  border-radius: 8px;
+  border-radius: var(--radius);
   border: 1px solid var(--line);
   color: var(--muted);
 }
@@ -4427,16 +3915,10 @@ ul.tight li { margin: 2px 0; }
 .bench-progress { margin-bottom: 8px; }
 /* Two bars, the step above the procedure. Both stay in the layout at 0% so a
    station does not change height every time a step starts. */
-.bench-bar {
-  height: 6px;
+.bench-progress .progress-bar {
   margin-top: 4px;
-  border-radius: 3px;
-  background: var(--line);
-  overflow: hidden;
 }
-.bench-bar-fill {
-  height: 100%;
-  background: var(--accent);
+.bench-progress .progress-bar > i {
   transition: width 120ms linear;
 }
 
@@ -4468,18 +3950,16 @@ ul.tight li { margin: 2px 0; }
   color: var(--text);
   background: transparent;
   border: 1px solid transparent;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   padding: 2px 6px;
 }
 .bench-name:focus {
   border-color: var(--accent);
-  background: var(--card);
+  background: var(--surface);
   outline: none;
 }
 .bench-name-text { font-size: 17px; }
 .bench-slot { font-size: 12px; margin: -2px 0 6px 6px; }
-/* The place a removed station left. Holds the column open so the remaining
-   stations keep their positions — an operator reaches for "the second one". */
 /* What to DO about the error above, smaller than the error itself so the
    verdict still reads first. */
 .bench-hint {
@@ -4495,115 +3975,26 @@ ul.tight li { margin: 2px 0; }
   align-items: flex-start;
   font-size: 12px;
 }
+/* The place a removed station left. Holds the column open so the remaining
+   stations keep their positions — an operator reaches for "the second one". */
 .bench-empty { min-height: 1px; }
 .bench-log-wrap { margin-top: 8px; }
 .bench-log-wrap summary { cursor: pointer; }
 
-.override-reason { width: 100%; margin-top: 8px; }
-
 .file-editor { min-height: 320px; }
-.params-editor { min-height: 110px; }
-.steps-json {
-  background: var(--surface-2);
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  font-size: 12px;
-  max-height: 300px;
-  overflow: auto;
-  padding: 8px 10px;
-}
-.pin-file-list { display: flex; flex-direction: column; gap: 4px; margin-bottom: 8px; }
 
 /* Fixed layouts (hard rule: no horizontal scroll, single-line rows). */
-.firmware-table { table-layout: fixed; }
-.firmware-table th:nth-child(1), .firmware-table td:nth-child(1) { width: 28%; }
-.firmware-table th:nth-child(2), .firmware-table td:nth-child(2) { width: 10%; }
-.firmware-table th:nth-child(3), .firmware-table td:nth-child(3) { width: 9%; }
-.firmware-table th:nth-child(4), .firmware-table td:nth-child(4) { width: 9%; }
-.firmware-table th:nth-child(5), .firmware-table td:nth-child(5) { width: 13%; }
-.firmware-table th:nth-child(6), .firmware-table td:nth-child(6) { width: 17%; }
-.firmware-table th:nth-child(7), .firmware-table td:nth-child(7) { width: 14%; }
-
-.release-versions-table { table-layout: fixed; }
-.release-versions-table th:nth-child(1), .release-versions-table td:nth-child(1) { width: 8%; }
-.release-versions-table th:nth-child(2), .release-versions-table td:nth-child(2) { width: 11%; }
-.release-versions-table th:nth-child(3), .release-versions-table td:nth-child(3) { width: 26%; }
-.release-versions-table th:nth-child(4), .release-versions-table td:nth-child(4) { width: 21%; }
-.release-versions-table th:nth-child(5), .release-versions-table td:nth-child(5) { width: 14%; }
-.release-versions-table th:nth-child(6), .release-versions-table td:nth-child(6) { width: 20%; }
-
-.device-files-table { table-layout: fixed; }
-.device-files-table th:nth-child(1), .device-files-table td:nth-child(1) { width: 30%; }
-.device-files-table th:nth-child(2), .device-files-table td:nth-child(2) { width: 18%; }
-.device-files-table th:nth-child(3), .device-files-table td:nth-child(3) { width: 10%; }
-.device-files-table th:nth-child(4), .device-files-table td:nth-child(4) { width: 27%; }
-.device-files-table th:nth-child(5), .device-files-table td:nth-child(5) { width: 15%; }
-
-.file-versions-table { table-layout: fixed; }
-.file-versions-table th:nth-child(1), .file-versions-table td:nth-child(1) { width: 6%; }
-.file-versions-table th:nth-child(2), .file-versions-table td:nth-child(2) { width: 10%; }
-.file-versions-table th:nth-child(3), .file-versions-table td:nth-child(3) { width: 8%; }
-.file-versions-table th:nth-child(4), .file-versions-table td:nth-child(4) { width: 11%; }
-.file-versions-table th:nth-child(5), .file-versions-table td:nth-child(5) { width: 19%; }
-.file-versions-table th:nth-child(6), .file-versions-table td:nth-child(6) { width: 13%; }
-.file-versions-table th:nth-child(7), .file-versions-table td:nth-child(7) { width: 15%; }
-.file-versions-table th:nth-child(8), .file-versions-table td:nth-child(8) { width: 18%; }
-
-.script-versions-table { table-layout: fixed; }
-.script-versions-table th:nth-child(1), .script-versions-table td:nth-child(1) { width: 7%; }
-.script-versions-table th:nth-child(2), .script-versions-table td:nth-child(2) { width: 10%; }
-.script-versions-table th:nth-child(3), .script-versions-table td:nth-child(3) { width: 24%; }
-.script-versions-table th:nth-child(4), .script-versions-table td:nth-child(4) { width: 12%; }
-.script-versions-table th:nth-child(5), .script-versions-table td:nth-child(5) { width: 6%; }
-.script-versions-table th:nth-child(6), .script-versions-table td:nth-child(6) { width: 10%; }
-.script-versions-table th:nth-child(7), .script-versions-table td:nth-child(7) { width: 13%; }
-.script-versions-table th:nth-child(8), .script-versions-table td:nth-child(8) { width: 18%; }
-
-.param-sets-table { table-layout: fixed; }
-.param-sets-table th:nth-child(1), .param-sets-table td:nth-child(1) { width: 18%; }
-.param-sets-table th:nth-child(2), .param-sets-table td:nth-child(2) { width: 46%; }
-.param-sets-table th:nth-child(3), .param-sets-table td:nth-child(3) { width: 16%; }
-.param-sets-table th:nth-child(4), .param-sets-table td:nth-child(4) { width: 20%; }
-
-.devices-table { table-layout: fixed; }
-.devices-table th:nth-child(1), .devices-table td:nth-child(1) { width: 11%; }
-.devices-table th:nth-child(2), .devices-table td:nth-child(2) { width: 13%; }
-.devices-table th:nth-child(3), .devices-table td:nth-child(3) { width: 11%; }
-.devices-table th:nth-child(4), .devices-table td:nth-child(4) { width: 8%; }
-.devices-table th:nth-child(5), .devices-table td:nth-child(5) { width: 10%; }
-.devices-table th:nth-child(6), .devices-table td:nth-child(6) { width: 11%; }
-.devices-table th:nth-child(7), .devices-table td:nth-child(7) { width: 10%; }
-.devices-table th:nth-child(8), .devices-table td:nth-child(8) { width: 5%; }
-.devices-table th:nth-child(9), .devices-table td:nth-child(9) { width: 9%; }
-.devices-table th:nth-child(10), .devices-table td:nth-child(10) { width: 6%; }
-.devices-table th:nth-child(11), .devices-table td:nth-child(11) { width: 6%; }
-
 .identity-table { table-layout: fixed; }
 .identity-table td:nth-child(1) { width: 34%; }
 .identity-table td:nth-child(2) { width: 66%; }
 
-.device-config-table { table-layout: fixed; }
-.device-config-table th:nth-child(1), .device-config-table td:nth-child(1) { width: 26%; }
-.device-config-table th:nth-child(2), .device-config-table td:nth-child(2) { width: 38%; }
-.device-config-table th:nth-child(3), .device-config-table td:nth-child(3) { width: 16%; }
-.device-config-table th:nth-child(4), .device-config-table td:nth-child(4) { width: 20%; }
-
 /* ---- sales orders (decision 0003): every table fixed, no wrapping ---- */
-.finished-stock-table { table-layout: fixed; }
-.finished-stock-table th:nth-child(1), .finished-stock-table td:nth-child(1) { width: 14%; }
-.finished-stock-table th:nth-child(2), .finished-stock-table td:nth-child(2) { width: 22%; }
-.finished-stock-table th:nth-child(n+3), .finished-stock-table td:nth-child(n+3) { width: 9.14%; }
 .order-lines-edit-table { table-layout: fixed; }
 .order-lines-edit-table th:nth-child(1), .order-lines-edit-table td:nth-child(1) { width: 30%; }
 .order-lines-edit-table th:nth-child(2), .order-lines-edit-table td:nth-child(2) { width: 34%; }
 .order-lines-edit-table th:nth-child(3), .order-lines-edit-table td:nth-child(3) { width: 14%; }
 .order-lines-edit-table th:nth-child(4), .order-lines-edit-table td:nth-child(4) { width: 16%; }
 .order-lines-edit-table th:nth-child(5), .order-lines-edit-table td:nth-child(5) { width: 6%; }
-.order-shipments-table td.expand-cell { white-space: normal; overflow: visible; }
-.order-shipments-table tr.clickable { cursor: pointer; }
-/* One block under the control that produced it: a per-line ship form, the
-   plan a stock count prints before it writes. Same rule, never a second one. */
-.ship-line, .count-plan { border-top: 1px solid var(--line); padding-top: 0.5rem; margin-top: 0.5rem; }
 .serial-cloud { display: flex; flex-wrap: wrap; gap: 0.25rem; margin-top: 0.4rem; }
 /* The packing station (pages/ShipmentDetail.tsx): SCANNED | arrows | IN THIS
    SHIPMENT. One column on a narrow screen, arrows in a row between the lists. */
@@ -4619,35 +4010,6 @@ ul.tight li { margin: 2px 0; }
   .ship-pack { grid-template-columns: minmax(0, 1fr); }
   .ship-pack-arrows { flex-direction: row; padding-top: 0; }
 }
-.device-history-table { table-layout: fixed; }
-.device-history-table th:nth-child(1), .device-history-table td:nth-child(1) { width: 16%; }
-.device-history-table th:nth-child(2), .device-history-table td:nth-child(2) { width: 14%; }
-.device-history-table th:nth-child(3), .device-history-table td:nth-child(3) { width: 40%; }
-.device-history-table th:nth-child(4), .device-history-table td:nth-child(4) { width: 15%; }
-.device-history-table th:nth-child(5), .device-history-table td:nth-child(5) { width: 15%; }
-
-/* Run · Result · Batch · Deployment · By · Took · Started. STARTED is a LENGTH,
-   not a share: a timestamp has a fixed width and "2026-09-16 20:…" is not a
-   time (same rule as the device list's serial). The rest share what is left.
-   Sized from measured content after two changes made the old split wrong — the
-   result pill printed "ABORTE" at 10%, and `By` started carrying a real
-   account name instead of a dash. Deployment and By are the two that truncate,
-   and both carry a title. */
-.device-runs-table { table-layout: fixed; }
-.device-runs-table th:nth-child(1), .device-runs-table td:nth-child(1) { width: 17%; }
-.device-runs-table th:nth-child(2), .device-runs-table td:nth-child(2) { width: 20%; }
-.device-runs-table th:nth-child(3), .device-runs-table td:nth-child(3) { width: 12%; }
-.device-runs-table th:nth-child(4), .device-runs-table td:nth-child(4) { width: 20%; }
-.device-runs-table th:nth-child(5), .device-runs-table td:nth-child(5) { width: 16%; }
-.device-runs-table th:nth-child(6), .device-runs-table td:nth-child(6) { width: 15%; }
-.device-runs-table th:nth-child(7), .device-runs-table td:nth-child(7) { width: 150px; }
-
-.progsteps-table { table-layout: fixed; }
-.progsteps-table th:nth-child(1), .progsteps-table td:nth-child(1) { width: 6%; }
-.progsteps-table th:nth-child(2), .progsteps-table td:nth-child(2) { width: 42%; }
-.progsteps-table th:nth-child(3), .progsteps-table td:nth-child(3) { width: 22%; }
-.progsteps-table th:nth-child(4), .progsteps-table td:nth-child(4) { width: 16%; }
-.progsteps-table th:nth-child(5), .progsteps-table td:nth-child(5) { width: 14%; }
 
 /* ------------------------------------------------------- deployments (bundles) */
 /* TWO columns: the version timeline, then everything about the selected
@@ -4680,7 +4042,20 @@ ul.tight li { margin: 2px 0; }
 /* The × sits on the tile and appears on hover or keyboard focus. Always-on it
    is four delete buttons competing with the names; never-on it is a control
    nobody finds. */
-.depl-item { position: relative; }
+.depl-item {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  text-align: left;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  color: var(--text);
+  cursor: pointer;
+  font: inherit;
+  padding: 8px 10px;
+}
 .depl-tile-x {
   position: absolute;
   top: 4px;
@@ -4695,7 +4070,11 @@ ul.tight li { margin: 2px 0; }
 .depl-item:hover .depl-tile-x,
 .depl-tile-x:focus-visible { opacity: 1; }
 .depl-tile-x:hover { color: var(--err); background: var(--err-soft); }
-/* The add tile: same box, nothing in it but the affordance. */
+.depl-item:hover { background: var(--surface-2); }
+.depl-item.active { border-color: var(--accent); background: var(--accent-soft); }
+/* The add tile: same box, nothing in it but the affordance. AFTER `.depl-item`,
+   whose `border:` resets the style: this rule came first and the tile was never
+   dashed. */
 .depl-item-new {
   align-items: center;
   justify-content: center;
@@ -4704,21 +4083,6 @@ ul.tight li { margin: 2px 0; }
 }
 .depl-plus { font-size: 20px; line-height: 1; color: var(--muted); }
 .depl-item-new:hover .depl-plus { color: var(--accent); }
-.depl-item {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  text-align: left;
-  background: var(--surface);
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  color: var(--text);
-  cursor: pointer;
-  font: inherit;
-  padding: 8px 10px;
-}
-.depl-item:hover { background: var(--surface-2); }
-.depl-item.active { border-color: var(--accent); background: var(--accent-soft); }
 .depl-name { font-weight: 600; }
 .depl-chips { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 2px; }
 
@@ -4749,14 +4113,6 @@ ul.tight li { margin: 2px 0; }
 /* One word now, so it takes what it needs and gives the row to the name. */
 .depl-head .field-row > .field.depl-field-kind { flex: 0 0 120px; }
 .depl-desc-box { resize: none; }
-/* Versions get their own bar so New version sits with what it creates. */
-.depl-versions-bar {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 10px;
-}
-.depl-versions-title { margin: 0; }
 /* The live socket picker: one row per USB port the agent can see, arrivals
    first. A row is a button because picking one IS the action — there is no
    Assign step to confirm, which is what makes "plug it in and take the new
@@ -4793,8 +4149,6 @@ ul.tight li { margin: 2px 0; }
   padding-top: 6px;
   border-top: 1px solid var(--line);
 }
-.depl-setting { display: inline-flex; align-items: center; gap: 6px; }
-.depl-setting .muted { font-size: 12px; }
 /* The publish note, as prose. It is free text of any length written when the
    version was made, so it gets a readable size and case — see VersionView for
    what it looked like before. */
@@ -4919,66 +4273,17 @@ textarea.auto-grow { overflow-y: hidden; }
 }
 .hidden-input { display: none; }
 
-.dv-images-table { table-layout: fixed; }
-.dv-images-table th:nth-child(1), .dv-images-table td:nth-child(1) { width: 10%; }
-.dv-images-table th:nth-child(2), .dv-images-table td:nth-child(2) { width: 30%; }
-.dv-images-table th:nth-child(3), .dv-images-table td:nth-child(3) { width: 10%; }
-.dv-images-table th:nth-child(4), .dv-images-table td:nth-child(4) { width: 10%; }
-.dv-images-table th:nth-child(5), .dv-images-table td:nth-child(5) { width: 10%; }
-.dv-images-table th:nth-child(6), .dv-images-table td:nth-child(6) { width: 18%; }
-.dv-images-table th:nth-child(7), .dv-images-table td:nth-child(7) { width: 12%; }
-
-.dv-files-table { table-layout: fixed; }
-.dv-files-table th:nth-child(1), .dv-files-table td:nth-child(1) { width: 6%; }
-.dv-files-table th:nth-child(2), .dv-files-table td:nth-child(2) { width: 34%; }
-.dv-files-table th:nth-child(3), .dv-files-table td:nth-child(3) { width: 18%; }
-.dv-files-table th:nth-child(4), .dv-files-table td:nth-child(4) { width: 12%; }
-.dv-files-table th:nth-child(5), .dv-files-table td:nth-child(5) { width: 14%; }
-.dv-files-table th:nth-child(6), .dv-files-table td:nth-child(6) { width: 16%; }
-
-.diff-table { table-layout: fixed; }
-.diff-table th:nth-child(1), .diff-table td:nth-child(1) { width: 22%; }
-.diff-table th:nth-child(2), .diff-table td:nth-child(2) { width: 32%; }
-.diff-table th:nth-child(3), .diff-table td:nth-child(3) { width: 32%; }
-.diff-table th:nth-child(4), .diff-table td:nth-child(4) { width: 14%; }
-
-.composer-files-table { table-layout: fixed; }
-.composer-files-table th:nth-child(1), .composer-files-table td:nth-child(1) { width: 7%; }
-.composer-files-table th:nth-child(2), .composer-files-table td:nth-child(2) { width: 45%; }
-.composer-files-table th:nth-child(3), .composer-files-table td:nth-child(3) { width: 22%; }
-.composer-files-table th:nth-child(4), .composer-files-table td:nth-child(4) { width: 14%; }
-.composer-files-table th:nth-child(5), .composer-files-table td:nth-child(5) { width: 12%; }
-
-.bundles-table { table-layout: fixed; }
-.bundles-table th:nth-child(1), .bundles-table td:nth-child(1) { width: 32%; }
-.bundles-table th:nth-child(2), .bundles-table td:nth-child(2) { width: 10%; }
-.bundles-table th:nth-child(3), .bundles-table td:nth-child(3) { width: 18%; }
-.bundles-table th:nth-child(4), .bundles-table td:nth-child(4) { width: 20%; }
-.bundles-table th:nth-child(5), .bundles-table td:nth-child(5) { width: 20%; }
 /* A release's manifest, folded out under its row on the Files page, and the
    derive dialog's plan. The expansion cell lifts the one-line clamp. */
 .set-detail { padding: 6px 4px 10px; }
 .set-detail .toolbar { margin: 0 0 4px; }
 
-.set-files-table { table-layout: fixed; }
-.set-files-table th:nth-child(1), .set-files-table td:nth-child(1) { width: 5%; }
-.set-files-table th:nth-child(2), .set-files-table td:nth-child(2) { width: 32%; }
-.set-files-table th:nth-child(3), .set-files-table td:nth-child(3) { width: 10%; }
-.set-files-table th:nth-child(4), .set-files-table td:nth-child(4) { width: 14%; }
-.set-files-table th:nth-child(5), .set-files-table td:nth-child(5) { width: 27%; }
-.set-files-table th:nth-child(6), .set-files-table td:nth-child(6) { width: 12%; }
 .derive-table { table-layout: fixed; }
 .derive-table th:nth-child(1), .derive-table td:nth-child(1) { width: 36%; }
 .derive-table th:nth-child(2), .derive-table td:nth-child(2) { width: 10%; }
 .derive-table th:nth-child(3), .derive-table td:nth-child(3) { width: 30%; }
 .derive-table th:nth-child(4), .derive-table td:nth-child(4) { width: 24%; }
 .derive-table tr.dim td { opacity: 0.55; }
-.bundle-files-table { table-layout: fixed; }
-.bundle-files-table th:nth-child(1), .bundle-files-table td:nth-child(1) { width: 7%; }
-.bundle-files-table th:nth-child(2), .bundle-files-table td:nth-child(2) { width: 40%; }
-.bundle-files-table th:nth-child(3), .bundle-files-table td:nth-child(3) { width: 13%; }
-.bundle-files-table th:nth-child(4), .bundle-files-table td:nth-child(4) { width: 15%; }
-.bundle-files-table th:nth-child(5), .bundle-files-table td:nth-child(5) { width: 25%; }
 
 /* Firmware admin: upload beside the pool, and a labelled form grid so the
    fields stop reading as a row of anonymous boxes. */
@@ -4991,15 +4296,6 @@ textarea.auto-grow { overflow-y: hidden; }
 @media (max-width: 1000px) {
   .fw-layout { grid-template-columns: 1fr; }
 }
-.fw-form {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px;
-  margin: 8px 0;
-}
-.fw-field { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-.fw-field input, .fw-field select { width: 100%; }
-.fw-wide { grid-column: 1 / -1; }
 .fw-label {
   color: var(--muted);
   font-size: 11px;
@@ -5007,18 +4303,7 @@ textarea.auto-grow { overflow-y: hidden; }
   letter-spacing: 0.04em;
 }
 
-.fw-table { table-layout: fixed; }
-.fw-table th:nth-child(1), .fw-table td:nth-child(1) { width: 30%; }
-.fw-table th:nth-child(2), .fw-table td:nth-child(2) { width: 11%; }
-.fw-table th:nth-child(3), .fw-table td:nth-child(3) { width: 11%; }
-.fw-table th:nth-child(4), .fw-table td:nth-child(4) { width: 11%; }
-.fw-table th:nth-child(5), .fw-table td:nth-child(5) { width: 10%; }
-.fw-table th:nth-child(6), .fw-table td:nth-child(6) { width: 14%; }
-.fw-table th:nth-child(7), .fw-table td:nth-child(7) { width: 13%; }
-
-/* Berryware bundles: identity on one line, files on demand. */
-.bundle-drop { display: inline-block; margin: 6px 0; }
-.bundle-or { margin-top: 14px; }
+/* Berryware bundles: the file picker. */
 .bundle-pick-list {
   display: flex;
   flex-direction: column;
@@ -5036,30 +4321,6 @@ textarea.auto-grow { overflow-y: hidden; }
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-.bundle-cards { display: flex; flex-direction: column; gap: 8px; }
-.bundle-card {
-  background: var(--surface);
-  border: 1px solid var(--line);
-  border-left: 3px solid var(--line);
-  border-radius: var(--radius);
-  padding: 8px 10px;
-}
-.bundle-card.open { border-left-color: var(--accent); background: var(--accent-soft); }
-.bundle-head { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
-.bundle-label {
-  flex: 0 1 auto;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  max-width: 40%;
-}
-.bundle-actions { margin-left: auto; }
-.bundle-meta {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  margin-top: 2px;
 }
 
 /* Graphical procedure editor: each step a readable row, open to edit. */
@@ -5097,7 +4358,6 @@ textarea.auto-grow { overflow-y: hidden; }
 }
 .step-btns { margin-left: auto; flex-shrink: 0; }
 .step-body { border-top: 1px solid var(--line); padding: 6px 10px 10px; }
-.step-hint { font-size: 0.85em; }
 .step-add {
   border-top: 1px solid var(--line);
   padding: 8px 10px;
@@ -5108,15 +4368,9 @@ textarea.auto-grow { overflow-y: hidden; }
 .step-add-group { display: flex; flex-direction: column; gap: 2px; }
 .step-add-ops { display: flex; flex-wrap: wrap; gap: 4px; }
 
-/* value = literal or {parameter} */
-.value-picker { display: flex; gap: 4px; min-width: 0; }
-.value-picker .value-mode { flex: 0 0 7.5em; }
-.value-picker input, .value-picker select:not(.value-mode) { flex: 1 1 auto; min-width: 0; }
-
 .cmd-list, .img-picker { display: flex; flex-direction: column; gap: 4px; }
 .cmd-row { display: flex; align-items: center; gap: 4px; min-width: 0; }
 .cmd-row .cmd-name { flex: 0 0 11em; }
-.cmd-row .value-picker { flex: 1 1 auto; }
 .cmd-row select:first-child { flex: 1 1 auto; min-width: 0; }
 
 /* The procedure toolbar's transport select: sized to its longest option, not
@@ -5158,6 +4412,9 @@ textarea.auto-grow { overflow-y: hidden; }
 .label-paper { fill: var(--surface); stroke: var(--line); stroke-width: 0.4; }
 .label-printable { fill: none; stroke: var(--line); stroke-width: 0.25; stroke-dasharray: 1 1; }
 .label-bar { fill: var(--text); }
+/* Helvetica on purpose: the bench agent prints the human-readable line in it
+   (`label_pdf`, api/app/services/bench_agent/agent.py), and this is a preview of
+   that piece of paper. Not an interface font. */
 .label-text { fill: var(--text); font-family: Helvetica, Arial, sans-serif; }
 .label-preview-bad .label-paper { stroke: var(--err); stroke-width: 0.6; }
 .label-preview-note { font-size: 11px; }
@@ -5186,7 +4443,7 @@ textarea.auto-grow { overflow-y: hidden; }
 .ro-param {
   background: var(--accent-soft);
   color: var(--accent);
-  border-radius: 3px;
+  border-radius: var(--radius-2xs);
   padding: 0 2px;
 }
 @media (max-width: 900px) {
@@ -5245,12 +4502,12 @@ a.check-cell:hover {
   background: var(--err);
 }
 .check-unknown {
-  border-color: var(--border);
+  border-color: var(--muted);
   color: var(--muted);
 }
 .check-unknown .check-dot {
   background: transparent;
-  border: 1px solid var(--border);
+  border: 1px solid var(--muted);
 }
 @media (max-width: 900px) {
   .check-group { grid-template-columns: 1fr; }
@@ -5291,15 +4548,9 @@ a.check-cell:hover {
   font-size: 13px;
 }
 
-.login-field {
-  display: flex;
-  flex-direction: column;
-  gap: 5px;
-}
-
-.login-label {
-  font-size: 12px;
-  color: var(--muted);
+/* The card's own gap spaces its rows. */
+.login-card .field {
+  margin: 0;
 }
 
 .login-submit {
@@ -5326,16 +4577,30 @@ a.check-cell:hover {
 }
 
 .topbar-username {
+  font: inherit;
   font-size: 12px;
   color: var(--muted);
   text-decoration: none;
   padding: 3px 6px;
-  border-radius: 4px;
+  background: none;
+  border: 0;
+  border-radius: var(--radius-xs);
+  cursor: pointer;
+  white-space: nowrap;
 }
 .topbar-username:hover {
   color: var(--text);
   background: var(--surface-2);
 }
+/* The small word before a group of links in the top bar (decision 0103). */
+.topbar-group {
+  margin-left: 10px;
+  padding-left: 12px;
+  border-left: 1px solid var(--line);
+}
+.topbar-group:first-child { margin-left: 0; padding-left: 0; border-left: 0; }
+.user-menu { position: relative; }
+.user-menu-list .topbar-link { text-align: left; }
 
 /* The company switcher (decision 0063): small, beside the user's name. */
 .topbar-company {
@@ -5343,7 +4608,7 @@ a.check-cell:hover {
   color: var(--text);
   background: var(--surface);
   border: 1px solid var(--line);
-  border-radius: 4px;
+  border-radius: var(--radius-xs);
   padding: 2px 4px;
   max-width: 140px;
 }
@@ -5365,33 +4630,6 @@ span.topbar-company {
 }
 
 /* ---------------------------------------------------------------- users card */
-
-/* Fixed widths summing to 100%, per the no-horizontal-scroll table rule. */
-.data.users-table th:nth-child(1),
-.data.users-table td:nth-child(1) { width: 24%; }
-.data.users-table th:nth-child(2),
-.data.users-table td:nth-child(2) { width: 22%; }
-.data.users-table th:nth-child(3),
-.data.users-table td:nth-child(3) { width: 10%; }
-.data.users-table th:nth-child(4),
-.data.users-table td:nth-child(4) { width: 10%; }
-.data.users-table th:nth-child(5),
-.data.users-table td:nth-child(5) { width: 20%; }
-.data.users-table th:nth-child(6),
-.data.users-table td:nth-child(6) { width: 14%; }
-
-.data.users-table td.ctr,
-.data.users-table th.ctr {
-  text-align: center;
-}
-
-/* The expanded detail row spans every column — opt that ONE cell out of the
-   single-line clamp rather than relaxing the whole table. */
-.data.users-table td.user-detail-cell {
-  white-space: normal;
-  overflow: visible;
-  text-overflow: clip;
-}
 
 .user-detail {
   display: flex;
@@ -5418,11 +4656,6 @@ span.topbar-company {
   white-space: nowrap;
 }
 
-/* Four fields on one row, the button on its own line beneath them.
-   `align-items: end` used to bottom-align items of differing height, which put
-   the Role label lower than the other three and left the Create button
-   stretched across whatever column the auto-fit happened to give it. */
-
 /* The "Add a user" heading sat flush against the table above it. */
 .users-add-heading {
   margin-top: 22px;
@@ -5434,37 +4667,6 @@ span.topbar-company {
 .field-grid .field-grid-submit {
   grid-column: 1 / -1;
   justify-self: start;
-}
-
-/* The checklist editor's item table. Every cell holds a `.row-input`, which is
-   `width: 100%` and so contributes nothing to the intrinsic minimum — without
-   fixed layout and explicit widths the table collapses to the longest word in
-   the header, exactly as `.kv.settings-table` did. Widths sum to 100%. */
-.data.checklist-table {
-  width: 100%;
-  table-layout: fixed;
-}
-/* A card whose body folds: the caret, the title and a one-line summary of what
-   is inside, so a folded section still says whether it is worth opening.
-   A <button> rather than a clickable <div> — it has to reach the keyboard, and
-   `aria-expanded` has to have something to sit on. */
-.fold-head {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-  width: 100%;
-  padding: 0;
-  border: 0;
-  background: none;
-  color: inherit;
-  text-align: left;
-  cursor: pointer;
-}
-.fold-head .card-title {
-  margin: 0;
-}
-.fold-head:hover .card-title {
-  color: var(--accent);
 }
 
 /* The draft row that adds a check: the same seven columns, filled in place, so
@@ -5485,60 +4687,6 @@ span.topbar-company {
   margin-top: 4px;
   padding-top: 0;
 }
-
-/* One table for every check, folded to the three facts you scan for: caret,
-   key, what it checks, where it comes from, whether it runs. Everything a check
-   carries — thresholds, property lists, patterns, the wording of a judgment
-   check — is in the `.check-detail` row behind the caret, because one check can
-   hold four regular expressions and a screenful of those cannot be read. */
-.data.check-table {
-  width: 100%;
-  table-layout: fixed;
-}
-.data.check-table th:nth-child(1),
-.data.check-table td:nth-child(1) { width: 38px; }
-.data.check-table th:nth-child(2),
-.data.check-table td:nth-child(2) { width: 20%; }
-.data.check-table th:nth-child(3),
-.data.check-table td:nth-child(3) { width: auto; white-space: normal; }
-.data.check-table th:nth-child(4),
-.data.check-table td:nth-child(4) { width: 14%; }
-.data.check-table th:nth-child(5),
-.data.check-table td:nth-child(5) { width: 245px; white-space: nowrap; }
-.data.check-table .seg { display: inline-flex; }
-.data.check-table td.ctr { padding-left: 6px; padding-right: 6px; }
-.check-detail td {
-  white-space: normal;
-  background: var(--surface-2);
-  border-top: 0;
-  padding-bottom: 12px;
-}
-.check-detail .check-params {
-  border-top: 0;
-  margin-top: 0;
-  padding-top: 0;
-}
-
-/* Two shapes on the OLD checklist editor tables, kept for anything still using
-   them. `cols-3` is key / what it checks / switch; `cols-4` adds the hint
-   column and the reorder+delete group. */
-.data.checklist-table.cols-3 th:nth-child(1),
-.data.checklist-table.cols-3 td:nth-child(1) { width: 22%; }
-.data.checklist-table.cols-3 th:nth-child(2),
-.data.checklist-table.cols-3 td:nth-child(2) { width: auto; white-space: normal; }
-/* Wide enough for the longest switch this table draws — "Inherit (on) |
-   Override | Off". A clipped switch hides the option you came for. */
-.data.checklist-table.cols-3 th:nth-child(3),
-.data.checklist-table.cols-3 td:nth-child(3) { width: 245px; white-space: nowrap; }
-
-.data.checklist-table.cols-4 th:nth-child(1),
-.data.checklist-table.cols-4 td:nth-child(1) { width: 20%; }
-.data.checklist-table.cols-4 th:nth-child(2),
-.data.checklist-table.cols-4 td:nth-child(2) { width: 34%; }
-.data.checklist-table.cols-4 th:nth-child(3),
-.data.checklist-table.cols-4 td:nth-child(3) { width: 28%; }
-.data.checklist-table.cols-4 th:nth-child(4),
-.data.checklist-table.cols-4 td:nth-child(4) { width: 18%; white-space: nowrap; }
 
 /* What an automatic check measures against, under the sentence it produces.
    Auto-fit rather than a fixed count: one check carries a single threshold and
@@ -5574,27 +4722,10 @@ span.topbar-company {
   min-width: 0;
 }
 
-/* The switch is a control inside a cell, not a cell-wide band. */
-.data.checklist-table .seg { display: inline-flex; }
-/* An automatic check's own wording wraps rather than being clipped — it is the
-   whole content of its cell, and a truncated rule reads as a different rule. */
-.data.checklist-table td { white-space: normal; }
-
 /* ---- review workbench (Reviews page inline expansion) ---- */
 /* Checklist beside the thing it is checked against: cards left, datasheet +
    renders right. The datasheet pane is tall on purpose — verification IS
    comparison, and a letterbox PDF is unusable. */
-.bench-row { cursor: pointer; }
-.bench-row.open td { background: var(--accent-soft); }
-.bench-detail .bench-cell {
-  /* the bench is a layout, not a table cell — opt out of the clamp */
-  white-space: normal;
-  overflow: visible;
-  text-overflow: clip;
-  background: var(--surface);
-  border-top: 2px solid var(--accent);
-  padding: 12px;
-}
 .bench-nav { margin-bottom: 8px; }
 .workbench {
   display: grid;
@@ -5891,25 +5022,29 @@ span.topbar-company {
   font-size: 0.8rem;
 }
 
-details.superseded > summary {
+details.superseded > summary,
+details.not-here > summary {
   cursor: pointer;
   list-style: none;
 }
 
-details.superseded > summary::-webkit-details-marker {
+details.superseded > summary::-webkit-details-marker,
+details.not-here > summary::-webkit-details-marker {
   display: none;
 }
 
 /* The caret is drawn rather than inherited, so it sits on the text baseline at
    this size instead of on the browser's own marker box. */
-details.superseded > summary::before {
+details.superseded > summary::before,
+details.not-here > summary::before {
   content: "▸";
   display: inline-block;
   width: 1em;
   transition: transform 0.12s ease;
 }
 
-details.superseded[open] > summary::before {
+details.superseded[open] > summary::before,
+details.not-here[open] > summary::before {
   transform: rotate(90deg);
 }
 
@@ -5920,26 +5055,6 @@ details.superseded > p {
 /* "Not about parts like this one" and "switched off here". Both are real
    information — a scope that is wrong is found by reading them — and neither is
    what anybody opened the card for, so both fold. Same caret as .superseded. */
-details.not-here > summary {
-  cursor: pointer;
-  list-style: none;
-}
-
-details.not-here > summary::-webkit-details-marker {
-  display: none;
-}
-
-details.not-here > summary::before {
-  content: "▸";
-  display: inline-block;
-  width: 1em;
-  transition: transform 0.12s ease;
-}
-
-details.not-here[open] > summary::before {
-  transform: rotate(90deg);
-}
-
 details.not-here > .notes-list {
   margin-left: 1em;
 }
@@ -5956,11 +5071,6 @@ details.not-here > .notes-list {
   width: 100%;
   /* Centred, because the height budget can leave it narrower than the card. */
   margin: 0 auto;
-}
-
-.sim-stage {
-  line-height: 0;
-  position: absolute;
 }
 
 .sim-layer {
@@ -6124,15 +5234,10 @@ details.not-here > .notes-list {
 }
 
 /* ---------------------------------------------------------------- editor */
+
 /* The schematic editor. Colours that belong to the DRAWING come from the
    KiCad theme (see /api/sim/theme); everything here is interface — selection,
    preview, the part being placed — and so follows the app's own palette. */
-.sch-editor {
-  display: flex;
-  flex-direction: column;
-  gap: 0.7rem;
-}
-
 .sch-tools {
   flex-wrap: wrap;
 }
@@ -6194,8 +5299,6 @@ details.not-here > .notes-list {
   opacity: 0.35;
 }
 
-/* A part a live run can steer. Only ever drawn in live mode — a hotspot over
-   every symbol would swallow the clicks that pick a net. */
 /* Every part is clickable, so every part has one of these. It is INVISIBLE
    until the pointer is on it: an 87-part sheet drawn in 87 accent boxes is a
    diagram of the hit targets, not of the circuit. What stays visible is what
@@ -6237,7 +5340,7 @@ details.not-here > .notes-list {
 .sim-knob.on {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
 }
 
 /* A sub-sheet frame on the project's schematic tab: click to go into it. */
@@ -6339,46 +5442,6 @@ details.not-here > .notes-list {
 }
 
 /* --------------------------------------------------- scenarios + verdicts */
-.sim-scenarios {
-  display: flex;
-  flex-direction: column;
-  gap: 0.7rem;
-}
-
-.sim-runs {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.5rem;
-}
-
-.sim-run {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 2px;
-  text-align: left;
-  padding: 0.45rem 0.7rem;
-  min-width: 14rem;
-}
-
-.sim-run .muted {
-  font-size: 11px;
-}
-
-.sim-analysis {
-  align-items: center;
-  margin-bottom: 0;
-}
-
-.sim-analysis select.text {
-  width: 7rem;
-}
-
-.sim-analysis input.text {
-  width: 8rem;
-  font-family: var(--mono);
-}
-
 .sim-verdict-head {
   display: flex;
   align-items: center;
@@ -6413,7 +5476,7 @@ details.not-here > .notes-list {
 }
 
 .sim-verdict-mark {
-  color: var(--ok, #1d7f4f);
+  color: var(--ok);
   font-weight: 600;
 }
 
@@ -6429,7 +5492,7 @@ details.not-here > .notes-list {
   color: var(--muted);
 }
 
-.sim-control {
+textarea.sim-control {
   width: 100%;
   font-family: var(--mono);
   font-size: 12px;
@@ -6519,8 +5582,8 @@ details.not-here > .notes-list {
 .fs-steps li.done { color: var(--ok); }
 .fs-steps li.active { color: var(--text); font-weight: 600; }
 .fs-ico { width: 16px; text-align: center; }
-.fs-bar { height: 10px; width: 50%; background: var(--surface-2); border-radius: 4px; overflow: hidden; }
-.fs-bar i { display: block; height: 100%; background: var(--accent); transition: width 0.3s; }
+.fs-progress .progress-bar { width: 50%; }
+.fs-progress .progress-bar > i { transition: width 0.3s; }
 .fs-chart { width: 100%; height: auto; font-family: var(--sans); font-size: 11px; }
 .fs-chart-plot { fill: var(--surface); stroke: var(--line); }
 .fs-grid { stroke: var(--line); stroke-width: 1; opacity: 0.5; }
@@ -6532,11 +5595,9 @@ details.not-here > .notes-list {
 .fs-modal { position: fixed; inset: 0; z-index: 60; background: var(--scrim); display: flex; align-items: center; justify-content: center; padding: 20px; }
 .fs-modal-box { max-width: 980px; width: 100%; max-height: 86vh; overflow: auto; }
 .fs-modal-head { display: flex; gap: 12px; align-items: center; margin-bottom: 10px; }
-.fs-modal-head .fs-field { flex: 1; }
 .fs-modal-foot { display: flex; gap: 8px; align-items: center; margin-top: 10px; }
 .fs-rules-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .fs-rules-grid .fs-span { grid-column: 1 / -1; }
-.fs-coat td { background: var(--surface-2); }
 @media (max-width: 1100px) {
   .fs-lower { grid-template-columns: 1fr; }
   .fs-board-cards, .fs-rules-grid { grid-template-columns: 1fr; }
@@ -6544,18 +5605,6 @@ details.not-here > .notes-list {
 .fs-notice { border: 1px solid var(--line); border-left: 4px solid var(--accent); border-radius: var(--radius);
   padding: 8px 12px; margin: 8px 0; background: var(--surface-2); }
 .fs-notice.warn { border-left-color: var(--warn); background: var(--warn-soft); }
-
-/* Demand card (Orders page and the project Orders tab). */
-.demand-table { table-layout: fixed; }
-.demand-table th:nth-child(1), .demand-table td:nth-child(1) { width: 16%; }
-.demand-table th:nth-child(2), .demand-table td:nth-child(2) { width: 9%; }
-.demand-table th:nth-child(3), .demand-table td:nth-child(3) { width: 8%; }
-/* "Sellable now" is the widest header on the row and was cut to "SELLABLE N…"
-   at the 9% every other figure column takes. A header that names the rule the
-   column applies has to be readable, or the rule is not stated anywhere. */
-.demand-table th:nth-child(4), .demand-table td:nth-child(4) { width: 12%; }
-.demand-table th:nth-child(5), .demand-table td:nth-child(5) { width: 9%; }
-.demand-table th:nth-child(6), .demand-table td:nth-child(6) { width: 9%; }
 
 /* Order page: two wide tables on the left (9 and 7 columns), two short cards
    on the right — the generic 40/60 split truncated every header. */
@@ -6576,24 +5625,6 @@ details.not-here > .notes-list {
 @media (max-width: 1100px) {
   .order-page .detail-right { display: block; }
 }
-
-/* Order tables size to their content and scroll inside .table-wrap when the
-   card is too narrow — nothing is ever clipped. Headers, numbers and dates
-   stay on one line; names and free text may wrap. */
-.order-table { table-layout: auto; width: 100%; }
-.order-table th, .order-table td.num, .order-table td.mono, .order-table td.nowrap { white-space: nowrap; }
-.order-table td { overflow: visible; text-overflow: clip; }
-.order-table td.expand-cell { white-space: normal; }
-.order-lines-table td.project { white-space: nowrap; max-width: 240px; overflow: hidden; text-overflow: ellipsis; }
-.order-table th:last-child, .order-table td:last-child { white-space: nowrap; width: 1%; padding-right: 14px; }
-.order-table .btn-sm { margin: 0; }
-
-/* Every sortable header says so: a faint glyph that brightens on hover, and the
-   whole header cell is the click target — before this the title alone was the
-   button and nothing marked it as one (2026-09-07). */
-.th-sort { display: block; width: 100%; text-align: inherit; }
-.sort-hint { font-size: 9px; margin-left: 4px; opacity: 0.3; }
-.th-sort:hover .sort-hint { opacity: 1; color: var(--accent); }
 
 /* Datasheet card: the parsed revision label and the shared-file marker. */
 .ds-revision {
@@ -6637,16 +5668,11 @@ details.not-here > .notes-list {
 .stk td.stk-act { text-align: right; }
 .stk .stk-rowbtns { display: inline-flex; gap: 3px; align-items: center; white-space: nowrap; }
 .stk .stk-rowbtns .btn { padding: 0 6px; }
-.stk .stk-fixed { font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.04em; }
 /* An editor row holds inputs and selects. They must not be clipped by the ellipsis
    rules the read-only table needs, and a cell with two boxes in it has to be allowed
    to show both. */
 .stk-edit td { padding: 3px 8px; overflow: visible; white-space: normal; }
 .stk-edit .text, .stk-edit select { width: 100%; max-width: none; }
-.stk-edit .fs-inline { display: flex; gap: 4px; align-items: center; }
-.stk-edit .fs-inline .text { width: auto; min-width: 0; flex: 1; max-width: none; }
-.stk-edit .fs-check { margin: 0; white-space: nowrap; }
-.stk-edit .fs-check input { flex: none; }
 .stk-single.stk-has-extra col.stk-c-t { width: 8%; }
 .stk-single.stk-has-extra col.stk-c-dk { width: 5%; }
 /* A profile cell is ONE line, like every other row: the stackup's rhythm depends on
@@ -6704,7 +5730,7 @@ details.not-here > .notes-list {
   position: sticky; top: 0; z-index: 1;
   background: var(--surface-2); color: var(--muted);
   font-family: var(--mono); font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em;
-  font-weight: 600; text-align: left; white-space: nowrap;
+  font-weight: 600; text-align: left;
   padding: 6px 10px; border-bottom: 1px solid var(--line);
 }
 .stk td { padding: 4px 10px; border-bottom: 1px solid var(--stk-edge); color: var(--text); }
@@ -6712,7 +5738,6 @@ details.not-here > .notes-list {
 .stk .stk-right { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .stk th.stk-grp { text-align: center; border-left: 1px solid var(--line); }
 .stk th.stk-sub2 { top: 27px; font-size: 10px; letter-spacing: 0.02em; }
-.stk .stk-sub { font-size: 9px; opacity: 0.8; }
 .stk .stk-verdict { white-space: nowrap; }
 .stk .stk-empty { padding: 14px; text-align: center; }
 /* A row's note appears on hover over its ⓘ. The browser's own `title` bubble takes
@@ -6723,11 +5748,7 @@ details.not-here > .notes-list {
 .stk .stk-info:hover, .stk .stk-info:focus-visible { color: var(--accent); }
 .stk .stk-tip {
   position: absolute; left: 0; top: calc(100% + 6px); z-index: 5;
-  width: 320px; max-width: 60vw; padding: 7px 10px;
-  background: var(--surface); color: var(--text); border: 1px solid var(--line);
-  border-radius: var(--radius); box-shadow: var(--modal-shadow);
-  font-size: 11.5px; line-height: 1.4; white-space: normal; text-align: left;
-  opacity: 0; visibility: hidden; transition: opacity 0.12s;
+  width: 320px; max-width: 60vw; line-height: 1.4;
 }
 .stk .stk-info:hover .stk-tip, .stk .stk-info:focus-visible .stk-tip { opacity: 1; visibility: visible; }
 /* the last rows would push their bubble off the bottom of the card */
@@ -6743,7 +5764,7 @@ details.not-here > .notes-list {
 
 /* the proportional thickness rail — the graphical half of the table */
 .stk .stk-rail { padding: 4px 8px; }
-.stk .stk-bar { display: block; height: 10px; min-width: 3px; border-radius: 2px; opacity: 0.85; }
+.stk .stk-bar { display: block; height: 10px; min-width: 3px; border-radius: var(--radius-3xs); opacity: 0.85; }
 
 /* one background per layer kind, and the rail in the same hue at drawing strength */
 .stk tr.stk-overlay { --stk-fill: var(--stk-overlay); --stk-ink: var(--stk-overlay-ink); }
@@ -6793,7 +5814,7 @@ details.not-here > .notes-list {
 .stk-legend { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin: 8px 0 0; font-size: 11.5px; color: var(--muted); }
 .stk-legend-note { flex: 1 1 220px; min-width: 0; }
 .stk-legend-item { display: inline-flex; align-items: center; gap: 5px; }
-.stk-chip { width: 12px; height: 12px; border-radius: 3px; border: 1px solid var(--stk-edge); display: inline-block; }
+.stk-chip { width: 12px; height: 12px; border-radius: var(--radius-2xs); border: 1px solid var(--stk-edge); display: inline-block; }
 .stk-chip.stk-overlay { background: var(--stk-overlay); border-color: var(--stk-overlay-ink); }
 .stk-chip.stk-mask { background: var(--stk-mask); border-color: var(--stk-mask-ink); }
 .stk-chip.stk-finish { background: var(--stk-finish); border-color: var(--stk-finish-ink); }
@@ -6861,6 +5882,12 @@ details.not-here > .notes-list {
      side it opened to. */
   overflow-y: auto;
   overscroll-behavior: contain;
+  line-height: 1.45;
+  font-weight: 400;
+}
+/* The bubble itself, for this tip and the stackup table's `.stk-tip`. */
+.si-tip,
+.stk .stk-tip {
   padding: 7px 10px;
   background: var(--surface);
   color: var(--text);
@@ -6868,10 +5895,8 @@ details.not-here > .notes-list {
   border-radius: var(--radius);
   box-shadow: var(--modal-shadow);
   font-size: 11.5px;
-  line-height: 1.45;
   white-space: normal;
   text-align: left;
-  font-weight: 400;
   opacity: 0;
   visibility: hidden;
   transition: opacity 0.12s;
@@ -6937,11 +5962,10 @@ details.not-here > .notes-list {
 /* The mask and legend a PROJECT picks. Swatches rather than a dropdown: the thing
    being chosen is a colour, and a list of colour names is a worse way to show colours
    than the colours themselves. */
-.stk-colors .fs-field { flex: 0 0 auto; }
 .swatches { display: inline-flex; gap: 5px; align-items: center; }
 .swatch {
   width: 24px; height: 24px; padding: 0; border-radius: 5px; cursor: pointer;
-  border: 1px solid var(--line); box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.18);
+  border: 1px solid var(--line); box-shadow: inset 0 0 0 1px var(--stk-edge);
 }
 .swatch:hover:not(:disabled) { transform: translateY(-1px); }
 .swatch.on { outline: 2px solid var(--accent); outline-offset: 2px; border-color: var(--accent); }
@@ -6958,28 +5982,21 @@ details.not-here > .notes-list {
   min-width: 200px;
 }
 
-.sim-progress-track {
+.sim-progress .progress-bar {
   position: relative;
   flex: 1 1 120px;
-  height: 6px;
   min-width: 80px;
-  border-radius: 3px;
-  background: var(--line);
-  overflow: hidden;
 }
 
-.sim-progress-fill {
-  display: block;
-  height: 100%;
+.sim-progress .progress-bar > i {
   width: 0;
-  border-radius: 3px;
-  background: var(--accent);
+  border-radius: var(--radius-2xs);
   transition: width 0.3s linear;
 }
 
 /* No fraction to show yet: kicad-cli reports nothing about its own progress,
    and a bar frozen at zero reads as a stall. */
-.sim-progress-track.waiting .sim-progress-fill {
+.sim-progress .progress-bar.waiting > i {
   width: 40%;
   transition: none;
   animation: sim-progress-sweep 1.1s ease-in-out infinite;
@@ -6991,8 +6008,8 @@ details.not-here > .notes-list {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .sim-progress-track.waiting .sim-progress-fill { animation: none; width: 100%; opacity: 0.4; }
-  .sim-progress-fill { transition: none; }
+  .sim-progress .progress-bar.waiting > i { animation: none; width: 100%; opacity: 0.4; }
+  .sim-progress .progress-bar > i { transition: none; }
 }
 
 .sim-progress-text {
@@ -7010,41 +6027,6 @@ details.not-here > .notes-list {
 
 @media (max-width: 900px) {
   .sim-plots-hint { display: none; }
-}
-
-/* The unfold button on a `FoldList` — sits under the rows it reveals, muted
-   until hovered, because it is navigation for the card and not an action on
-   the data in it. */
-.fold-more {
-  margin-top: 6px;
-  padding: 2px 8px;
-  font-size: 12px;
-  color: var(--muted);
-}
-.fold-more:hover {
-  color: var(--text);
-}
-
-/* A `.seg` used as a filter chip set rather than a two-way switch: it holds one
-   button per project and has to wrap, where the switch form never does. */
-.seg.seg-wrap {
-  flex-wrap: wrap;
-  height: auto;
-  margin-bottom: 8px;
-}
-
-/* The reference designators behind a held-parts row. They wrap — a long refs
-   list is the reason they are not a column. */
-.held-refs {
-  padding: 4px 2px 8px;
-  white-space: normal;
-  line-height: 1.5;
-}
-.held-refs-project + .held-refs-project {
-  margin-top: 6px;
-}
-.held-refs-board {
-  padding-left: 12px;
 }
 
 /* The help marker on a value that was rounded for display. Same marker, warmer
@@ -7076,16 +6058,18 @@ details.not-here > .notes-list {
 }
 /* A button that reads as a link. Used where a fold's handle is a whole label
    rather than a caret, so the target is the text people aim at. */
-.linklike {
+.linklike,
+.btn-link {
   background: none;
   border: 0;
   padding: 0;
   font: inherit;
-  color: inherit;
   cursor: pointer;
   text-align: left;
 }
+.linklike { color: inherit; }
 .linklike:hover { color: var(--copper); }
+.btn-link { align-self: flex-start; color: var(--accent); }
 
 /* The review state and the facts underneath it, on one line. One word was
    doing three jobs; these are the jobs. Wraps rather than pushing a card
@@ -7119,9 +6103,6 @@ details.not-here > .notes-list {
   background: var(--surface-2);
   padding: 10px 12px;
 }
-.process-stage.programmable {
-  border-color: var(--accent);
-}
 .process-stage-head {
   display: flex;
   justify-content: space-between;
@@ -7133,3 +6114,134 @@ details.not-here > .notes-list {
   margin-top: 8px;
   padding-top: 6px;
 }
+
+/* The process board (decision 0103, components/process/ProcessBoard.tsx): the
+   fields run on a snake path, 5 to a row, placed by inline grid positions. Under
+   900 px the fields stack in one column, and every arrow points down. */
+.process-board {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 24px minmax(0, 1fr) 24px minmax(0, 1fr) 24px minmax(0, 1fr) 24px minmax(0, 1fr);
+  row-gap: 4px;
+  align-items: stretch;
+}
+.pf-cell { display: grid; min-width: 0; }
+.pf {
+  --pf-state: var(--line);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  padding: 8px 10px 10px;
+  font-size: 13px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-top: 5px solid var(--pf-state);
+  border-radius: var(--radius);
+}
+.pf.done, .mini-board i.done, .pf-legend i.done { --pf-state: var(--ok); }
+.pf.ready, .mini-board i.ready, .pf-legend i.ready { --pf-state: var(--accent); }
+.pf.short, .mini-board i.short, .pf-legend i.short { --pf-state: var(--warn); }
+.pf.blocked, .mini-board i.blocked, .pf-legend i.blocked { --pf-state: var(--err); }
+.pf.optional { border-left-style: dashed; border-right-style: dashed; border-bottom-style: dashed; }
+.pf.clickable { cursor: pointer; }
+.pf.selected { box-shadow: 0 0 0 2px var(--accent); }
+.pf:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.pf-head { display: flex; flex-direction: column; gap: 1px; }
+.pf-title { font-weight: 600; line-height: 1.25; min-width: 0; }
+.pf-n { font-family: var(--mono); font-weight: 400; color: var(--muted); margin-right: 3px; }
+.pf-station { font-family: var(--mono); font-size: 10px; letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted); }
+.pf-station.bench { color: var(--copper); }
+.pf-nums { display: flex; justify-content: space-between; gap: 6px; flex-wrap: wrap; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.pf-can { font-size: 12px; }
+.pf-can b { font-family: var(--mono); font-size: 16px; color: var(--accent); }
+.pf-why { font-size: 12px; color: var(--muted); }
+.pf-chips { display: flex; flex-direction: column; gap: 4px; }
+.pf-chips .stat-chip { display: flex; justify-content: space-between; font-size: 11px; }
+.pf-chips .stat-chip > span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.pf-recipe { font-size: 12px; border-top: 1px dashed var(--line); padding-top: 5px; }
+.pf-act { margin-top: auto; display: flex; flex-wrap: wrap; gap: 6px; }
+.pf-arrow { align-self: center; justify-self: center; color: var(--muted); font-size: 17px; line-height: 1; padding: 2px 0; user-select: none; }
+.pf-arrow::before { content: "→"; }
+.pf-arrow.left::before { content: "←"; }
+.pf-arrow.down::before { content: "↓"; }
+@media (max-width: 900px) {
+  .process-board { display: flex; flex-direction: column; gap: 2px; }
+  .process-board .pf-arrow::before { content: "↓"; }
+}
+.pf-legend { display: flex; flex-wrap: wrap; gap: 4px 14px; margin-top: 10px; font-size: 12px; color: var(--muted); }
+.pf-legend span { display: inline-flex; align-items: center; gap: 6px; }
+.pf-legend i { width: 18px; height: 6px; border-radius: var(--radius-2xs); background: var(--pf-state); }
+.mini-board { display: inline-flex; gap: 3px; align-items: center; vertical-align: middle; }
+.mini-board i { width: 13px; height: 13px; border-radius: var(--radius-2xs); border: 1px solid transparent; background: var(--pf-state); }
+.mini-board i.idle { background: var(--surface-2); border-color: var(--line); }
+.mini-board i.optional { border: 1.5px dashed var(--muted); }
+.pf-legend i.idle { --pf-state: var(--line); }
+
+/* A count with a word, in a folded header, above a main list, on a board field. */
+.stat-chip {
+  display: inline-flex;
+  gap: 6px;
+  align-items: baseline;
+  max-width: 100%;
+  padding: 2px 8px;
+  font-size: 12px;
+  white-space: nowrap;
+  color: var(--text);
+  background: var(--surface-2);
+  border: 0;
+  border-radius: var(--radius-sm);
+}
+.stat-chip b,
+.fold-count { font-family: var(--mono); font-weight: 600; font-variant-numeric: tabular-nums; }
+.stat-chip.ok { background: var(--ok-soft); }
+.stat-chip.warn { background: var(--warn-soft); color: var(--warn); }
+.stat-chip.err { background: var(--err-soft); color: var(--err); }
+.stat-chip.acc { background: var(--accent-soft); color: var(--accent); }
+.stat-chip.on { box-shadow: inset 0 0 0 1px currentColor; }
+button.stat-chip { cursor: pointer; font-family: inherit; }
+.stat-row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 6px 0 10px; }
+.attention-row .stat-row { margin: 0; }
+
+/* FoldSection (components/FoldSection.tsx): one line that says what a list holds. */
+.fold-bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.fold-toggle {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  background: none;
+  border: 0;
+}
+button.fold-toggle { cursor: pointer; }
+/* The caret and the title wrap as one, so a narrow card never leaves the caret
+   on a line of its own. */
+.fold-title { display: inline-flex; gap: 8px; align-items: baseline; min-width: 0; }
+.fold-caret { flex: none; width: 12px; font-family: var(--mono); color: var(--muted); }
+.fold-toggle .card-title { margin: 0; }
+.fold-body { margin-top: 10px; }
+
+.fold-bare { margin-top: 12px; }
+.part-box .fold-bare { margin: 0; }
+.part-box .fold-bar { padding: 5px 8px; }
+.part-box .fold-bar .card-title { font-size: 12px; }
+.part-box .fold-body { margin: 0; border-top: 1px solid var(--line); }
+.attention-rows { display: flex; flex-direction: column; gap: 8px; }
+.attention-row { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 8px; }
+
+/* The scan box (components/ScanList.tsx). */
+.scan-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; align-items: center; }
+.scan-mark { font-size: 12px; white-space: nowrap; }
+.scan-mark.on { color: var(--ok); }
+.scan-mark.off { color: var(--warn); }
+.scan-last { margin-top: 8px; padding: 6px 10px; font-size: 13px; border-radius: var(--radius-sm); background: var(--surface-2); overflow-wrap: anywhere; }
+.scan-last.ok { background: var(--ok-soft); }
+.scan-last.warn { background: var(--warn-soft); color: var(--warn); }
+.scan-last.err { background: var(--err-soft); color: var(--err); }
+.scan-steps { display: flex; flex-direction: column; gap: 4px; margin-top: 10px; }
+.scan-preview { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; padding: 10px 12px; border: 1px dashed var(--muted); border-radius: var(--radius-sm); }

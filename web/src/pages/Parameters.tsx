@@ -44,9 +44,10 @@ import {
   type ParamSetRow,
   type ProjectInfo,
 } from "../api";
+import FoldSection, { StatChip } from "../components/FoldSection";
 import { useDialog } from "../components/Dialog";
 import { ErrorBanner, Spinner } from "../components/Ui";
-import { fmtWhen } from "../components/flasher/common";
+import { localWhen } from "../format";
 import { useStickyState } from "../useStickyState";
 
 /* Values are shown in the clear. Masking them was tried and removed the same
@@ -58,8 +59,7 @@ import { useStickyState } from "../useStickyState";
 type Row = { key: string; value: string };
 
 /** Values keyed by set id. Fetched decrypted, which is what editing in place
- *  costs: the dialog fetched them only when it opened. They stay masked on
- *  screen — a bench is usually a room with other people in it. */
+ *  costs: the dialog fetched them only when it opened. */
 type Values = Record<number, Row[]>;
 
 const sameRows = (a: Row[] | undefined, b: Row[] | undefined) =>
@@ -76,8 +76,8 @@ export default function Parameters() {
   const [saving, setSaving] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [refused, setRefused] = useState<Record<number, string>>({});
-  const [historyFor, setHistoryFor] = useState<number | null>(null);
-  const [history, setHistory] = useState<ParamRevisionRow[] | null>(null);
+  /** a save or a revert writes a revision: an open history reads it again */
+  const [historyTick, setHistoryTick] = useState(0);
 
   useEffect(() => {
     const ac = new AbortController();
@@ -120,20 +120,6 @@ export default function Parameters() {
     return reload();
   }, [reload]);
 
-  // Fetched only for the set whose fold is open — a set edited weekly
-  // accumulates rows nobody asked for.
-  useEffect(() => {
-    if (historyFor === null) return;
-    const ac = new AbortController();
-    setHistory(null);
-    listParamRevisions(historyFor, ac.signal)
-      .then(setHistory)
-      .catch((err) => {
-        if (!isAbortError(err)) setError(errorMessage(err));
-      });
-    return () => ac.abort();
-  }, [historyFor]);
-
   const edit = (id: number, i: number, patch: Partial<Row>) =>
     setDraft((cur) => ({
       ...cur,
@@ -149,7 +135,7 @@ export default function Parameters() {
       await putParamSet(valid!, ps.name, values, "", { note: notes[ps.id] ?? "", force });
       setRefused((cur) => ({ ...cur, [ps.id]: "" }));
       reload();
-      if (historyFor === ps.id) setHistory(await listParamRevisions(ps.id));
+      setHistoryTick((t) => t + 1);
     } catch (err) {
       const msg = errorMessage(err);
       setError(msg);
@@ -172,7 +158,7 @@ export default function Parameters() {
     try {
       await revertParamSet(ps.id, rev.revision_no);
       reload();
-      setHistory(await listParamRevisions(ps.id));
+      setHistoryTick((t) => t + 1);
     } catch (err) {
       setError(errorMessage(err));
     }
@@ -255,11 +241,26 @@ export default function Parameters() {
                     Delete
                   </button>
                 </div>
-                <p className="card-subtitle">
-                  {ps.updated_by ? `${ps.updated_by} · ` : ""}{fmtWhen(ps.updated_at)} · a save
+                <p className="muted dim">
+                  {ps.updated_by ? `${ps.updated_by} · ` : ""}{localWhen(ps.updated_at)} · a save
                   changes what the NEXT run of every version pointing here uses
                 </p>
 
+                <FoldSection
+                  bare
+                  title="Values"
+                  count={rows.length}
+                  foldKey={`params:${ps.id}:values`}
+                  forceOpen={dirty}
+                  chips={
+                    <>
+                      {dirty ? <StatChip tone="warn">not saved</StatChip> : null}
+                      {rows.some((r) => !(ps.used_by[r.key] ?? []).length) ? (
+                        <StatChip n={rows.filter((r) => !(ps.used_by[r.key] ?? []).length).length}>unused</StatChip>
+                      ) : null}
+                    </>
+                  }
+                >
                 <table className="data data-fixed param-keys-table">
                   <thead>
                     <tr>
@@ -333,6 +334,7 @@ export default function Parameters() {
                     })}
                   </tbody>
                 </table>
+                </FoldSection>
 
                 <div className="btn-row">
                   <button
@@ -392,70 +394,90 @@ export default function Parameters() {
                   </div>
                 ) : null}
 
-                <details
-                  open={historyFor === ps.id}
-                  onToggle={(e) =>
-                    setHistoryFor((e.currentTarget as HTMLDetailsElement).open ? ps.id : null)
-                  }
+                <FoldSection
+                  bare
+                  title="History"
+                  count={ps.revision_no}
+                  limit={0}
+                  foldKey={`params:${ps.id}:history`}
                 >
-                  <summary className="card-subtitle">
-                    History — what changed, when, and by whom
-                  </summary>
-                  {historyFor !== ps.id ? null : history === null ? (
-                    <Spinner label="Loading history…" />
-                  ) : history.length === 0 ? (
+                  {ps.revision_no ? (
+                    <ParamHistory setId={ps.id} tick={historyTick} onRevert={(r) => void revert(ps, r)} onError={setError} />
+                  ) : (
                     <p className="muted">
                       Nothing recorded yet. The log starts at the first save after the platform
                       began keeping one — an older value simply has no entry, which is not the
                       same as never having changed.
                     </p>
-                  ) : (
-                    <div className="version-timeline param-history">
-                      {history.map((r, i) => (
-                        <div key={r.id} className="version-row">
-                          <div className="version-head">
-                            <strong>r{r.revision_no}</strong>
-                            <span className="muted dim">{fmtWhen(r.created_at)}</span>
-                            {r.updated_by ? <span className="muted dim">{r.updated_by}</span> : null}
-                            {r.keys_added.length ? (
-                              <span className="pill ok">+{r.keys_added.join(", ")}</span>
-                            ) : null}
-                            {r.keys_removed.length ? (
-                              <span className="pill err">−{r.keys_removed.join(", ")}</span>
-                            ) : null}
-                            {r.changed.length ? (
-                              <span className="pill warn">changed {r.changed.join(", ")}</span>
-                            ) : null}
-                            <span className="rail-spacer" />
-                            {/* Not on the newest row: reverting to where you
-                                already are writes a revision that says nothing. */}
-                            {i > 0 && r.restorable ? (
-                              <button
-                                type="button"
-                                className="btn btn-sm"
-                                onClick={() => void revert(ps, r)}
-                                title="Write these values on top of the history as a new revision"
-                              >
-                                Revert to this
-                              </button>
-                            ) : null}
-                            {i > 0 && !r.restorable ? (
-                              <span className="muted dim" title="Recorded before the values were kept">
-                                values not kept
-                              </span>
-                            ) : null}
-                          </div>
-                          {r.note ? <div className="version-changes muted">{r.note}</div> : null}
-                        </div>
-                      ))}
-                    </div>
                   )}
-                </details>
+                </FoldSection>
               </div>
             );
           })
         )}
       </div>
+    </div>
+  );
+}
+
+/** A set's revisions, read when its fold opens: what changed, when, and by whom.
+ *  Only the open fold fetches, because a set edited weekly accumulates rows nobody
+ *  asked for. */
+function ParamHistory({ setId, tick, onRevert, onError }: {
+  setId: number;
+  tick: number;
+  onRevert: (r: ParamRevisionRow) => void;
+  onError: (message: string) => void;
+}) {
+  const [history, setHistory] = useState<ParamRevisionRow[] | null>(null);
+  useEffect(() => {
+    const ac = new AbortController();
+    listParamRevisions(setId, ac.signal)
+      .then(setHistory)
+      .catch((err) => { if (!isAbortError(err)) onError(errorMessage(err)); });
+    return () => ac.abort();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [setId, tick]);
+  if (history === null) return <Spinner label="Loading history…" />;
+  return (
+    <div className="version-timeline param-history">
+      {history.map((r, i) => (
+        <div key={r.id} className="version-row">
+          <div className="version-head">
+            <strong>r{r.revision_no}</strong>
+            <span className="muted dim">{localWhen(r.created_at)}</span>
+            {r.updated_by ? <span className="muted dim">{r.updated_by}</span> : null}
+            {r.keys_added.length ? (
+              <span className="pill ok">+{r.keys_added.join(", ")}</span>
+            ) : null}
+            {r.keys_removed.length ? (
+              <span className="pill err">−{r.keys_removed.join(", ")}</span>
+            ) : null}
+            {r.changed.length ? (
+              <span className="pill warn">changed {r.changed.join(", ")}</span>
+            ) : null}
+            <span className="rail-spacer" />
+            {/* Not on the newest row: reverting to where you
+                already are writes a revision that says nothing. */}
+            {i > 0 && r.restorable ? (
+              <button
+                type="button"
+                className="btn btn-sm"
+                onClick={() => onRevert(r)}
+                title="Write these values on top of the history as a new revision"
+              >
+                Revert to this
+              </button>
+            ) : null}
+            {i > 0 && !r.restorable ? (
+              <span className="muted dim" title="Recorded before the values were kept">
+                values not kept
+              </span>
+            ) : null}
+          </div>
+          {r.note ? <div className="version-changes muted">{r.note}</div> : null}
+        </div>
+      ))}
     </div>
   );
 }

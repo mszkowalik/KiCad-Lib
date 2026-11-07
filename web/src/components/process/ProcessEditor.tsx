@@ -52,7 +52,7 @@ function nextKey(prefix: string, keys: string[]): string {
 
 /** The four steps every process has: the supplier assembles the board, the
  *  batch receives it, the bench programs it, a person marks it finished. */
-export function templateGraph(): ProcessGraph {
+function templateGraph(): ProcessGraph {
   return {
     steps: [
       { key: "assembly", label: "Board from the assembler", kind: "assembly", required: true },
@@ -307,7 +307,7 @@ export default function ProcessEditor({ draft, internalParts, deployments, onSav
                 </select>
               </Field>
               {s.kind !== "finish" ? (
-                <Field label="Required">
+                <Field group label="Required">
                   <CheckField checked={!!s.required}
                     disabled={s.kind === "assembly" || s.kind === "receive" || s.kind === "program"}
                     onChange={(v) => patchStep(s.key, { required: v })}>
@@ -316,7 +316,7 @@ export default function ProcessEditor({ draft, internalParts, deployments, onSav
                 </Field>
               ) : null}
               {DEPLOYMENT_KIND_FOR[s.kind] ? (
-                <Field label="Procedure" hint={`the ${DEPLOYMENT_KIND_FOR[s.kind]} deployment the bench runs for this step`}>
+                <Field label="Procedure" hint={`the ${DEPLOYMENT_KIND_FOR[s.kind]} procedure the bench runs for this step`}>
                   <select className="text" value={s.deployment_id ?? ""}
                     onChange={(e) => patchStep(s.key, { deployment_id: Number(e.target.value) || null })}>
                     <option value="">none — the operator picks</option>
@@ -342,7 +342,7 @@ export default function ProcessEditor({ draft, internalParts, deployments, onSav
               <p className="muted dim">The first step: one unit per board the batch's assembly order delivered.</p>
             ) : s.kind === "assembly" ? (
               <p className="muted dim">
-                Recorded by a person on the batch's Process tab, with “Record assembly…”: pre-filled
+                Recorded by a person on the batch's Floor tab, with “Record assembly…”: pre-filled
                 from the JLC order, or filled in by hand for another assembly house. Receiving the
                 boards does not record it.
               </p>

@@ -83,8 +83,7 @@ Required in `.env` (compose refuses to start without them):
 generated symbols embed it in datasheet links.
 
 Pin a build with `IMAGE_TAG=sha-abc1234` rather than riding `latest`. The
-server needs no repo checkout: `REPO_DIR` is read only by the retired YAML
-importer.
+server needs no repo checkout.
 
 ## Hooking up KiCad
 

@@ -29,6 +29,7 @@ const LIMITS = { note: 400, passNote: 300, revokeReason: 300 } as const;
 
 
 import { ErrorBanner, ReviewPill, Spinner, actorMark } from "./Ui";
+import { plural } from "../format";
 
 /** Documentation verification for one component / symbol / footprint.
  *
@@ -663,8 +664,7 @@ export default function ReviewCard({
           <li className="note muted">
             <details className="not-here">
               <summary>
-                {detail.inapplicable.length} check
-                {detail.inapplicable.length === 1 ? "" : "s"} not about parts like this one
+                {plural(detail.inapplicable.length, "check")} not about parts like this one
               </summary>
               <ul className="notes-list">
                 {detail.inapplicable.map((item) => (
@@ -690,8 +690,7 @@ export default function ReviewCard({
           <li className="note muted">
             <details className="not-here">
               <summary>
-                {detail.switched_off.length} check
-                {detail.switched_off.length === 1 ? "" : "s"} switched off for this subject
+                {plural(detail.switched_off.length, "check")} switched off for this subject
               </summary>
               <ul className="notes-list">
                 {detail.switched_off.map((item) => (

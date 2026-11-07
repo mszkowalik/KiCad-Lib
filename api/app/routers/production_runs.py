@@ -7,6 +7,7 @@ A batch's device count is `DeviceUnit.production_run_id`, never the
 from __future__ import annotations
 
 import uuid
+from datetime import date
 
 from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
 from fastapi.responses import Response
@@ -17,7 +18,7 @@ from sqlalchemy.orm import Session
 from .. import models as M
 from ..db import get_db
 from ..services import companies as company_svc
-from ..services import orders, production, project_bom, run_actuals, storage
+from ..services import fx, orders, production, project_bom, run_actuals, storage
 from .util import acting_name, audit, content_disposition
 
 router = APIRouter(prefix="/api", tags=["production-runs"])
@@ -53,8 +54,14 @@ def _run_snapshot_board(db: Session, r: M.ProductionRun) -> tuple[M.ProjectSnaps
 
 def _run_json(r: M.ProductionRun, db: Session | None = None, with_detail: bool = False,
               device_counts: dict[int, int] | None = None) -> dict:
+    from sqlalchemy.orm import object_session
+
+    sess = db or object_session(r)
     out = {
         "id": r.id,
+        # What a stored USD figure of this batch reads in PLN: the rate at the
+        # batch's date, so a batch's PLN cost does not move later (decision 0103).
+        "pln_per_usd": fx.pln_per_usd(sess, project_bom.run_pricing_date(r)) if sess is not None else None,
         "project_id": r.project_id,
         # Decision 0063: the company that made the batch.
         "company_id": r.company_id,
@@ -74,12 +81,6 @@ def _run_json(r: M.ProductionRun, db: Session | None = None, with_detail: bool =
         "order_ref": r.order_ref,
         "order_date": r.order_date,
         "created_at": r.created_at.isoformat(),
-        # What this batch is set to be programmed with. The bench compares the
-        # version the operator picked against these two: equal is a normal run,
-        # different is an OVERRIDE and needs a reason. Both empty (every batch
-        # today) means the operator's choice is the only one there is.
-        "deployment_version_id": r.deployment_version_id,
-        "deployment_channel": r.deployment_channel,
         # Must a unit of this batch pass the test? Each programming run copies
         # this when it starts, so changing it here only affects work still to
         # be done.
@@ -192,7 +193,7 @@ class RunPatch(BaseModel):
     company_id: int | None = None
 
 
-def _runs_payload(db: Session, runs: list[M.ProductionRun]) -> list[dict]:
+def _runs_payload(db: Session, runs: list[M.ProductionRun], *, with_board: bool = False) -> list[dict]:
     """The list shape, with ONE grouped device count for the whole page — a
     count per run turns one page into one query per batch."""
     counts = dict(
@@ -201,17 +202,27 @@ def _runs_payload(db: Session, runs: list[M.ProductionRun]) -> list[dict]:
         .group_by(M.DeviceUnit.production_run_id).all()
     )
     names = {p.id: p.name for p in db.query(M.Project).all()}
+    from ..services import twins as twins_svc
+
+    pools: dict[int | None, dict] = {}
     out = []
     for r in runs:
         j = _run_json(r, device_counts=counts)
         # The cross-project list needs a NAME, not an id, and the per-project
         # list carries it too so one table component renders both.
         j["project"] = names.get(r.project_id, "?")
+        # The mini board of a batch in work (decision 0103). One stock replay
+        # per company, however many batches the list holds.
+        if with_board and r.process_version_id and r.status not in twins_svc.BATCH_OVER:
+            scope = run_actuals.run_scope(db, r)
+            if scope not in pools:
+                pools[scope] = run_actuals.pool_state(db, as_of=date.today().isoformat(), company_id=scope)
+            j["process_board"] = twins_svc.board(db, r, pool=pools[scope])
         out.append(j)
     return out
 
 
-@router.get("/runs")
+@router.get("/runs", openapi_extra={"x-agent-tool": "list_batches"})
 def list_all_runs(request: Request = None, project_id: int | None = None, db: Session = Depends(get_db)):
     """Every production batch, across every project.
 
@@ -230,7 +241,7 @@ def list_all_runs(request: Request = None, project_id: int | None = None, db: Se
     q = q.filter(M.ProductionRun.company_id.in_(scope) | M.ProductionRun.company_id.is_(None))
     runs = q.order_by(M.ProductionRun.run_date.desc().nullslast(),
                       M.ProductionRun.created_at.desc()).all()
-    return _runs_payload(db, runs)
+    return _runs_payload(db, runs, with_board=True)
 
 
 @router.get("/projects/{project_id}/runs")
@@ -753,44 +764,3 @@ def render_gerbers(set_id: int, body: GerberRenderIn, db: Session = Depends(get_
 
 # ------------------------------------------------------------------ devices
 
-class DevicesIn(BaseModel):
-    """Bulk add: one serial per line in `serials`, or a structured list."""
-
-    serials: str = ""
-    items: list[dict] | None = None
-
-
-@router.post("/runs/{run_id}/devices")
-def add_devices(run_id: int, body: DevicesIn, db: Session = Depends(get_db)):
-    r = _run(db, run_id)
-    existing = {d.serial for d in r.devices}
-    to_add: list[tuple[str, str]] = []
-    for line in (body.serials or "").splitlines():
-        serial = line.strip()
-        if serial:
-            to_add.append((serial, ""))
-    for item in body.items or []:
-        serial = str(item.get("serial", "")).strip()
-        if serial:
-            to_add.append((serial, str(item.get("note", ""))))
-    added = skipped = 0
-    for serial, note in to_add:
-        if serial in existing:
-            skipped += 1
-            continue
-        db.add(M.RunDevice(run_id=r.id, serial=serial, note=note))
-        existing.add(serial)
-        added += 1
-    audit(db, "run.devices.add", "production_run", r.id, {"added": added, "skipped": skipped})
-    db.commit()
-    return {"added": added, "skipped_duplicates": skipped, "total": len(existing)}
-
-
-@router.delete("/run-devices/{device_id}")
-def delete_device(device_id: int, db: Session = Depends(get_db)):
-    d = db.get(M.RunDevice, device_id)
-    if d is None:
-        raise HTTPException(404, "device not found")
-    db.delete(d)
-    db.commit()
-    return {"deleted": device_id}

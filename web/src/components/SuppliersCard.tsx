@@ -104,7 +104,7 @@ export default function SuppliersCard() {
 
   return (
     <div className="card pad">
-      <h2>Suppliers</h2>
+      <h2 className="card-title">Suppliers</h2>
       <p className="muted dim">
         A part that sets no supplier order of its own is priced by the first supplier in this list
         that has a price for it. One supplier gives the whole price ladder. JLCPCB and LCSC are

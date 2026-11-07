@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 import {
   deleteSimModel,
   errorMessage,
@@ -9,7 +9,9 @@ import {
   type SimModelDetail as SimModelDetailT,
 } from "../api";
 import { useDialog } from "../components/Dialog";
-import { BackLink, ErrorBanner, Spinner } from "../components/Ui";
+import FoldSection from "../components/FoldSection";
+import { BackLink, ErrorBanner, LinkList, Spinner, VersionRows } from "../components/Ui";
+import { localWhen } from "../format";
 
 /** A sim model: the .subckt source, its interface, who links to it, and the
  *  paste box that PUBLISHES the next version. No preview — there is nothing
@@ -89,13 +91,13 @@ export default function SimModelDetail() {
     }
   };
 
+  const back = <BackLink to="/library/templates?tab=sim">← All templates</BackLink>;
+
   if (error) {
     return (
       <div className="main-solo">
         <div className="page">
-          <BackLink to="/library/templates?tab=sim" className="backlink">
-            ← All templates
-          </BackLink>
+          {back}
           <ErrorBanner message={error} />
         </div>
       </div>
@@ -105,9 +107,7 @@ export default function SimModelDetail() {
     return (
       <div className="main-solo">
         <div className="page">
-          <BackLink to="/library/templates?tab=sim" className="backlink">
-            ← All templates
-          </BackLink>
+          {back}
           <Spinner label="Loading sim model" />
         </div>
       </div>
@@ -117,9 +117,7 @@ export default function SimModelDetail() {
   return (
     <div className="main-solo">
       <div className="page">
-        <BackLink to="/library/templates?tab=sim" className="backlink">
-          ← All templates
-        </BackLink>
+        {back}
         <div className="toolbar">
           <h1 className="mono">{data.name}</h1>
           <span className="pill neutral">
@@ -170,33 +168,12 @@ export default function SimModelDetail() {
                   <td className="mono">{data.instantiates.join(", ")}</td>
                 </tr>
               ) : null}
-              {data.created_at ? (
-                <tr>
-                  <td>Published</td>
-                  <td>{new Date(data.created_at).toLocaleString()}</td>
-                </tr>
-              ) : null}
-              {data.created_by ? (
-                <tr>
-                  <td>Author</td>
-                  <td>{data.created_by}</td>
-                </tr>
-              ) : null}
-              {data.comment ? (
-                <tr>
-                  <td>Version note</td>
-                  <td>{data.comment}</td>
-                </tr>
-              ) : null}
+              <VersionRows at={data.created_at} by={data.created_by} note={data.comment} />
             </tbody>
           </table>
         </div>
 
-        <div className="card pad">
-          <h2 className="card-title">
-            Linked by {data.linked_symbols.length} symbol
-            {data.linked_symbols.length === 1 ? "" : "s"}
-          </h2>
+        <FoldSection title="Linked by symbols" count={data.linked_symbols.length} foldKey={`sim-model:${data.id}:linked`}>
           {data.linked_symbols.length === 0 ? (
             <p className="muted">
               {data.kind === "primitive"
@@ -204,18 +181,9 @@ export default function SimModelDetail() {
                 : "No symbol links to this model yet."}
             </p>
           ) : (
-            <p>
-              {data.linked_symbols.map((u, i) => (
-                <span key={u.id}>
-                  {i > 0 ? ", " : ""}
-                  <Link to={`/library/templates/symbols/${u.id}`} className="comp-link">
-                    {u.name}
-                  </Link>
-                </span>
-              ))}
-            </p>
+            <LinkList items={data.linked_symbols} to={(id) => `/library/templates/symbols/${id}`} />
           )}
-        </div>
+        </FoldSection>
 
         {data.source_text ? (
           <div className="card pad">
@@ -270,7 +238,7 @@ export default function SimModelDetail() {
             />
             <button
               type="button"
-              className="btn btn-accent"
+              className="btn btn-primary"
               disabled={filing || !text.trim() || !comment.trim() || text === data.source_text}
               onClick={() => void file()}
             >
@@ -290,7 +258,7 @@ export default function SimModelDetail() {
                   <tr key={v.version_no}>
                     <td className="mono">v{v.version_no}</td>
                     <td>
-                      {new Date(v.created_at).toLocaleString()} · {v.created_by}
+                      {localWhen(v.created_at)} · {v.created_by}
                       {v.comment ? ` — ${v.comment}` : ""}
                     </td>
                   </tr>

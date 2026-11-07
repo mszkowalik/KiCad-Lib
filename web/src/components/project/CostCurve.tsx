@@ -19,6 +19,7 @@ function niceTicks(max: number, count = 4): number[] {
 }
 
 import { price as fmtMoney } from "../../format";
+import DataTable from "../DataTable";
 
 export default function CostCurve({ points, currency }: { points: CurvePoint[]; currency: string }) {
   const [hover, setHover] = useState<number | null>(null);
@@ -117,30 +118,24 @@ export default function CostCurve({ points, currency }: { points: CurvePoint[]; 
         </div>
       ) : null}
       <div className="table-wrap">
-        <table className="data">
-          <thead>
-            <tr>
-              <th className="num">Volume</th>
-              <th className="num">Parts / device</th>
-              <th className="num">Extra / device</th>
-              <th className="num">Costs / device</th>
-              <th className="num">Total / device</th>
-              <th className="num">Run total</th>
-            </tr>
-          </thead>
-          <tbody>
-            {points.map((p) => (
-              <tr key={p.volume}>
-                <td className="num mono">{p.volume.toLocaleString()}</td>
-                <td className="num">{fmtMoney(p.bom_per_device, currency)}</td>
-                <td className="num">{fmtMoney(p.extra_per_device, currency)}</td>
-                <td className="num">{fmtMoney(p.cost_per_device, currency)}</td>
-                <td className="num">{fmtMoney(p.device_total, currency)}</td>
-                <td className="num">{fmtMoney(p.run_total, currency)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        <DataTable
+          rows={points}
+          rowKey={(p) => p.volume}
+          columns={[
+            { key: "volume", label: "Volume", width: 15, numeric: true, className: "mono", get: (p) => p.volume,
+              render: (p) => p.volume.toLocaleString() },
+            { key: "bom", label: "Parts / device", width: 17, numeric: true, get: (p) => p.bom_per_device,
+              render: (p) => fmtMoney(p.bom_per_device, currency) },
+            { key: "extra", label: "Extra / device", width: 17, numeric: true, get: (p) => p.extra_per_device,
+              render: (p) => fmtMoney(p.extra_per_device, currency) },
+            { key: "cost", label: "Costs / device", width: 17, numeric: true, get: (p) => p.cost_per_device,
+              render: (p) => fmtMoney(p.cost_per_device, currency) },
+            { key: "total", label: "Total / device", width: 17, numeric: true, get: (p) => p.device_total,
+              render: (p) => fmtMoney(p.device_total, currency) },
+            { key: "run", label: "Run total", width: 17, numeric: true, get: (p) => p.run_total,
+              render: (p) => fmtMoney(p.run_total, currency) },
+          ]}
+        />
       </div>
     </div>
   );

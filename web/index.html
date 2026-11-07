@@ -18,12 +18,12 @@
          the storage key has to match the one in that file. -->
     <script>
       (function () {
-        var pref = "system";
+        var pref = "dark";
         try {
           var saved = localStorage.getItem("ui-theme");
           if (saved === "light" || saved === "dark" || saved === "system") pref = saved;
         } catch (e) {
-          /* no storage — follow the OS */
+          /* no storage: the default */
         }
         var dark =
           pref === "dark" ||

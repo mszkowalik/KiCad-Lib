@@ -4,7 +4,7 @@ The platform writes the sales invoices of a company marked `issues_invoices`
 (7Sigma). The reasoning is in
 [decision 0066](../decisions/0066-the-platform-issues-7sigmas-sales-invoices.md).
 The code is `api/app/services/invoicing/` and `api/app/routers/sales_invoices.py`.
-The page is Production → Sales invoices.
+The page is Sales → Sales invoices.
 
 ## Rules
 
@@ -39,6 +39,15 @@ The page is Production → Sales invoices.
   written for April and re-dated into May is April's, and May stays free. A
   document without that month, such as the imported history, counts for the
   month of its issue date.
+* **A template's company and key are set once**, because `generate` finds a
+  month's draft by them. A second template with the same key in a company
+  answers 409. The form is "New template…" and "Edit" on Sales → Invoices.
+* **A template's day is `last` or 1 to 28.** The form offers only these. The API
+  does not check the value, and `generate` answers 422 with the bad-month message
+  to a day the month does not have.
+* **A template has no legal basis for an exemption.** A draft from a template
+  with a `zw` position has no `body.exemption`, so its XML is refused, and the
+  invoice panel has no control for `exemption_basis`. The form warns about this.
 * **`issue` checks what it records.** The KSeF number must start with the
   seller's NIP. The official XML must carry the invoice's number (P_2) and the
   seller's NIP, and the hash KSeF stated when it has one. A recorded KSeF
@@ -101,7 +110,9 @@ Element ORDER matters: the schema is a sequence, and the writer follows it.
 `POST /api/sales-invoices/import` (admin, dry run by default) takes the
 script's `rejestr.json`, `klienci.json`, `cykliczne.json` and `produkty.json`
 as uploads. A document already on the platform (same kind, number and date) is
-skipped; a buyer is matched by NIP, then by name.
+skipped; a buyer is matched by NIP, then by name. The control is "Import
+register…" on Sales → Invoices, and "Record issued elsewhere…" beside it is the
+one for the route below. An administrator sees both.
 
 ## Recorded history and files
 

@@ -1,4 +1,4 @@
-/** Production — the money answer in one place, and the trust checklist.
+/** Finance → Cost overview: the money answer in one place, and the trust checklist.
  *
  *  Everything here is a summary that links to the page that owns the detail:
  *  runs link to their own pages, the conservation row links to Invoices, the
@@ -23,8 +23,10 @@ import {
   type PartsStock,
 } from "../api";
 import { ErrorBanner, Spinner } from "../components/Ui";
-import { plain, usd } from "../format";
+import { plain, pln, plnAmount, plnNumber } from "../format";
+import { useTodayRate } from "../useTodayRate";
 import DataTable, { type Column } from "../components/DataTable";
+import CountTile from "../components/CountTile";
 
 interface Issue {
   text: string;
@@ -32,6 +34,7 @@ interface Issue {
 }
 
 export default function ProductionOverview() {
+  const rate = useTodayRate();
   const navigate = useNavigate();
   const [reg, setReg] = useState<InvoiceRegister | null>(null);
   const [stock, setStock] = useState<PartsStock | null>(null);
@@ -64,6 +67,8 @@ export default function ProductionOverview() {
               label: info.label,
               project: reg.projects[String(info.project_id)] ?? "?",
               qty: info.qty,
+              // PLN per USD at this batch's own date (decision 0103).
+              rate: info.pln_per_usd ?? null,
               cost: m.total_usd ?? 0,
               direct: m.direct_usd,
               components: m.components_usd,
@@ -77,8 +82,12 @@ export default function ProductionOverview() {
       .sort((a, b) => a.date.localeCompare(b.date) || a.rid - b.rid);
   }, [reg]);
 
+  /** A figure of the register, whose table has no room for the unit. */
+  const inPln = (v: number | null | undefined) => plnNumber(v, rate);
+
   const totals = useMemo(() => {
-    const cost = rows.reduce((s, r) => s + r.cost, 0);
+    // Batches at their own rates, so this sum can be taken only in PLN.
+    const cost = rows.reduce((s, r) => s + r.cost * (r.rate ?? 0), 0);
     const devices = rows.reduce((s, r) => s + r.qty, 0);
     const produced = rows.reduce((s, r) => s + r.produced, 0);
     return { cost, devices, produced };
@@ -89,34 +98,28 @@ export default function ProductionOverview() {
   const issues = useMemo<Issue[]>(() => {
     if (!reg) return [];
     const out: Issue[] = [];
-    for (const p of reg.documents.filter((d) => (d.doc_number || "").includes("PLACEHOLDER"))) {
-      out.push({
-        text: `Placeholder document ${p.doc_number} (${usd(p.total_usd, 2)}) — replace with the real invoice when it surfaces.`,
-        to: "/production/invoices",
-      });
-    }
     for (const u of reg.issues.unreconciled) {
       out.push({
         text: `${u.supplier} ${u.doc_number}: lines (${plain(u.lines_total)}) do not add up to the printed total (${plain(u.total_amount)} ${u.currency}).`,
-        to: "/production/invoices",
+        to: "/finance/invoices",
       });
     }
     for (const u of reg.issues.unassigned) {
       out.push({
-        text: `${u.supplier} ${u.doc_number}: ${usd(u.amount_usd, 2)} not assigned to anything yet.`,
-        to: "/production/invoices",
+        text: `${u.supplier} ${u.doc_number}: ${pln(u.amount_usd, rate)} not assigned to anything yet.`,
+        to: "/finance/invoices",
       });
     }
     for (const n of reg.issues.negative_stock ?? []) {
       out.push({
         text: `${n.component_name || n.mpn}: stock goes ${n.min_qty} at ${n.first_short} — a purchase document is missing.`,
-        to: "/production/stock",
+        to: "/stock",
       });
     }
     if (reg.summary.unknown_rates.length) {
       out.push({
         text: `No exchange rate for ${reg.summary.unknown_rates.join(", ")} — those documents count at face value, so the totals are understated.`,
-        to: "/admin?tab=rates",
+        to: "/finance/rates",
       });
     }
     if (stock) {
@@ -129,19 +132,19 @@ export default function ProductionOverview() {
           0,
         );
         out.push({
-          text: `${disagree.length} part(s) disagree with JLCPCB's consigned count (${usd(gap, 0)} at cost) — a purchase, a draw or a write-off is missing.`,
-          to: "/production/stock",
+          text: `${disagree.length} part(s) disagree with JLCPCB's consigned count (${pln(gap, rate, 0)} at cost) — a purchase, a draw or a write-off is missing.`,
+          to: "/stock",
         });
       }
       if (stock.totals.missing_invoice_parts > 0) {
         out.push({
           text: `${stock.totals.missing_invoice_parts} part(s) JLC holds have no purchase in the platform — a missing invoice.`,
-          to: "/production/stock",
+          to: "/stock",
         });
       }
     }
     return out;
-  }, [reg, rows, stock]);
+  }, [reg, stock, rate]);
 
   const runCols: Column<(typeof rows)[number]>[] = [
   {
@@ -154,12 +157,12 @@ export default function ProductionOverview() {
     width: 28,
     get: (r) => r.label,
     render: (r) => (
-      <Link className="comp-link" to={`/runs/${r.rid}`} onClick={(e) => e.stopPropagation()}>
+      <Link className="comp-link" to={`/production/batches/${r.rid}`} onClick={(e) => e.stopPropagation()}>
         {r.label}
       </Link>
     ),
   },
-  { key: "project", label: "Project", width: 14, className: "muted", get: (r) => r.project },
+  { key: "project", label: "Project", width: 12, className: "muted", get: (r) => r.project },
   // The batch's start date. It was already on the row and sorted the array; the
   // table now sorts by it, newest first, so the column has to be VISIBLE — a
   // default order nothing on screen explains reads as no order at all.
@@ -167,17 +170,17 @@ export default function ProductionOverview() {
   { key: "qty", label: "Units", width: 8, numeric: true, get: (r) => r.qty },
   {
     key: "cost",
-    label: "Cost USD",
-    width: 14,
+    label: "Cost",
+    width: 15,
     numeric: true,
-    get: (r) => r.cost,
-    title: (r) => `direct ${plain(r.direct)} + components ${plain(r.components)}`,
-    render: (r) => <>{plain(r.cost)}</>,
+    get: (r) => r.cost * (r.rate ?? 1),
+    title: (r) => `direct ${pln(r.direct, r.rate)} + components ${pln(r.components, r.rate)}`,
+    render: (r) => <>{pln(r.cost, r.rate)}</>,
   },
   {
     key: "produced",
     label: "Produced",
-    width: 12,
+    width: 10,
     numeric: true,
     get: (r) => r.produced,
     title: () => "devices recorded as produced on this batch — the denominator of its unit cost",
@@ -186,19 +189,19 @@ export default function ProductionOverview() {
   {
     key: "cost_dev",
     label: "Cost/dev",
-    width: 12,
+    width: 15,
     numeric: true,
-    get: (r) => r.unitCost ?? "",
+    get: (r) => (r.unitCost == null ? "" : r.unitCost * (r.rate ?? 1)),
     title: (r) => r.unitCost == null
       ? "No devices are recorded as produced yet, so there is nothing to divide by"
       : "What one device of this batch cost — carried onto whatever order ships it",
-    render: (r) => <>{r.unitCost == null ? "—" : plain(r.unitCost)}</>,
+    render: (r) => <>{r.unitCost == null ? "—" : pln(r.unitCost, r.rate)}</>,
   },
 ];
 
 
   if (error && !reg) {
-  return (
+    return (
       <div className="main-solo">
         <div className="page">
           <ErrorBanner message={error} />
@@ -210,7 +213,7 @@ export default function ProductionOverview() {
     return (
       <div className="main-solo">
         <div className="page">
-          <Spinner label="Loading production economics" />
+          <Spinner label="Loading the cost overview" />
         </div>
       </div>
     );
@@ -222,7 +225,7 @@ export default function ProductionOverview() {
     <div className="main-solo">
       <div className="page">
         <div className="toolbar">
-          <h1>Production</h1>
+          <h1>Cost overview</h1>
           <span className="toolbar-total">
             costs from settled invoices and pool draws · revenue lives on the orders
           </span>
@@ -234,24 +237,10 @@ export default function ProductionOverview() {
             {/* COSTS ONLY. A batch earns nothing — revenue and margin live on
                 the ORDER, and a device carries its batch's unit cost there
                 (decision 0043). */}
-            <div className="count-tile">
-              <span className="v">{usd(totals.cost, 0)}</span>
-              <span className="k">production cost</span>
-            </div>
-            <div className="count-tile">
-              <span className="v">{totals.devices.toLocaleString()}</span>
-              <span className="k">boards ordered</span>
-            </div>
-            <div className="count-tile">
-              <span className="v">{totals.produced.toLocaleString()}</span>
-              <span className="k">devices produced</span>
-            </div>
-            <div className="count-tile">
-              <span className="v">
-                {totals.produced ? usd(totals.cost / totals.produced, 2) : "—"}
-              </span>
-              <span className="k">avg cost / device produced</span>
-            </div>
+            <CountTile value={plnAmount(totals.cost, 0)} label="production cost" />
+            <CountTile value={totals.devices.toLocaleString()} label="boards ordered" />
+            <CountTile value={totals.produced.toLocaleString()} label="devices produced" />
+            <CountTile value={totals.produced ? plnAmount(totals.cost / totals.produced) : "—"} label="avg cost / device produced" />
           </div>
 
           {issues.length ? (
@@ -292,18 +281,18 @@ export default function ProductionOverview() {
               defaultSort={{ key: "date", dir: "desc" }}
               persistKey="production-runs"
               rowClass={() => "ledger-row"}
-              onRowClick={(r) => navigate(`/runs/${r.rid}`)}
+              onRowClick={(r) => navigate(`/production/batches/${r.rid}`)}
               empty="No batch has been charged yet."
             />
           </div>
         </div>
 
         <div className="card pad">
-          <h2 className="card-title">Where the money went</h2>
-          <p className="card-subtitle">
+          <h2 className="card-title">Where the money went{rate ? ", in PLN at today's rate" : ", in USD"}</h2>
+          <p className="muted dim">
             Every document&apos;s total lands in exactly one bucket — the conservation check.
-            Assign and split positions on <Link to="/production/invoices">Invoices</Link>; the
-            pool reconciles part by part on <Link to="/production/stock">Stock</Link>.
+            Assign and split positions on <Link to="/finance/invoices">Purchase invoices</Link>; the
+            pool reconciles part by part on <Link to="/stock">Stock</Link>.
           </p>
           <div className="table-wrap">
             <table className="data data-fixed invoice-sum-table">
@@ -323,20 +312,20 @@ export default function ProductionOverview() {
               </thead>
               <tbody>
                 <tr>
-                  <td className="num">{plain(s.total_usd)}</td>
-                  <td className="num">{plain(s.to_runs_usd)}</td>
-                  <td className="num">{plain(s.to_projects_usd)}</td>
-                  <td className="num">{plain(s.to_pool_usd)}</td>
-                  <td className="num">{plain(s.to_transformations_usd ?? 0)}</td>
-                  <td className="num">{plain(s.to_overhead_usd ?? 0)}</td>
+                  <td className="num">{inPln(s.total_usd)}</td>
+                  <td className="num">{inPln(s.to_runs_usd)}</td>
+                  <td className="num">{inPln(s.to_projects_usd)}</td>
+                  <td className="num">{inPln(s.to_pool_usd)}</td>
+                  <td className="num">{inPln(s.to_transformations_usd ?? 0)}</td>
+                  <td className="num">{inPln(s.to_overhead_usd ?? 0)}</td>
                   <td
                     className="num muted"
                     title={"Charged to nobody on purpose: reclaimable VAT, and prepaid "
                       + "components already in the pool.\n\n"
                       + Object.entries(s.excluded_by_reason_usd || {})
-                          .map(([r, v]) => `${r}: ${plain(v)}`).join("\n")}
+                          .map(([r, v]) => `${r}: ${inPln(v)}`).join("\n")}
                   >
-                    {plain(s.excluded_usd)}
+                    {inPln(s.excluded_usd)}
                     {s.excluded_unstated_usd ? (
                       <>
                         {" "}
@@ -348,23 +337,23 @@ export default function ProductionOverview() {
                             + "how $14,443 of manufacturing once sat charged to nobody "
                             + "while this page read clean."}
                         >
-                          {plain(s.excluded_unstated_usd)} unstated
+                          {inPln(s.excluded_unstated_usd)} unstated
                         </span>
                       </>
                     ) : null}
                   </td>
                   <td className={s.unassigned_usd ? "num" : "num muted"}>
                     {s.unassigned_usd ? (
-                      <span className="pill warn">{plain(s.unassigned_usd)}</span>
+                      <span className="pill warn">{inPln(s.unassigned_usd)}</span>
                     ) : (
-                      plain(s.unassigned_usd)
+                      inPln(s.unassigned_usd)
                     )}
                   </td>
                   <td className={s.residual_usd ? "num" : "num muted"}>
                     {s.residual_usd ? (
-                      <span className="pill warn">{plain(s.residual_usd)}</span>
+                      <span className="pill warn">{inPln(s.residual_usd)}</span>
                     ) : (
-                      plain(s.residual_usd)
+                      inPln(s.residual_usd)
                     )}
                   </td>
                   {/* NO TOLERANCE. This is an invariant on the platform's own
@@ -376,7 +365,7 @@ export default function ProductionOverview() {
                     {(s.gap_usd ?? 0) === 0 ? (
                       <span className="pill ok">0</span>
                     ) : (
-                      <span className="pill err">{plain(s.gap_usd)}</span>
+                      <span className="pill err">{inPln(s.gap_usd)}</span>
                     )}
                   </td>
                 </tr>
@@ -384,17 +373,15 @@ export default function ProductionOverview() {
             </table>
           </div>
           <p className="muted">
-            Component pool: purchased {plain(reg.pool.purchased_usd)} ± adjustments{" "}
-            {plain(reg.pool.adjustments_usd)} − drawn {plain(reg.pool.drawn_usd)} ={" "}
-            {plain(reg.pool.on_hand_usd)} on hand across {reg.pool.part_count} parts —{" "}
-            <span className={reg.pool.balanced ? "pill ok" : "pill err"}>
-              {reg.pool.balanced ? "balanced" : "does not balance"}
-            </span>{" "}
+            Component pool: purchased {inPln(reg.pool.purchased_usd)} ± adjustments{" "}
+            {inPln(reg.pool.adjustments_usd)} − drawn {inPln(reg.pool.drawn_usd)} ={" "}
+            {inPln(reg.pool.on_hand_usd)} on hand across {reg.pool.part_count} parts —{" "}
+            {reg.pool.balanced ? null : <><span className="pill err">does not balance</span>{" "}</>}
             <span
               className="dim"
               title="Balanced by construction — on-hand is derived from the other three. The real check is the quantity comparison against JLCPCB on the Stock page."
             >
-              (identity — the real check is <Link to="/production/stock">Stock</Link>)
+              (identity — the real check is <Link to="/stock">Stock</Link>)
             </span>
           </p>
         </div>

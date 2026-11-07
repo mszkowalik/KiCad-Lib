@@ -10,11 +10,6 @@ export function shortSha(sha: string): string {
   return sha ? sha.slice(0, 10) : "—";
 }
 
-export function fmtWhen(iso: string | null): string {
-  if (!iso) return "—";
-  return iso.slice(0, 16).replace("T", " ");
-}
-
 export function fmtDuration(ms: number | null): string {
   if (ms === null || ms === undefined) return "—";
   if (ms < 1000) return `${ms} ms`;

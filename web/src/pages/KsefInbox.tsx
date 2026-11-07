@@ -2,8 +2,8 @@
  *
  *  Read only: fetching fills this inbox and nothing else. A sales invoice is
  *  linked to the platform's own record of it by the sync. A purchase waits
- *  here until somebody imports it as a supplier document (Production →
- *  Invoices, where its positions get their destinations) or skips it with a
+ *  here until somebody imports it as a supplier document (Finance → Purchase
+ *  invoices, where its positions get their destinations) or skips it with a
  *  reason. A supplier document typed by hand that may be the same invoice
  *  stops the import: the person links the purchase to it or imports it anyway.
  */
@@ -23,13 +23,16 @@ import {
 import { useAuth } from "../auth";
 import DataTable, { type Column } from "../components/DataTable";
 import { useDialog } from "../components/Dialog";
-import { ErrorBanner, Spinner } from "../components/Ui";
+import { NarrowChip } from "../components/FoldSection";
+import { ErrorBanner, Spinner, StatusPill } from "../components/Ui";
+import { pl } from "../format";
 import { absoluteFileUrl } from "../viewkind";
 
-const TONE: Record<string, string> = { new: "warn", linked: "ok", imported: "ok", skipped: "neutral" };
-
-function pl(x: string | null): string {
-  return x == null ? "—" : Number(x).toLocaleString("pl-PL", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+/** The one word a chip narrows on. */
+function narrowOf(r: KsefInboxRow): "import" | "unlinked" | "done" | "skipped" {
+  if (r.status === "skipped") return "skipped";
+  if (r.status !== "new") return "done";
+  return r.side === "purchase" ? "import" : "unlinked";
 }
 
 export default function KsefInbox() {
@@ -38,6 +41,7 @@ export default function KsefInbox() {
   const [rows, setRows] = useState<KsefInboxRow[] | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState<number | null>(null);
+  const [narrow, setNarrow] = useState<"" | "import" | "unlinked" | "done" | "skipped">("");
 
   const load = useCallback((signal?: AbortSignal) => {
     getKsefInbox(signal).then((r) => { setRows(r); setError(""); })
@@ -103,15 +107,15 @@ export default function KsefInbox() {
     { key: "gross", label: "Gross", width: 9, numeric: true, get: (r) => Number(r.gross ?? 0),
       render: (r) => <>{pl(r.gross)} {r.currency !== "PLN" ? r.currency : ""}</> },
     { key: "status", label: "Status", width: 9, get: (r) => r.status,
-      render: (r) => <span className={`pill ${TONE[r.status] ?? "neutral"}`}>{r.status}</span> },
+      render: (r) => <StatusPill status={r.status} /> },
     { key: "act", label: "", width: 22, interactive: false, get: () => "",
       render: (r) => (
         <span className="btn-row">
           {r.has_xml ? <a className="btn btn-sm" href={absoluteFileUrl(ksefXmlPath(r.id))}>XML</a> : null}
           {r.document_id ? (
-            <Link className="btn btn-sm" to={`/production/invoices?doc=${r.document_id}`}>Document</Link>
+            <Link className="btn btn-sm" to={`/finance/invoices?doc=${r.document_id}`}>Document</Link>
           ) : null}
-          {r.sales_invoice_id ? <Link className="btn btn-sm" to="/production/sales-invoices">Invoice</Link> : null}
+          {r.sales_invoice_id ? <Link className="btn btn-sm" to="/sales/invoices">Invoice</Link> : null}
           {r.side === "sales" && r.status === "new" ? (
             // A sales row has no action: the sync links it to the platform's
             // record of the invoice, or records it from its XML.
@@ -142,7 +146,7 @@ export default function KsefInbox() {
     <div className="main-solo">
       <div className="page">
         <div className="toolbar">
-          <h1 className="page-title">KSeF</h1>
+          <h1>KSeF</h1>
           {rows ? (
             <span className="toolbar-total">
               {rows.filter((r) => r.side === "purchase" && r.status === "new").length} purchase(s) to import
@@ -158,8 +162,17 @@ export default function KsefInbox() {
           {rows === null ? (
             <Spinner label="Loading the inbox…" />
           ) : (
-            <DataTable rows={rows} rowKey={(r) => r.id} columns={cols} empty="Nothing read from KSeF yet."
-                       defaultSort={{ key: "date", dir: "desc" }} />
+            <>
+              <div className="stat-row">
+                <NarrowChip n={rows.filter((r) => narrowOf(r) === "import").length} tone="warn" value="import" current={narrow} onNarrow={setNarrow}>purchases to import</NarrowChip>
+                <NarrowChip n={rows.filter((r) => narrowOf(r) === "unlinked").length} tone="warn" value="unlinked" current={narrow} onNarrow={setNarrow}>sales not linked</NarrowChip>
+                <NarrowChip n={rows.filter((r) => narrowOf(r) === "done").length} tone="ok" value="done" current={narrow} onNarrow={setNarrow}>linked or imported</NarrowChip>
+                <NarrowChip n={rows.filter((r) => narrowOf(r) === "skipped").length} value="skipped" current={narrow} onNarrow={setNarrow}>skipped</NarrowChip>
+              </div>
+              <DataTable rows={narrow ? rows.filter((r) => narrowOf(r) === narrow) : rows} rowKey={(r) => r.id} columns={cols}
+                         empty={narrow ? "No row in this state." : "Nothing read from KSeF yet."}
+                         defaultSort={{ key: "date", dir: "desc" }} />
+            </>
           )}
         </div>
       </div>

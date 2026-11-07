@@ -23,6 +23,12 @@ from app.db import Base
 from app.services import journal as J
 
 FROZEN: dict[str, set[str]] = {
+    # The office organizers (decision 0104), whole, as they were when they landed.
+    "organizer_boxes": {"code", "created_at", "created_by", "id", "note", "organizer"},
+    "organizer_moves": {
+        "actor", "at", "box_id", "company_id", "created_at", "id", "item_id", "kind", "material_move_id",
+        "note", "purpose", "qty", "run_id"
+    },
     # The material ledger's tables (decisions 0097, 0098), whole, as they were
     # when the cut-over made them the only storage of stock, work and units.
     "material_cost_aims": {

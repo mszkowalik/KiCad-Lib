@@ -7,6 +7,13 @@ lot ledger, at the end of this page). Decision
 shipments, [0005](../decisions/0005-off-board-parts.md) covers off-board parts, and
 [0007](../decisions/0007-built-means-finished-and-passed.md) covers the built rule.
 
+USD is the stored base, and the screens print a total in PLN (decision
+[0103](../decisions/0103-a-job-is-a-section-and-a-batch-is-a-board.md)). A batch's
+figure converts at `fx.pln_per_usd` of `run_pricing_date`, and a figure with no batch
+at today's rate. A sum over batches is taken on the server, because each batch has its
+own rate: `orders.product_stock`, `order_economics` and the shelf give `*_pln` fields.
+A `run.overrides` price names its `currency`, and one with none is USD.
+
 The wider design is in [docs/production-costs/design.md](../production-costs/design.md).
 Stock is kept per company once `stock_per_company` is on; how every replay and
 guard reads one company's stock is in [companies.md](companies.md).
@@ -114,6 +121,9 @@ guard reads one company's stock is in [companies.md](companies.md).
   - **Fulfilment counts `shipped` events with NO `replaces_device_id`**; a
     warranty replacement names the device it replaces, and a device re-shipped
     to the same line after repair names ITSELF, so it is never counted twice.
+    Pack, then Send writes the second case only. No route writes the first:
+    `svc.create_shipment` can, and a stock device sent as a replacement through
+    Pack counts as fulfilment.
     Order cost counts every shipped device, replacements included, at its
     batch's per-device actual (`per_device_cost_usd`, from the register). A
     device with a twin counts at its twin's price instead (`twins.device_costs`,
@@ -139,9 +149,10 @@ guard reads one company's stock is in [companies.md](companies.md).
     completed by [0049](../decisions/0049-a-delivery-names-its-devices-and-nothing-else.md)).
     0031 refused an anonymous unit on a batch that had device records; there is
     no way to write one at all now. `shipment_lines` is DROPPED,
-    `ShipmentLineIn` forbids extra fields so `qty`, `qty_unserialized`,
-    `run_ids` and `source_run_id` are refused by name with 422, and
-    `create_shipment` refuses a line that moves no device. `check_unserialized_source`,
+    the bodies of the shipment routes forbid extra fields so `qty`,
+    `qty_unserialized`, `run_ids` and `source_run_id` are refused by name with
+    422, and `svc.create_shipment` refuses a line that moves no device.
+    `check_unserialized_source`,
     `reconcile_shelf` and `PATCH /api/shipment-lines/{id}` are gone with it.
   - **Good units are COUNTED, never typed** (`run_actuals.good_units`, decision
     [0030](../decisions/0030-good-units-are-counted-not-typed.md)): every
@@ -203,8 +214,9 @@ guard reads one company's stock is in [companies.md](companies.md).
     refuses a device that is not `shipped`: one that came back is a return.
   - **A unit the stock count cannot find is `missing`, a LOCATION** (0057).
     `missing` comes only from `in_stock`, and leaves by `found` (back to
-    stock), by a delivery (`create_shipment` accepts it — the delivery is the
-    evidence it left; it must still be `ok`) or by `disposed`. It counts in no
+    stock), by a delivery written with `svc.create_shipment` (the delivery is
+    the evidence it left; it must still be `ok`; only a script calls this) or
+    by `disposed`. Pack refuses it until it is `found`. It counts in no
     shelf figure; `run_stock` reports `devices_missing` and `product_stock`
     reports `missing`, so it is never invisible. A new stock query has to
     exclude it on purpose. Never file a unit you cannot find as `disposed`:
@@ -226,7 +238,7 @@ guard reads one company's stock is in [companies.md](companies.md).
   invoiced for what shipped, which is routinely neither the planned count nor the
   number that passed test. `run_actuals` returns `revenue`/`margin`/`margin_pct`
   (gross margin over revenue, the figure a price decision is made against) in the
-  project's display currency; the register's `by_run_usd` converts both sides to USD
+  platform's display currency (PLN, decision 0103); the register's `by_run_usd` converts both sides to USD
   at the **order date** when set, else the run date — a sale is struck on a day and
   its FX must not drift with today's rate. `RunPatch` applies these only when
   explicitly present (`exclude_unset`), so patching a label can never blank a price.
@@ -258,9 +270,7 @@ guard reads one company's stock is in [companies.md](companies.md).
   redraw; snapshotted `unit_cost_usd` is never rewritten retroactively. Repricing is
   therefore a DELETE + re-POST with `unit_cost_usd=None`, run in event-date order so
   each draw blends the average the next one sees — `add_consumption` prices as of
-  `consumed_at`, never today. While `lot_pricing` is on, such a draw is refused
-  instead, and a re-POST takes lots oldest first, not the average (see "Lots and
-  FIFO pricing" at the end of this page).
+  `consumed_at`, never today.
 - **A zero-priced draw also hides duplicates.** A draw had no
   uniqueness constraint, so a part drawn once by `consume_from_bom` and again by an
   ad-hoc script is simply charged twice — and while both rows price at zero, nothing
@@ -524,7 +534,8 @@ guard reads one company's stock is in [companies.md](companies.md).
     `pool.into_prepared_usd` ([processes.md](processes.md)).
 - **Compare against JLC's stock count at the MOMENT IT WAS TAKEN, in JLC's
   calendar.** `JlcStockItem` is a snapshot; the pool runs to today. `parts_stock`
-  therefore computes `remaining_at_sync_qty` with `pool_state(as_of=...)` and
+  therefore computes `remaining_at_sync_qty` with `pool_state(as_of=...)`, leaves
+  out what the office organizers held then ([organizers.md](organizers.md)), and
   reports `delta_qty` against that, with `totals.compared_as_of` and
   `totals.events_since_sync` saying how stale it is. Two traps, both measured
   2026-09-18:
@@ -550,7 +561,11 @@ guard reads one company's stock is in [companies.md](companies.md).
   **placeholder document** (supplier `PLACEHOLDER (no invoice found)`, quantity =
   the replay's worst dip, price = the nearest real invoice, note saying REPLACE
   when the real one surfaces), a signed stock adjustment, or a run override
-  recording the batch shipped without the part. `consume_from_bom` checks the
+  recording the batch shipped without the part. A placeholder raises no issue on
+  the Overview: the user stopped looking for these invoices on 2026-11-07. It
+  belongs to a company and is kept from the accountant (decision 0080), so stock
+  has an owner and the books hold no invoice that does not exist.
+  `consume_from_bom` checks the
   whole batch first and refuses atomically, so a failed draw never leaves half a
   run consumed. Pre-existing negatives are grandfathered and surface as
   `issues.negative_stock` in the register; `GET /api/parts-ledger` returns one
@@ -762,7 +777,7 @@ guard reads one company's stock is in [companies.md](companies.md).
   `find_market_match(mpn, brand)` matching heuristics. Only sync + detail are
   router-wired today; reuse these wrappers instead of re-deriving endpoints.
 
-## Lots and FIFO pricing (decision 0073)
+## Lots and what a draw holds (decision 0105)
 
 `services/lots.py` replays the shared event list into lots. A lot is a purchase
 line, a positive stock adjustment or an in-house transfer position. A binding
@@ -770,41 +785,18 @@ line, a positive stock adjustment or an in-house transfer position. A binding
 what unit cost. The module docstring says why a lot's remaining quantity and
 value are computed on read and never stored.
 
-- **`lot_pricing` is an admin switch, off by default** ("Lot pricing (FIFO)"
-  on the Configuration tab). While it is off, a draw takes the moving average
-  and only the history job below applies. `appconfig.validate` refuses to turn
-  it on while `lots.untraced` finds a live draw that its bindings do not
-  explain in full.
-- **One picker for every writer: `lots.FifoPicker`.** It offers the lots of
-  the stock the draw takes from (the batch company's while each company keeps
-  its own stock, else every lot), dated on or before the draw, oldest first.
-  A draw that one lot cannot hold is split across lots. The draws of one write
-  share one picker, so they never take the same unit. The draw's unit cost is
-  the weighted landed cost of its bindings.
-- **The writers** are a process or bench step and a twin rebuild
-  (`twins._plan_draws`, `write_draws`), "Record assembly" for the parts another
-  house used (`twins.apply_assembly`), a prepared part's bought inputs
-  (`process.transform`), the BOM draw (`consume_from_bom`), the hand draw and
-  the used-quantity screen (`routers/run_costs.py`), a JLC warehouse pick
-  (`jlc_ledger.book`) and an in-house transfer line that names no lot
-  (`transfers.plan`). A JLC assembly draw keeps the lot JLC named. A new writer
-  calls `lots.fifo_price` and `lots.bind`. It never builds a second picker.
-- **A draw the lots cannot cover in full is refused**: a 409, or a `refused`
-  row for a warehouse pick. The refusal names the part and how much no lot
-  holds, and the fix is the missing purchase. The stock can hold units that no
-  lot holds: a draw of the other company that JLC bound to this company's lot
-  before any transfer takes the lot, but not this company's stock.
+- **Every draw takes the moving average, and nothing picks a lot.** The one refusal
+  is `check_shortages`. FIFO pricing is gone (decision 0105).
+- **A binding is a statement, and it stays.** JLC names the lots of an assembly
+  draw, a transfer line may name a lot, and a prepared part always takes a named
+  lot. The history job of 2026-10 also bound the older draws with `source`
+  `fifo_history`, and priced them at those lots. Those prices stand.
 - **A voided draw took nothing**, so its bindings free their lots
-  (`lot_state` counts live draws only, as the pool replay does). A refused row
-  of `fifo_price` reserves nothing in its picker either.
-- **A changed used quantity resizes the bindings** (`lots.resize_bound`). More
-  takes the next lots oldest first, while the switch is on. Less gives back
-  the newest binding first, whatever the switch says, so no draw holds more
-  lots than units. With the switch on, the draw is then priced again over its
-  own lots; off, it keeps its price, unless that price is its lots' price (the
-  history job or the picker set it): then it shrinks and grows as with the
-  switch on and takes the price of the lots it holds (a growth no lot covers
-  in full binds nothing and keeps the price).
+  (`lot_state` counts live draws only, as the pool replay does).
+- **A changed used quantity resizes the bindings** (`lots.resize_bound`). Less gives
+  back the newest binding first, so no draw holds more lots than units, and a draw
+  whose price is its lots' price takes the price of the lots it still holds. More
+  binds nothing, and the price stays.
 - **A lot is not taken from the draws bound to it.** Every invoice edit —
   a position or a document, whatever field moves (step, quantity, part,
   type, date, buyer, a split or re-split, a deletion), and every new
@@ -824,26 +816,7 @@ value are computed on read and never stored.
   pool of its names.
   Deleting a positive stock adjustment checks its bindings and the pool. A
   transformation's output adjustment goes only with "Void transformation".
-- **A transfer line that names no lot takes the sender's lots oldest first**,
-  after every lot that a line of the same transfer names. Its sender draw is
-  bound to those lots, and the position carries their weighted cost, whatever
-  price the caller stated. The bindings of the draws about to move
-  (`exclude_draw_ids`, from `cover_draws`) go back to their lots for this pick,
-  the same way `check_shortages` leaves those draws out. A line that names a
-  lot keeps that lot. The other transfer rules are in
-  [companies.md](companies.md).
-- **The history is bound once, by an explicit job** (`lots.bind_history`,
-  `POST /api/companies/lot-history`, admin only, "Bind draws to lots" on Admin →
-  Companies). A dry run is the default. The job binds every untraced live draw
-  in date order, each company from its own lots while each company keeps its
-  own stock, and prices the draw at the lots' cost. A closed batch is priced
-  again too. The job is its correction event (decision 0044), the change reads
-  as a variance against `closed_cost_usd`, and its frozen twin share is
-  computed again. A draw no lot covers in full keeps its price and is listed,
-  and the units it reserved go back to the picker. The write is one journal
-  batch of kind `lots.history`.
-- **Planning keeps the moving average.** A batch that does not exist yet has no
-  lots to take, so `project_bom` prices its plan from the pool average.
+- **Planning keeps the moving average** too (`project_bom`).
 
 ## The DotConnect boards (decision 0092)
 

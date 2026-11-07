@@ -32,16 +32,13 @@ import {
   type Pane, type PlotData, type Trace,
 } from "./panes";
 
-/** The six trace colours, read from the theme so a plot matches the sheet. */
-function traceColour(i: number): string {
-  if (typeof window === "undefined") return "#888";
-  return getComputedStyle(document.documentElement)
-    .getPropertyValue(`--sim-trace-${i % 6}`).trim() || "#888";
+function themeColour(name: string): string {
+  return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 }
 
-function themeColour(name: string, fallback: string): string {
-  if (typeof window === "undefined") return fallback;
-  return getComputedStyle(document.documentElement).getPropertyValue(name).trim() || fallback;
+/** The six trace colours, read from the theme so a plot matches the sheet. */
+function traceColour(i: number): string {
+  return themeColour(`--sim-trace-${i % 6}`);
 }
 
 interface Props {
@@ -263,8 +260,8 @@ function PaneChart({
   useEffect(() => {
     const node = host.current;
     if (!node || !built || !data) return;
-    const line = themeColour("--line", "#ccc");
-    const text = themeColour("--muted", "#888");
+    const line = themeColour("--line");
+    const text = themeColour("--muted");
     const plot = new uPlot({
       width,
       height,

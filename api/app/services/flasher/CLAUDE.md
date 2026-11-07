@@ -272,9 +272,12 @@ Full design: `docs/flasher/design.md` (§15 = file sets, §14 = the bundle model
   is kept as history. The ORM cascade is what removes the version's images,
   so the delete has to go through the endpoint.
 - **Channels are pointers, history is immutable.** `deployment_channels` name a
-  version (`production`, `bench`); rolling back moves a channel. A batch pins a
-  version or follows a channel; run creation resolves it and records the
-  result. Draft versions run ONLY as bench trials (`draft_run=True`, no batch).
+  version (`production`, `bench`); rolling back moves a channel. A batch names no
+  version of its own. Its process names the procedures, the bench runs each at its
+  current version (decision 0076), and another version needs a reason.
+  `POST /runs` needs the version in the request. `ProductionRun.deployment_version_id`
+  and `deployment_channel` are dormant: the user removed the batch's pin on 2026-11-07.
+  Draft versions run ONLY as bench trials (`draft_run=True`, no batch).
 - **Functional checks are DERIVED, never authored** (`services/flasher/checks.py`).
   A step names what it proves (`check: "relay.2"`) and its own pass/fail becomes
   the check; imported runs, which have no steps, get the same names from their
@@ -299,9 +302,7 @@ Full design: `docs/flasher/design.md` (§15 = file sets, §14 = the bundle model
   an operator who clears the batch to "bench trial" stays there. The batch is
   still not remembered across sessions: it is re-derived, not restored. In
   batch mode with no batch picked the stations get no version at all, so a run
-  cannot quietly become a bench trial. NOTE: no batch in the database pins a
-  version or follows a channel, so `POST /runs` 409s unless the request names
-  one — the default is what makes the bench work, not a convenience.
+  cannot quietly become a bench trial.
 - **A field on the bench belongs to the PROCEDURE, not to the bench.**
   `version_json` carries `needs_sim_pin` (any step with op `lte_sim_pin`), and
   the bench shows its SIM PIN box only then — a Dongle_V2 or an Aqua has no

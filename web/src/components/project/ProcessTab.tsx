@@ -11,7 +11,7 @@
  *  4. The prepared-part TRANSFORMATIONS — what was made, when, at what cost.
  *
  *  Each number has one home: a batch is crafted on its own page (Batch →
- *  Process), and the pool's figures for bought parts are on the Stock page.
+ *  Floor), and the pool's figures for bought parts are on Stock → Parts.
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
@@ -22,9 +22,11 @@ import {
   getProjectProcess,
   getRuns,
   isAbortError,
+  linkBenchRunsByTopic,
   makeProcessCurrent,
   publishProcessVersion,
   voidTransformation,
+  type BenchLinkPlan,
   type PreparedRecipe,
   type PreparedStock,
   type ProjectInfo,
@@ -33,19 +35,84 @@ import {
   type StageLot,
   type TransformationRow,
 } from "../../api";
-import { usd } from "../../format";
+import { localDate, pln, usd } from "../../format";
+import { useTodayRate } from "../../useTodayRate";
 import DataTable, { type Column } from "../DataTable";
 import { useDialog } from "../Dialog";
 import Field from "../Field";
+import FoldSection, { StatChip } from "../FoldSection";
 import MakeDialog from "../process/MakeDialog";
 import ProcessEditor from "../process/ProcessEditor";
 import ProcessMap from "../process/ProcessMap";
-import { BankDialog, StocktakeDialog, WriteOffDialog } from "../process/StageDialogs";
+import { BankDialog, DryRunDialog, StocktakeDialog, WriteOffDialog } from "../process/StageDialogs";
 import { ErrorBanner, Spinner, StatusPill } from "../Ui";
 
 type LotRow = StageLot & { stage: string };
 
+/** Link old marking and test runs to their devices by the topic they captured
+ *  (decision 0075 §1). This is the first step of rebuilding an old batch: the runs
+ *  are the evidence a rebuild reads. It writes the link and records no step. */
+function LinkBenchRunsDialog({ project, onClose }: { project: ProjectInfo; onClose: (c: boolean) => void }) {
+  type Left = { run_id: number; kind: string; why: string; topic: string; started_at: string | null };
+  const leftOf = (p: BenchLinkPlan): Left[] => [
+    ...p.ambiguous.map((r) => ({ ...r, why: `${r.devices.length} devices match` })),
+    ...p.unmatched.map((r) => ({ ...r, why: "no device matches" })),
+    ...p.no_topic.map((r) => ({ ...r, why: "the run captured no topic", topic: "" })),
+  ];
+  return (
+    <DryRunDialog<BenchLinkPlan>
+      wide
+      title="Link old bench runs"
+      intro={`A marking or test run reads no MAC, so a run recorded before 2026-10-04 names no device. This links each such run of ${project.name} to its device by the topic it captured, only where the topic names exactly one device. It records no step: a rebuild reads the run as evidence. Do this before you rebuild a batch.`}
+      onClose={onClose}
+      run={(dry) => linkBenchRunsByTopic(project.id, dry)}
+      canApply={(p) => p.linked.length > 0}
+      applyLabel={(p) => `Link ${p.linked.length}`}
+      describe={(p) => <>{p.linked.length} of {p.runs} run(s) with no device can be linked.</>}
+      detail={(p) => {
+        const left = leftOf(p);
+        return (
+          <>
+            {p.devices_with_an_active_twin.length ? (
+              <div className="banner-warn">
+                {p.devices_with_an_active_twin.length} of these devices have an active twin. Its bench step is
+                recorded when a later step or a merge catches it up.
+              </div>
+            ) : null}
+            <FoldSection bare title="Runs to link" count={p.linked.length}
+              chips={Object.entries(p.by_batch).slice(0, 4).map(([batch, n]) => <StatChip key={batch} n={n}>{batch}</StatChip>)}>
+              <DataTable rows={p.linked} rowKey={(r) => r.run_id}
+                columns={[
+                  { key: "run", label: "Run", width: 9, numeric: true, get: (r) => r.run_id },
+                  { key: "kind", label: "Kind", width: 8, get: (r) => r.kind },
+                  { key: "topic", label: "Topic", width: 22, className: "mono", get: (r) => r.topic, title: (r) => r.topic },
+                  { key: "device", label: "Device", width: 16, className: "mono", get: (r) => r.serial ?? String(r.device_id) },
+                  { key: "batch", label: "Batch", width: 20, get: (r) => r.batch ?? "no batch", title: (r) => r.batch ?? "no batch" },
+                  { key: "when", label: "Started", width: 13, className: "mono", get: (r) => localDate(r.started_at) },
+                  { key: "status", label: "Status", width: 12, get: (r) => r.status, render: (r) => <StatusPill status={r.status} /> },
+                ]} />
+            </FoldSection>
+            <FoldSection bare title="Runs that stay unlinked" count={left.length}
+              chips={left.length ? <StatChip n={left.length} tone="warn">no single device</StatChip> : null}>
+              <DataTable rows={left} rowKey={(r) => r.run_id} empty="Every run has its device."
+                columns={[
+                  { key: "run", label: "Run", width: 10, numeric: true, get: (r) => r.run_id },
+                  { key: "kind", label: "Kind", width: 10, get: (r) => r.kind },
+                  { key: "why", label: "Why", width: 34, get: (r) => r.why },
+                  { key: "topic", label: "Topic", width: 30, className: "mono", get: (r) => r.topic, title: (r) => r.topic },
+                  { key: "when", label: "Started", width: 16, className: "mono", get: (r) => localDate(r.started_at) },
+                ]} />
+            </FoldSection>
+          </>
+        );
+      }}
+      fields={null}
+    />
+  );
+}
+
 export default function ProcessTab({ project }: { project: ProjectInfo }) {
+  const rate = useTodayRate();
   const dialog = useDialog();
   const [versionId, setVersionId] = useState<number | null>(null);
   const [data, setData] = useState<ProjectProcess | null>(null);
@@ -56,6 +123,7 @@ export default function ProcessTab({ project }: { project: ProjectInfo }) {
   const [banking, setBanking] = useState<PreparedStock | null>(null);
   const [counting, setCounting] = useState<PreparedStock | null>(null);
   const [writing, setWriting] = useState<LotRow | null>(null);
+  const [linking, setLinking] = useState(false);
   const reload = useCallback(() => setTick((t) => t + 1), []);
 
   useEffect(() => {
@@ -169,16 +237,16 @@ export default function ProcessTab({ project }: { project: ProjectInfo }) {
   }
 
   const lotColumns: Column<LotRow>[] = [
-    { key: "stage", label: "Prepared part", width: 20, get: (r) => r.stage },
-    { key: "lot", label: "Lot", width: 6, className: "mono", get: (r) => `A${r.adjustment_id}` },
+    { key: "stage", label: "Prepared part", width: 17, get: (r) => r.stage },
+    { key: "lot", label: "Lot", width: 7, className: "mono", get: (r) => `A${r.adjustment_id}` },
     { key: "date", label: "Date", width: 9, className: "mono", get: (r) => r.date },
-    { key: "how", label: "From", width: 24, get: (r) => (r.transformation_id ? `transformation #${r.transformation_id}` : r.note || r.reason),
+    { key: "how", label: "From", width: 20, get: (r) => (r.transformation_id ? `transformation #${r.transformation_id}` : r.note || r.reason),
       title: (r) => r.note },
-    { key: "qty", label: "Held", width: 6, numeric: true, get: (r) => r.qty },
-    { key: "left", label: "Left", width: 6, numeric: true, get: (r) => r.remaining },
+    { key: "qty", label: "Held", width: 7, numeric: true, get: (r) => r.qty },
+    { key: "left", label: "Left", width: 7, numeric: true, get: (r) => r.remaining },
     { key: "unit", label: "Each", width: 8, numeric: true, get: (r) => r.unit_cost_usd, render: (r) => usd(r.unit_cost_usd) },
-    { key: "value", label: "Value left", width: 9, numeric: true, get: (r) => r.value_remaining_usd,
-      render: (r) => usd(r.value_remaining_usd) },
+    { key: "value", label: "Value left", width: 13, numeric: true, get: (r) => r.value_remaining_usd,
+      render: (r) => pln(r.value_remaining_usd, rate) },
     { key: "act", label: "", width: 12, interactive: false, get: () => "",
       render: (r) => (r.open && isCurrent
         ? <button type="button" className="btn btn-sm" onClick={() => setWriting(r)}>Write off…</button>
@@ -187,16 +255,16 @@ export default function ProcessTab({ project }: { project: ProjectInfo }) {
 
   const tColumns: Column<TransformationRow>[] = [
     { key: "date", label: "Date", width: 10, className: "mono", get: (t) => t.made_at },
-    { key: "recipe", label: "Step", width: 16, get: (t) => t.recipe_label },
-    { key: "out", label: "Made", width: 16, get: (t) => t.output_name ?? "" },
-    { key: "qty", label: "Qty", width: 6, numeric: true, get: (t) => t.qty },
-    { key: "scrap", label: "Scrap", width: 6, numeric: true, get: (t) => t.scrap },
+    { key: "recipe", label: "Step", width: 14, get: (t) => t.recipe_label },
+    { key: "out", label: "Made", width: 12, get: (t) => t.output_name ?? "" },
+    { key: "qty", label: "Qty", width: 7, numeric: true, get: (t) => t.qty },
+    { key: "scrap", label: "Scrap", width: 7, numeric: true, get: (t) => t.scrap },
     { key: "batch", label: "Batch", width: 12, get: (t) => t.run_label ?? "",
-      render: (t) => (t.run_id ? <Link to={`/runs/${t.run_id}?tab=process`}>{t.run_label}</Link> : <span className="muted">—</span>) },
-    // Invoice positions aimed at this step on the Invoices page (decision 0058 §4).
-    { key: "conv", label: "Conversion", width: 8, numeric: true, get: (t) => t.conversion_usd,
-      title: () => "Invoice positions aimed at this step as its conversion cost — set on the Invoices page",
-      render: (t) => (t.conversion_usd ? usd(t.conversion_usd) : <span className="muted">—</span>) },
+      render: (t) => (t.run_id ? <Link to={`/production/batches/${t.run_id}?tab=floor`}>{t.run_label}</Link> : <span className="muted">—</span>) },
+    // Invoice positions aimed at this step on Finance → Purchase invoices (decision 0058 §4).
+    { key: "conv", label: "Conversion", width: 12, numeric: true, get: (t) => t.conversion_usd,
+      title: () => "Invoice positions aimed at this step as its conversion cost — set on Finance → Purchase invoices",
+      render: (t) => (t.conversion_usd ? pln(t.conversion_usd, rate) : <span className="muted">—</span>) },
     { key: "unit", label: "Each", width: 8, numeric: true, get: (t) => t.unit_cost_usd ?? 0, render: (t) => usd(t.unit_cost_usd) },
     { key: "by", label: "By", width: 8, get: (t) => t.actor },
     { key: "act", label: "", width: 10, interactive: false, get: (t) => (t.voided ? "voided" : ""),
@@ -238,11 +306,15 @@ export default function ProcessTab({ project }: { project: ProjectInfo }) {
               <button type="button" className="btn btn-danger" onClick={removeDraft}>Delete draft</button>
             </>
           ) : null}
+          <button type="button" className="btn" onClick={() => setLinking(true)}
+            title="Link old marking and test runs to their devices, before you rebuild a batch">
+            Link old bench runs…
+          </button>
         </div>
         {shown ? (
           <p className="muted dim">
             {shown.status === "published"
-              ? <>Published {shown.published_at ? new Date(shown.published_at).toLocaleDateString("sv-SE") : ""} by {shown.approved_by}: {shown.comment.replace(/[.\s]*$/, ".")}</>
+              ? <>Published {shown.published_at ? localDate(shown.published_at) : ""} by {shown.approved_by}: {shown.comment.replace(/[.\s]*$/, ".")}</>
               : <>Draft started by {shown.created_by}. Publishing needs a comment and a clean check.</>}
             {shown.batches.length ? <> Batches on this version: {shown.batches.map((b) => b.label).join(", ")}.</> : null}
           </p>
@@ -283,6 +355,7 @@ export default function ProcessTab({ project }: { project: ProjectInfo }) {
             version={shown}
             prepared={data.stock?.prepared ?? null}
             deployments={data.deployments}
+            stock={data.input_stock ?? {}}
             canMake={isCurrent}
             onMake={setMaking}
             onBank={setBanking}
@@ -291,21 +364,31 @@ export default function ProcessTab({ project }: { project: ProjectInfo }) {
         </div>
       ) : null}
 
-      <div className="card pad">
-        <h2 className="card-title">Lots</h2>
+      <FoldSection title="Lots" count={lotRows.length} foldKey={`project:${project.id}:lots`}
+        chips={lotRows.length ? (
+          <>
+            <StatChip n={lotRows.filter((r) => r.open).length} tone="acc">open</StatChip>
+            <StatChip n={pln(lotRows.reduce((a, r) => a + r.value_remaining_usd, 0), rate)}>value left</StatChip>
+          </>
+        ) : undefined}>
         <p className="muted dim">
           Stock of every prepared part, one row per lot. A lot is what one recipe run made, or
           what was banked. A step takes one lot per click, so the units it touches stay one pile.
         </p>
         <DataTable rows={lotRows} columns={lotColumns} rowKey={(r) => r.adjustment_id}
           empty="No prepared-part stock yet." defaultSort={{ key: "date", dir: "desc" }} />
-      </div>
+      </FoldSection>
 
-      <div className="card pad">
-        <h2 className="card-title">Prepared parts made</h2>
+      <FoldSection title="Prepared parts made" count={data.transformations.length} foldKey={`project:${project.id}:made`}
+        chips={data.transformations.length ? (
+          <>
+            <StatChip n={data.transformations.filter((t) => !t.voided).reduce((a, t) => a + t.qty, 0).toLocaleString()}>units made</StatChip>
+            {data.transformations.some((t) => t.voided) ? <StatChip n={data.transformations.filter((t) => t.voided).length}>voided</StatChip> : null}
+          </>
+        ) : undefined}>
         <DataTable rows={data.transformations} columns={tColumns} rowKey={(t) => t.id}
           empty="No prepared part made yet." />
-      </div>
+      </FoldSection>
 
       {making && shown ? (
         <MakeDialog projectId={project.id} version={shown} recipe={making} runs={runs}
@@ -325,6 +408,7 @@ export default function ProcessTab({ project }: { project: ProjectInfo }) {
         <WriteOffDialog projectId={project.id} lot={writing} name={writing.stage} runs={runs}
           onClose={(c) => { setWriting(null); if (c) reload(); }} />
       ) : null}
+      {linking ? <LinkBenchRunsDialog project={project} onClose={(c) => { setLinking(false); if (c) reload(); }} /> : null}
     </>
   );
 }

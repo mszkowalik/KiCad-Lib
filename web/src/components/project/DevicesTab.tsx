@@ -18,13 +18,16 @@ import {
   errorMessage,
   getProjectDevices,
   isAbortError,
+  projectMosquittoPath,
   type ProjectDeviceRow,
   type ProjectDevicesPayload,
   type ProjectInfo,
 } from "../../api";
+import { since, localWhen } from "../../format";
 import DataTable, { type Column } from "../DataTable";
+import { CONDITION_WORD } from "../FinishedProductsCard";
+import { NarrowChip } from "../FoldSection";
 import { ErrorBanner, Spinner, StatusPill } from "../Ui";
-import { fmtWhen } from "../flasher/common";
 
 interface Props {
   project: ProjectInfo;
@@ -34,13 +37,6 @@ interface Props {
    *  corrected (decision 0029). */
   runId?: number;
 }
-
-const PRESENCE_FILTERS = [
-  { key: "", label: "All" },
-  { key: "online", label: "Online" },
-  { key: "offline", label: "Offline" },
-  { key: "unknown", label: "Never seen" },
-] as const;
 
 /** How a `?state=` / `?condition=` in the URL reads on screen. The server
  *  already filtered on both (`getProjectDevices` has taken them since it was
@@ -53,26 +49,6 @@ const STATE_WORD: Record<string, string> = {
   disposed: "disposed of",
   missing: "missing — not found at a stock count",
 };
-const CONDITION_WORD: Record<string, string> = {
-  ok: "sellable",
-  faulty: "faulty",
-  prototype: "prototype",
-  unidentified: "unidentified",
-  incomplete: "incomplete",
-};
-
-function ago(iso: string | null): string {
-  if (!iso) return "—";
-  const then = new Date(iso).getTime();
-  if (Number.isNaN(then)) return "—";
-  const secs = Math.max(0, Math.round((Date.now() - then) / 1000));
-  if (secs < 90) return `${secs}s`;
-  const mins = Math.round(secs / 60);
-  if (mins < 90) return `${mins} min`;
-  const hours = Math.round(mins / 60);
-  if (hours < 48) return `${hours} h`;
-  return `${Math.round(hours / 24)} d`;
-}
 
 export default function DevicesTab({ project, runId }: Props) {
   const [data, setData] = useState<ProjectDevicesPayload | null>(null);
@@ -112,7 +88,7 @@ export default function DevicesTab({ project, runId }: Props) {
     {
       key: "serial",
       label: "Device",
-      width: "13ch",
+      width: "126px",
       className: "mono",
       get: (r) => r.serial || r.tasmota_id,
     },
@@ -125,13 +101,7 @@ export default function DevicesTab({ project, runId }: Props) {
       get: (r) => (r.presence === null ? "never seen" : r.presence.online ? "online" : "offline"),
       sortValue: (r) => (r.presence === null ? 2 : r.presence.online ? 0 : 1),
       render: (r) =>
-        r.presence === null ? (
-          <span className="pill">never seen</span>
-        ) : (
-          <span className={`pill ${r.presence.online ? "ok" : "err"}`}>
-            {r.presence.online ? "online" : "offline"}
-          </span>
-        ),
+        <StatusPill status={r.presence === null ? "never seen" : r.presence.online ? "online" : "offline"} />,
     },
     {
       key: "last_seen",
@@ -140,8 +110,8 @@ export default function DevicesTab({ project, runId }: Props) {
       className: "mono",
       get: (r) => r.presence?.last_seen_at ?? "",
       sortValue: (r) => (r.presence?.last_seen_at ? Date.parse(r.presence.last_seen_at) : 0),
-      render: (r) => <>{ago(r.presence?.last_seen_at ?? null)}</>,
-      title: (r) => fmtWhen(r.presence?.last_seen_at ?? null),
+      render: (r) => <>{since(r.presence?.last_seen_at) ?? "—"}</>,
+      title: (r) => localWhen(r.presence?.last_seen_at ?? null),
     },
     {
       key: "state",
@@ -177,7 +147,7 @@ export default function DevicesTab({ project, runId }: Props) {
         return (
           <span title={Object.entries(r.attempts).map(([k, v]) => `${k}: ${v}`).join(" · ")}>
             {total}
-            {failed > 0 ? <span className="pill warn"> {failed} not passed</span> : null}
+            {failed > 0 ? <span className="warn-text"> ({failed} not passed)</span> : null}
           </span>
         );
       },
@@ -191,7 +161,7 @@ export default function DevicesTab({ project, runId }: Props) {
     {
       key: "inverter_sn",
       label: "Inverter serial",
-      width: 14,
+      width: 13,
       className: "mono",
       get: (r) => r.presence?.inverter_sn || "—",
     },
@@ -205,7 +175,7 @@ export default function DevicesTab({ project, runId }: Props) {
     {
       key: "temp",
       label: "Temp",
-      width: 7,
+      width: 8,
       numeric: true,
       get: (r) => r.presence?.temperature_c ?? null,
       render: (r) =>
@@ -221,7 +191,7 @@ export default function DevicesTab({ project, runId }: Props) {
   ];
 
   const s = data?.summary;
-
+  /** The main list of this tab: a click on a chip narrows it, a second click undoes that. */
   return (
     <div>
       {error ? <ErrorBanner message={error} /> : null}
@@ -232,47 +202,46 @@ export default function DevicesTab({ project, runId }: Props) {
           <span className="toolbar-total">
             {s ? `${s.total.toLocaleString()} device(s)` : ""}
           </span>
+          {/* Not on a batch's view of this tab: the batch offers its own file on Settings. */}
+          {runId === undefined ? (
+            <a
+              className="btn btn-sm"
+              href={projectMosquittoPath(project.id)}
+              download
+              title="Plaintext user:password file for every device of this project, with every name a device was ever programmed under. Hash it with mosquitto_passwd -U before you deploy it."
+            >
+              MQTT accounts
+            </a>
+          ) : null}
         </div>
         {s ? (
-          <p className="card-subtitle">
-            <span className="pill ok">{s.online.toLocaleString()} online</span>{" "}
-            <span className="pill err">{s.offline.toLocaleString()} offline</span>{" "}
-            <span className="pill">{s.unknown.toLocaleString()} never seen</span>
-          </p>
+          <div className="stat-row">
+            <NarrowChip n={s.online.toLocaleString()} tone="acc" value="online" current={presence} onNarrow={setPresence}>online</NarrowChip>
+            <NarrowChip n={s.offline.toLocaleString()} value="offline" current={presence} onNarrow={setPresence}>offline</NarrowChip>
+            <NarrowChip n={s.unknown.toLocaleString()} value="unknown" current={presence} onNarrow={setPresence}>never seen</NarrowChip>
+          </div>
         ) : null}
         {state || condition ? (
           // Named, and removable. A list that is quietly showing a tenth of the
           // devices reads as a list of every device — which is how somebody
           // concludes the other nine tenths do not exist.
-          <p className="card-subtitle">
+          <div className="toolbar">
             <span className="pill neutral">
               Showing only{" "}
               {[CONDITION_WORD[condition] ?? condition, STATE_WORD[state] ?? state]
                 .filter(Boolean)
                 .join(" · ")}
-            </span>{" "}
+            </span>
             <button type="button" className="btn btn-sm" onClick={clearScope}>
               Show every device
             </button>
-          </p>
+          </div>
         ) : null}
         <p className="muted dim">
           Live from the MQTT broker, read-only. &ldquo;Never seen&rdquo; means the broker has
           never mentioned the device — it may never have been deployed, or the watcher may be
           off. It does not mean the device is faulty.
         </p>
-        <div className="btn-row">
-          {PRESENCE_FILTERS.map((f) => (
-            <button
-              key={f.key}
-              type="button"
-              className={`btn btn-sm${presence === f.key ? " btn-primary" : ""}`}
-              onClick={() => setPresence(f.key)}
-            >
-              {f.label}
-            </button>
-          ))}
-        </div>
       </div>
 
       <div className="card pad">
@@ -283,7 +252,7 @@ export default function DevicesTab({ project, runId }: Props) {
             {data.truncated ? (
               <p className="muted dim">
                 Showing the newest {rows.length.toLocaleString()} devices only. Narrow the view
-                with the filters above.
+                with the chips above.
               </p>
             ) : null}
             <DataTable

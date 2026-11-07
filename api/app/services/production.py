@@ -107,6 +107,9 @@ def create_set(db: Session, run: M.ProductionRun, source: str,
 def repo_production_paths(project_id: int, sha: str, board: dict) -> list[str]:
     """Paths of production/ files for this board at `sha` (bare-repo lookup,
     no checkout needed). Board-dir production/ first, repo root as fallback."""
+    # A project with no mirror has no repo to offer: the page says to fetch it.
+    if not gitrepo.mirror_path(project_id).exists():
+        return []
     try:
         all_files = gitrepo.list_files(project_id, sha)
     except gitrepo.GitError:

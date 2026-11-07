@@ -34,7 +34,8 @@ import SiInput from "../SiInput";
 import type { AgentRoll } from "../../flasher/benchAgent";
 import { rollFromName, type RollGeometry } from "../../flasher/label";
 import LabelPreview from "./LabelPreview";
-import { fmtBytes, fmtWhen, lbrnThumbnail } from "./common";
+import { fmtBytes, lbrnThumbnail } from "./common";
+import { localWhen } from "../../format";
 import {
   OPS, OP_BY_NAME, PHASES, getField, setField, varsBefore,
   type Field as FieldSpec, type OpSpec,
@@ -176,7 +177,7 @@ export default function StepEditor(props: StepEditorProps) {
                 {readOnly ? (
                   <StepFields step={step} spec={spec} props={props} />
                 ) : (
-                  <FieldGrid className="step-form">
+                  <FieldGrid>
                     {spec.fields.map((f) => (
                       <FieldEditor
                         key={f.key}
@@ -310,7 +311,7 @@ function FieldEditor(p: FieldEditorProps) {
 
   if (field.kind === "bool") {
     return (
-      <Field wide={false} className="step-field-check">
+      <Field group>
         <CheckField checked={Boolean(value)} onChange={(on) => set(on || "")} title={field.hint}>
           {field.label}
           {field.hint ? <span className="muted dim"> — {field.hint}</span> : null}
@@ -433,7 +434,7 @@ function FieldEditor(p: FieldEditorProps) {
   }
 
   return (
-    <Field label={field.label} hint={field.hint} wide={wide}>
+    <Field group={field.kind === "images" || field.kind === "artwork"} label={field.label} hint={field.hint} wide={wide}>
       {control}
     </Field>
   );
@@ -843,7 +844,7 @@ function ArtworkPicker(p: FieldEditorProps) {
           <option value="">— pick a drawing —</option>
           {choices.map((c) => (
             <option key={c.set_id} value={c.set_id}>
-              {c.label} · {fmtBytes(c.size_bytes)}{c.created_at ? ` · ${fmtWhen(c.created_at)}` : ""}
+              {c.label} · {fmtBytes(c.size_bytes)}{c.created_at ? ` · ${localWhen(c.created_at)}` : ""}
             </option>
           ))}
         </select>

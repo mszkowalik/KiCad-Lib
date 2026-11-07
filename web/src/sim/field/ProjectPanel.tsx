@@ -22,6 +22,7 @@ import {
 } from "../../api";
 import { zKey, type Profile } from "./model";
 import { fmtHz } from "./model";
+import { localDate, plural } from "../../format";
 
 export interface ProjectPanelProps {
   /** The stackup the page is working on, for the "assign it" action and the gate. */
@@ -173,7 +174,7 @@ export default function ProjectPanel({ stackupKey, profiles, liveResult, initial
       });
       const { added, replaced } = res.saved;
       setNote(
-        `Saved ${added + replaced} profile${added + replaced === 1 ? "" : "s"}` +
+        `Saved ${plural(added + replaced, "profile")}` +
           (replaced ? ` — ${added} new, ${replaced} replaced by name.` : ".") +
           (unassigned ? ` The board was also assigned ${stackupKey}.` : ""),
       );
@@ -209,7 +210,7 @@ export default function ProjectPanel({ stackupKey, profiles, liveResult, initial
           >
             {snapshots.map((s) => (
               <option key={s.id} value={s.id}>
-                {s.ref_name || s.sha.slice(0, 8)} · {s.committed_at?.slice(0, 10) ?? ""}
+                {s.ref_name || s.sha.slice(0, 8)} · {s.committed_at ? localDate(s.committed_at) : ""}
               </option>
             ))}
           </select>
@@ -311,9 +312,9 @@ export default function ProjectPanel({ stackupKey, profiles, liveResult, initial
             >
               {assigned === stackupKey ? "Stackup already assigned" : "Assign this stackup to the board"}
             </button>
-            <button type="button" className="btn btn-sm btn-accent" disabled={busy || blocked} onClick={save}>
+            <button type="button" className="btn btn-sm btn-primary" disabled={busy || blocked} onClick={save}>
               {chosen.length
-                ? `Save ${chosen.length} profile${chosen.length === 1 ? "" : "s"} to ${board || "this board"}`
+                ? `Save ${plural(chosen.length, "profile")} to ${board || "this board"}`
                 : "Pick at least one profile"}
             </button>
           </div>

@@ -11,6 +11,7 @@ import {
 import { ErrorBanner, Spinner } from "../Ui";
 import { fmtBytes, shortSha } from "./common";
 import { useModal } from "../modal";
+import DataTable from "../DataTable";
 
 function stateClass(state: string): string {
   return state === "unchanged" ? "neutral" : state === "removed" ? "err" : state === "added" ? "ok" : "warn";
@@ -69,7 +70,7 @@ export default function DiffView({
           <p className="muted">This is the first version — nothing to compare against.</p>
         ) : (
           <>
-            <p className="card-subtitle">
+            <p className="muted">
               v{diff.from.version_no} → v{diff.to.version_no}: <strong>{diff.changes.summary}</strong>
             </p>
 
@@ -78,37 +79,19 @@ export default function DiffView({
               <p className="muted">Unchanged.</p>
             ) : (
               <div className="table-wrap">
-                <table className="data data-fixed diff-table">
-                  <thead>
-                    <tr>
-                      <th>Offset</th>
-                      <th>Before</th>
-                      <th>After</th>
-                      <th>State</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {changedOnly(diff.images).map((row) => {
-                      const r = row as (typeof diff.images)[number];
-                      return (
-                        <tr key={r.address}>
-                          <td className="mono">{r.address}</td>
-                          <td className="mono dim" title={r.before?.filename}>
-                            {r.before
-                              ? `${r.before.filename} ${shortSha(r.before.sha256)} (${fmtBytes(r.before.size_bytes)})`
-                              : "—"}
-                          </td>
-                          <td className="mono" title={r.after?.filename}>
-                            {r.after
-                              ? `${r.after.filename} ${shortSha(r.after.sha256)} (${fmtBytes(r.after.size_bytes)})`
-                              : "—"}
-                          </td>
-                          <td><span className={`pill ${stateClass(r.state)}`}>{r.state}</span></td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
+                <DataTable
+                  rows={diff.images.filter((r) => r.state !== "unchanged")}
+                  rowKey={(r) => r.address}
+                  columns={[
+                    { key: "offset", label: "Offset", width: 22, className: "mono", get: (r) => r.address },
+                    { key: "before", label: "Before", width: 32, className: "mono dim", title: (r) => r.before?.filename,
+                      get: (r) => (r.before ? `${r.before.filename} ${shortSha(r.before.sha256)} (${fmtBytes(r.before.size_bytes)})` : "—") },
+                    { key: "after", label: "After", width: 32, className: "mono", title: (r) => r.after?.filename,
+                      get: (r) => (r.after ? `${r.after.filename} ${shortSha(r.after.sha256)} (${fmtBytes(r.after.size_bytes)})` : "—") },
+                    { key: "state", label: "State", width: 14, get: (r) => r.state,
+                      render: (r) => <span className={`pill ${stateClass(r.state)}`}>{r.state}</span> },
+                  ]}
+                />
               </div>
             )}
 
@@ -117,33 +100,19 @@ export default function DiffView({
               <p className="muted">Unchanged — same file set.</p>
             ) : (
               <div className="table-wrap">
-                <table className="data data-fixed diff-table">
-                  <thead>
-                    <tr>
-                      <th>File</th>
-                      <th>Before</th>
-                      <th>After</th>
-                      <th>State</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {changedOnly(diff.files).map((row) => {
-                      const r = row as (typeof diff.files)[number];
-                      return (
-                        <tr key={r.filename}>
-                          <td className="mono" title={r.filename}>{r.filename}</td>
-                          <td className="mono dim">
-                            {r.before ? `${shortSha(r.before.sha256)} (${fmtBytes(r.before.size_bytes)})` : "—"}
-                          </td>
-                          <td className="mono">
-                            {r.after ? `${shortSha(r.after.sha256)} (${fmtBytes(r.after.size_bytes)})` : "—"}
-                          </td>
-                          <td><span className={`pill ${stateClass(r.state)}`}>{r.state}</span></td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
+                <DataTable
+                  rows={diff.files.filter((r) => r.state !== "unchanged")}
+                  rowKey={(r) => r.filename}
+                  columns={[
+                    { key: "file", label: "File", width: 22, className: "mono", get: (r) => r.filename },
+                    { key: "before", label: "Before", width: 32, className: "mono dim",
+                      get: (r) => (r.before ? `${shortSha(r.before.sha256)} (${fmtBytes(r.before.size_bytes)})` : "—") },
+                    { key: "after", label: "After", width: 32, className: "mono",
+                      get: (r) => (r.after ? `${shortSha(r.after.sha256)} (${fmtBytes(r.after.size_bytes)})` : "—") },
+                    { key: "state", label: "State", width: 14, get: (r) => r.state,
+                      render: (r) => <span className={`pill ${stateClass(r.state)}`}>{r.state}</span> },
+                  ]}
+                />
               </div>
             )}
 

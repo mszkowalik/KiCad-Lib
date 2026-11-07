@@ -1,4 +1,4 @@
-/** Everything known about one part, behind its row in the Parts-stock table.
+/** Everything known about one part, behind its row on Stock → Parts.
  *
  *  Three boxes of the same height, because they answer three questions a reader
  *  has at once and none of them is worth a scroll of its own: WHERE the part is
@@ -15,20 +15,17 @@ import { Link } from "react-router-dom";
 import {
   errorMessage,
   getJlcPartLedger,
+  getJlcStockItemRaw,
   getPartsLedger,
   isAbortError,
   type JlcPartLedger,
   type PartLedger,
   type PartsStockRow,
 } from "../api";
+import { pln, qty, usd } from "../format";
+import { useTodayRate } from "../useTodayRate";
+import FoldSection, { StatChip } from "./FoldSection";
 import { ErrorBanner, Spinner } from "./Ui";
-
-function qty(v: number | null | undefined): string {
-  if (v == null) return "—";
-  return Math.round(v).toLocaleString();
-}
-
-import { plain as usd } from "../format";
 
 const KIND_LABEL: Record<string, string> = { buy: "purchase", use: "draw", adj: "adjust" };
 
@@ -123,9 +120,20 @@ export default function PartLedgerPanel({ row }: { row: PartsStockRow }) {
       <PartFigures row={row} />
       <div className="part-boxes">
         <ProjectsBox row={row} />
+        {/* This box sits beside the chart and scrolls in its own frame, so it has
+            no reason to fold: the reader opened the row to read it. */}
         <div className="part-box">
           <div className="part-box-head">
             <h3>Stock movements</h3>
+            <span className="fold-count">{(source === "ours" ? ledger.events.length : jlc?.rows.length ?? 0).toLocaleString()}</span>
+            {source === "ours" ? (
+              <>
+                {ledger.events.some((e) => e.short) ? <StatChip n={ledger.events.filter((e) => e.short).length} tone="err">below zero</StatChip> : null}
+                {ledger.events.some((e) => e.kind === "adj") ? <StatChip n={ledger.events.filter((e) => e.kind === "adj").length} tone="warn">adjustments</StatChip> : null}
+              </>
+            ) : jlc?.rows.some((r) => r.void) ? (
+              <StatChip n={jlc.rows.filter((r) => r.void).length}>cancelled</StatChip>
+            ) : null}
             <div className="seg" role="group" aria-label="Whose ledger">
               <button type="button" className={source === "ours" ? "on" : ""}
                       onClick={() => setSource("ours")}>ours</button>
@@ -150,8 +158,33 @@ export default function PartLedgerPanel({ row }: { row: PartsStockRow }) {
           </div>
         </div>
       </div>
+      {row.jlc_item_ids?.length ? (
+        <FoldSection bare title="Raw JLC data" count={null}>
+          <RawJlcData key={row.key} ids={row.jlc_item_ids} />
+        </FoldSection>
+      ) : null}
     </div>
   );
+}
+
+/** JLC's untouched stock payload, for a field that reads wrong. Fetched when the fold
+ *  opens, and from local rows: it needs no JLC session. A part under two LCSC codes has two. */
+function RawJlcData({ ids }: { ids: number[] }) {
+  const [raw, setRaw] = useState<unknown[] | null>(null);
+  const [error, setError] = useState("");
+  const idList = ids.join(",");
+
+  useEffect(() => {
+    const ac = new AbortController();
+    Promise.all(idList.split(",").map((id) => getJlcStockItemRaw(Number(id), ac.signal)))
+      .then(setRaw)
+      .catch((err) => { if (!isAbortError(err)) setError(errorMessage(err)); });
+    return () => ac.abort();
+  }, [idList]);
+
+  if (error) return <ErrorBanner message={error} />;
+  if (raw === null) return <Spinner label="Reading…" />;
+  return <pre className="code-block code-block-prompt">{JSON.stringify(raw.length === 1 ? raw[0] : raw, null, 2)}</pre>;
 }
 
 /** The operands of the comparison, as figures rather than columns.
@@ -163,6 +196,7 @@ export default function PartLedgerPanel({ row }: { row: PartsStockRow }) {
  *  elapsed time.
  */
 function PartFigures({ row }: { row: PartsStockRow }) {
+  const rate = useTodayRate();
   const consigned = row.state !== "pool_only";
   const stale = Math.round(row.remaining_qty) !== Math.round(row.remaining_at_sync_qty);
   const items: Array<{ label: string; value: string; className?: string; title?: string }> = [
@@ -175,12 +209,16 @@ function PartFigures({ row }: { row: PartsStockRow }) {
       className: stale ? "warn-text" : undefined,
       title: stale ? "stock has moved since JLC counted — Δ qty is about the earlier figure"
                    : undefined },
+    { label: "in boxes", value: row.house_qty ? qty(row.house_qty) : "—",
+      title: row.house_boxes.map((b) => `${b.code}: ${qty(b.qty)}`).join(", ") || undefined },
+    { label: "expected at JLC", value: consigned ? qty(row.expected_at_jlc_qty) : "—",
+      title: "ours when JLC counted, less what the organizers held then" },
     { label: "JLC has", value: consigned ? qty(row.held_qty) : "—" },
     { label: "paid / unit", value: row.paid_unit_usd == null ? "—" : usd(row.paid_unit_usd, 4) },
     { label: "market / unit", value: row.market_unit_usd == null ? "—" : usd(row.market_unit_usd, 4) },
-    { label: "at cost", value: usd(row.paid_value_usd) },
+    { label: "at cost", value: pln(row.paid_value_usd, rate) },
     { label: "unrealised", value: row.delta_value_usd == null ? "—" :
-        `${row.delta_value_usd >= 0 ? "+" : ""}${usd(row.delta_value_usd)}`,
+        `${row.delta_value_usd >= 0 ? "+" : ""}${pln(row.delta_value_usd, rate)}`,
       className: (row.delta_value_usd ?? 0) < 0 ? "err-text" : undefined,
       title: "the remainder priced at today's market, less what was paid for it" },
   ];

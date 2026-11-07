@@ -18,12 +18,22 @@ from ..config import settings
 from . import cost_state, fx, ladder, suppliers
 
 
-def display_currency(project: M.Project | None, override: str | None = None) -> str:
-    return (override or (project.display_currency if project else None) or settings.default_currency).upper()
+def display_currency(project: M.Project | None = None, override: str | None = None) -> str:
+    """The platform has one display currency, PLN by default (decision 0103). A
+    project's own override is gone: two projects read USD beside PLN on the same
+    screen. `Project.display_currency` stays as a dormant column."""
+    return (override or settings.default_currency).upper()
 
 
 def _round(x: float | None) -> float | None:
     return None if x is None else round(x, 6)
+
+
+def _unit_usd(amount: float, currency: str, rates: dict[str, float]) -> float | None:
+    """A part's unit price in USD: the screens print a component in USD and the
+    money around it in PLN (decision 0103). None when the rate is unknown."""
+    v, known = fx.convert(amount, currency, "USD", rates)
+    return round(v, 6) if known else None
 
 
 def _order_qty(needed: int, moq: int | None, multiple: int | None) -> int:
@@ -43,7 +53,7 @@ def _price_line(
     """Ladder pricing for one line at qty_total, converted to `currency`."""
     pt = ladder.price_at(points, max(qty_total, 1))
     out: dict = {
-        "unit_price": None, "unit_price_src": None, "price_currency": None,
+        "unit_price": None, "unit_usd": None, "unit_price_src": None, "price_currency": None,
         "price_qty_from": None, "price_source": None, "price_updated": None,
         "line_total": None, "rate_known": True,
         "moq": supply.moq if supply else None,
@@ -56,6 +66,7 @@ def _price_line(
     unit_disp, known = fx.convert(pt.unit_price, pt.currency, currency, rates)
     out.update(
         unit_price=_round(unit_disp),
+        unit_usd=_unit_usd(pt.unit_price, pt.currency, rates),
         unit_price_src=pt.unit_price,
         price_currency=pt.currency,
         price_qty_from=pt.qty_from,
@@ -300,6 +311,7 @@ def priced_bom(
                     unknown_rates.add(x.currency.upper())
             row.update(
                 unit_price=_round(unit_disp),
+                unit_usd=_unit_usd(x.unit_price, x.currency, rates) if x.unit_price is not None else None,
                 unit_price_src=x.unit_price,
                 price_currency=x.currency if x.unit_price is not None else None,
                 price_qty_from=None,
@@ -567,6 +579,7 @@ def priced_bom_costs_only(db: Session, project: M.Project, volume: int,
         elif x.unit_price is not None:
             unit_disp, known = fx.convert(x.unit_price, x.currency, cur, rates)
             row.update(unit_price=_round(unit_disp), price_currency=x.currency,
+                       unit_usd=_unit_usd(x.unit_price, x.currency, rates),
                        price_source=getattr(x, "price_source", None) or "Manual",
                        line_total=_round(unit_disp * qty_total),
                        rate_known=known, order_qty=qty_total, order_total=_round(unit_disp * qty_total))
@@ -606,8 +619,10 @@ def run_effective(db: Session, run: M.ProductionRun) -> dict:
     """Run economics computed ON DEMAND from historical pricing at the run's
     date (run_pricing_date), with overrides applied. Overrides:
     {<line key>: {unit_price?, qty_total?, label?, note?, drop?}} plus
-    {"added": [{label, qty, unit_price, note}]} — prices in the project's
-    display currency."""
+    {"added": [{label, qty, unit_price, note}]}. A price is in the override's own
+    `currency`. One with no `currency` was written while every project displayed
+    USD, so it is USD (decision 0103): read as PLN, Batch 8's 7 PLN assembly
+    override would drop to 1.88 PLN."""
     project = db.get(M.Project, run.project_id)
     at = run_pricing_date(run)
     snap = db.get(M.ProjectSnapshot, run.snapshot_id) if run.snapshot_id else None
@@ -619,6 +634,12 @@ def run_effective(db: Session, run: M.ProductionRun) -> dict:
         bom_lines = []
     base = {"lines": bom_lines, "extra": bom["extra"], "costs": bom["costs"]}
     overrides = dict(run.overrides or {})
+    rates = fx.rates_at(db, at)
+    display_cur = display_currency(project)
+
+    def override_money(ov: dict, field: str) -> float:
+        return fx.convert(float(ov[field]), ov.get("currency") or "USD", display_cur, rates)[0]
+
     # Decision 0060: with a process, the extra rows come from its steps (keys
     # `p<step>…`), but a batch's override was written against the old extra
     # item (`x<id>`). Carry each such override to the process row of the same
@@ -649,7 +670,7 @@ def run_effective(db: Session, run: M.ProductionRun) -> dict:
                 lines.append(eff)
                 continue
             if ov.get("unit_price") is not None:
-                eff["unit_price"] = float(ov["unit_price"])
+                eff["unit_price"] = override_money(ov, "unit_price")
             if ov.get("qty_total") is not None:
                 eff["qty_total"] = int(ov["qty_total"])
             if ov.get("label"):
@@ -671,7 +692,7 @@ def run_effective(db: Session, run: M.ProductionRun) -> dict:
             costs.append(eff)
             continue
         if ov.get("price") is not None:
-            eff["price"] = float(ov["price"])
+            eff["price"] = override_money(ov, "price")
             eff["per_device"] = _round(eff["price"] if eff["basis"] == "per_device" else eff["price"] / qty)
         if ov.get("note"):
             eff["override_note"] = ov["note"]
@@ -683,7 +704,7 @@ def run_effective(db: Session, run: M.ProductionRun) -> dict:
     for i, ov in enumerate(overrides.get("added", [])):
         try:
             line_qty = float(ov.get("qty", 1))
-            unit = float(ov.get("unit_price", 0))
+            unit = override_money({"unit_price": ov.get("unit_price", 0), "currency": ov.get("currency")}, "unit_price")
         except (TypeError, ValueError):
             continue
         total = _round(unit * line_qty)
@@ -695,8 +716,6 @@ def run_effective(db: Session, run: M.ProductionRun) -> dict:
     # draws, and draws are USD-denominated — without a same-date USD figure
     # the comparison would silently mix currencies. None when the rate is
     # unknown, never a 1:1 pretence.
-    rates = fx.rates_at(db, at)
-    display_cur = display_currency(project)
     for eff in lines + added:
         if eff.get("unit_price") is not None and not eff.get("dropped"):
             usd_v, known = fx.convert(eff["unit_price"], display_cur, "USD", rates)
@@ -704,7 +723,7 @@ def run_effective(db: Session, run: M.ProductionRun) -> dict:
     run_total = totals_parts + cost_total
     return {
         "priced_at": at.isoformat(),
-        "currency": display_currency(project),
+        "currency": display_cur,
         "cost_revision": bom.get("cost_revision"),
         "process_warnings": bom.get("process_warnings") or [],
         "qty": qty,

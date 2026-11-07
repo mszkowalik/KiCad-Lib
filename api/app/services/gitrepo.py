@@ -214,9 +214,11 @@ def archive_tgz(project_id: int, sha: str) -> bytes:
 
 
 def list_files(project_id: int, sha: str) -> list[dict]:
-    out = _run(["ls-tree", "-r", "--long", sha], cwd=mirror_path(project_id))
+    # `-z`, because without it git quotes a path with a non-ASCII letter ("Pli\305\202ytka.pdf"),
+    # and that string names no file when it comes back to `show_file`.
+    out = _run(["ls-tree", "-r", "--long", "-z", sha], cwd=mirror_path(project_id))
     files = []
-    for line in out.splitlines():
+    for line in out.split("\0"):
         # <mode> <type> <object> <size>\t<path>
         try:
             meta, path = line.split("\t", 1)

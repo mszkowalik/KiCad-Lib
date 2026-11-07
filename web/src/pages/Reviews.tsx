@@ -22,24 +22,28 @@ import {
 import DataTable, { type Column } from "../components/DataTable";
 import { useDialog } from "../components/Dialog";
 import ChangesFeed from "../components/ChangesFeed";
+import FoldSection, { FOLD_LIMIT, StatChip, NarrowChip } from "../components/FoldSection";
 import { ComponentWorkbench, TemplateWorkbench } from "../components/ReviewWorkbench";
+import ReviewRequestsCard from "../components/ReviewRequestsCard";
+import TabStrip from "../components/TabStrip";
+import { CheckField } from "../components/Field";
 import {
   ErrorBanner,
-  FoldList,
   LifecyclePill,
+  REVIEW_RANK,
   ReviewPill,
   SignoffPill,
   Spinner,
   stateFacts,
+  StatusPill,
 } from "../components/Ui";
+import { localWhen } from "../format";
 
 /** The review queue: what still needs verification, ranked by LEVERAGE — a
  * failed symbol pinning 30 components outranks a failed one pinning none —
  * with an inline workbench so a check never needs a page change, and an agent
  * worklist so the debt can be burned down without touching every part by
  * hand. Publishing waits for nobody; this page is where the debt is paid. */
-
-const STATE_RANK: Record<string, number> = { failed: 0, unreviewed: 1, partial: 2, checked: 3 };
 
 const TABS = ["changes", "components", "symbols", "footprints", "flagged",
               "exceptions", "health"] as const;
@@ -144,23 +148,8 @@ export default function Reviews() {
           </div>
         ) : null}
         <div className="toolbar">
-          <nav className="subnav">
-            {TABS.map((t) => (
-              <button
-                key={t}
-                type="button"
-                className={"topbar-link" + (tab === t ? " active" : "")}
-                onClick={() => setTab(t)}
-              >
-                {TAB_LABEL[t]}
-                {queue && (t === "components" || t === "symbols" || t === "footprints") ? (
-                  <span className="badge">{needsAttention(queue, t)}</span>
-                ) : health && t === "flagged" ? (
-                  <span className="badge">{health.flagged.length}</span>
-                ) : null}
-              </button>
-            ))}
-          </nav>
+          <h1>Review queue</h1>
+          <span className="toolbar-total">What still needs verification, by what checking it unblocks.</span>
           <button
             type="button"
             className="btn btn-sm"
@@ -183,12 +172,32 @@ export default function Reviews() {
           </button>
         </div>
 
+        <TabStrip
+          label="Review sections"
+          value={tab}
+          onChange={setTab}
+          tabs={TABS.map((t) => ({
+            id: t,
+            label: (
+              <>
+                {TAB_LABEL[t]}
+                {queue && (t === "components" || t === "symbols" || t === "footprints") ? (
+                  <span className="badge">{needsAttention(queue, t)}</span>
+                ) : health && t === "flagged" ? (
+                  <span className="badge">{health.flagged.length}</span>
+                ) : null}
+              </>
+            ),
+          }))}
+        />
+
         {error ? <ErrorBanner message={error} /> : null}
         {notice ? (
           <div className="banner-ok" role="status">
             {notice}
           </div>
         ) : null}
+        {tab === "components" || tab === "symbols" || tab === "footprints" ? <ReviewRequestsCard /> : null}
         {tab === "changes" ? (
           // Its own data, its own paging — it must not wait on the queue.
           <ChangesFeed />
@@ -323,10 +332,10 @@ function ComponentsTab({
     {
       key: "review",
       label: "Review",
-      width: 10,
+      width: 13,
       // Worst first — sorting this column means "what still needs looking at".
       get: (r) => r.review_state,
-      sortValue: (r) => STATE_RANK[r.review_state] ?? 9,
+      sortValue: (r) => REVIEW_RANK[r.review_state] ?? 9,
       // The facts go in the TOOLTIP, not beside the pill: a queue row is one
       // line tall and must never wrap (components/CLAUDE.md), so three pills
       // in this cell would break the table instead of informing anybody.
@@ -334,11 +343,11 @@ function ComponentsTab({
         <ReviewPill state={r.review_state} provenance={r.provenance} title={stateFacts(r)} />
       ),
     },
-    { key: "why", label: "Why", width: 20, get: (r) => r.blockers.join("; ") },
+    { key: "why", label: "Why", width: 14, get: (r) => r.blockers.join("; ") },
     {
       key: "signoff",
       label: "Sign-off",
-      width: 9,
+      width: 12,
       get: (r) => r.signoff_state,
       render: (r) => <SignoffPill state={r.signoff_state} />,
     },
@@ -347,15 +356,22 @@ function ComponentsTab({
       // A pill is inline-block: too narrow cuts "deprecated" in half
       // rather than shortening it.
       label: "Lifecycle",
-      width: 10,
+      width: 12,
       get: (r) => r.lifecycle,
       render: (r) => <LifecyclePill state={r.lifecycle} />,
     },
-    { key: "used_in", label: "Used in", width: 12, get: (r) => r.used_in.join(", ") },
+    { key: "used_in", label: "Used in", width: 10, get: (r) => r.used_in.join(", ") },
   ];
 
   return (
     <div className="card pad">
+      <div className="stat-row">
+        <NarrowChip n={rows.filter((r) => r.review_state === "failed").length} tone="err" value="failed" current={state} onNarrow={setState} off="attention">failed</NarrowChip>
+        <NarrowChip n={rows.filter((r) => r.review_state !== "checked" || r.signoff_state !== "signed").length} tone="warn" value="attention" current={state} onNarrow={setState} off="attention">need attention</NarrowChip>
+        <StatChip n={rows.filter((r) => r.used_in.length > 0 && r.signoff_state !== "signed").length} tone="warn" on={usedOnly}
+          onClick={() => setUsedOnly(!usedOnly)} title="Used in a project and not signed. A click shows only the parts used in a project.">used, not signed</StatChip>
+        <NarrowChip n={rows.filter((r) => r.review_state === "checked").length} tone="ok" value="checked" current={state} onNarrow={setState} off="attention">checked</NarrowChip>
+      </div>
       <div className="toolbar">
         <select className="text" value={state} onChange={(e) => setState(e.target.value as never)}>
           {STATE_FILTERS.map((s) => (
@@ -364,10 +380,7 @@ function ComponentsTab({
             </option>
           ))}
         </select>
-        <label>
-          <input type="checkbox" checked={usedOnly} onChange={(e) => setUsedOnly(e.target.checked)} /> used in
-          projects only
-        </label>
+        <CheckField checked={usedOnly} onChange={setUsedOnly}>used in projects only</CheckField>
         <input className="search" placeholder="Filter by name…" value={q} onChange={(e) => setQ(e.target.value)} />
         <span className="toolbar-total muted">{visible.length} shown</span>
         <button
@@ -483,7 +496,7 @@ function TemplatesTab({
       label: "Review",
       width: 14,
       get: (r) => r.review_state,
-      sortValue: (r) => STATE_RANK[r.review_state] ?? 9,
+      sortValue: (r) => REVIEW_RANK[r.review_state] ?? 9,
       // The facts go in the TOOLTIP, not beside the pill: a queue row is one
       // line tall and must never wrap (components/CLAUDE.md), so three pills
       // in this cell would break the table instead of informing anybody.
@@ -506,6 +519,12 @@ function TemplatesTab({
 
   return (
     <div className="card pad">
+      <div className="stat-row">
+        <NarrowChip n={rows.filter((r) => r.review_state === "failed").length} tone="err" value="failed" current={state} onNarrow={setState} off="attention">failed</NarrowChip>
+        <NarrowChip n={rows.filter((r) => r.review_state === "unreviewed").length} tone="warn" value="unreviewed" current={state} onNarrow={setState} off="attention">not reviewed</NarrowChip>
+        <NarrowChip n={rows.filter((r) => r.review_state === "partial").length} tone="warn" value="partial" current={state} onNarrow={setState} off="attention">partly checked</NarrowChip>
+        <NarrowChip n={rows.filter((r) => r.review_state === "checked").length} tone="ok" value="checked" current={state} onNarrow={setState} off="attention">checked</NarrowChip>
+      </div>
       <div className="toolbar">
         <select className="text" value={state} onChange={(e) => setState(e.target.value as never)}>
           {STATE_FILTERS.map((s) => (
@@ -543,7 +562,7 @@ function TemplatesTab({
           persistKey={`review-${kind}`}
           // Leverage first: a failed drawing pinning 30 parts IS the job.
           defaultSort={{ key: "used_by", dir: "desc" }}
-          group={(r) => STATE_RANK[r.review_state] ?? 9}
+          group={(r) => REVIEW_RANK[r.review_state] ?? 9}
           onVisibleChange={setVisible}
           openKey={openId}
           onOpenChange={(k) => setOpenId(k === null ? null : Number(k))}
@@ -624,10 +643,7 @@ function FlaggedTab({ health }: { health: ReviewHealth }) {
   return (
     <div className="card pad">
       <div className="toolbar">
-        <label>
-          <input type="checkbox" checked={groupByKey} onChange={(e) => setGroupByKey(e.target.checked)} /> group
-          by checklist item
-        </label>
+        <CheckField checked={groupByKey} onChange={setGroupByKey}>group by checklist item</CheckField>
         <input className="search" placeholder="Filter…" value={q} onChange={(e) => setQ(e.target.value)} />
         <span className="toolbar-total muted">{flagged.length} known defect(s)</span>
       </div>
@@ -635,10 +651,18 @@ function FlaggedTab({ health }: { health: ReviewHealth }) {
         <p className="muted">Nothing is flagged — no known defects awaiting a fix.</p>
       ) : (
         groups.map(([label, items]) => (
-          <section key={label}>
-            <h3 className="card-title">
-              <span className="mono">{label}</span> <span className="muted">({items.length})</span>
-            </h3>
+          <FoldSection
+            key={label}
+            bare
+            title={<span className="mono">{label}</span>}
+            count={items.length}
+            // Many groups are a long list of their own, so each folds.
+            limit={groups.length > FOLD_LIMIT ? -1 : undefined}
+            foldKey={`reviews:flagged:${label}`}
+            chips={[...new Set(items.map((f) => f.kind))].map((kind) => (
+              <StatChip key={kind} n={items.filter((f) => f.kind === kind).length} tone="warn">{kind}</StatChip>
+            ))}
+          >
             <ul className="notes-list">
               {items.map((f, i) => (
                 <li key={`${f.kind}-${f.id}-${f.key}-${i}`} className="note">
@@ -668,14 +692,14 @@ function FlaggedTab({ health }: { health: ReviewHealth }) {
                 </li>
               ))}
             </ul>
-          </section>
+          </FoldSection>
         ))
       )}
     </div>
   );
 }
 
-//: Where a subject of each kind lives. Symbols and footprints share one route.
+/** Where a subject of each kind lives. Symbols and footprints share one route. */
 const LINK_FOR: Record<string, (id: number) => string> = {
   component: (id) => `/library/components/${id}`,
   symbol: (id) => `/library/templates/symbols/${id}`,
@@ -696,6 +720,7 @@ const LINK_FOR: Record<string, (id: number) => string> = {
 function ExceptionsTab() {
   const [rows, setRows] = useState<ReviewExceptionRow[] | null>(null);
   const [showRevoked, setShowRevoked] = useState(false);
+  const [onlyStale, setOnlyStale] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const dialog = useDialog();
@@ -755,12 +780,10 @@ function ExceptionsTab() {
       key: "state", label: "State", width: 12,
       get: (r) => (r.revoked_at ? "revoked" : r.stale_reason ? "stale" : "in force"),
       render: (r) => (
-        <span
-          className={`pill ${r.revoked_at ? "neutral" : r.stale_reason ? "warn" : "ok"}`}
+        <StatusPill
+          status={r.revoked_at ? "revoked" : r.stale_reason ? "stale" : "in force"}
           title={r.stale_reason ?? r.revoke_reason ?? undefined}
-        >
-          {r.revoked_at ? "revoked" : r.stale_reason ? "stale" : "in force"}
-        </span>
+        />
       ),
     },
     { key: "by", label: "Decided by", width: 12, get: (r) => r.created_by },
@@ -793,14 +816,17 @@ function ExceptionsTab() {
         check it excused is failing again.{" "}
         {stale ? <strong>{stale} stale.</strong> : null}
       </p>
-      <div className="btn-row">
+      <div className="stat-row">
+        <StatChip n={stale} tone={stale ? "warn" : undefined} on={onlyStale} onClick={() => setOnlyStale(!onlyStale)}>stale</StatChip>
+        <StatChip n={rows.filter((r) => !r.revoked_at && !r.stale_reason).length} tone="ok">in force</StatChip>
+        {showRevoked ? <StatChip n={rows.filter((r) => r.revoked_at).length}>revoked</StatChip> : null}
         <button type="button" className="btn btn-sm" onClick={() => setShowRevoked((v) => !v)}>
           {showRevoked ? "Hide revoked" : "Show revoked too"}
         </button>
       </div>
       <DataTable
         columns={columns}
-        rows={rows}
+        rows={onlyStale ? rows.filter((r) => !r.revoked_at && r.stale_reason) : rows}
         rowKey={(r) => r.id}
         persistKey="review-exceptions"
         defaultSort={{ key: "state", dir: "asc" }}
@@ -819,7 +845,7 @@ function ExceptionsTab() {
               {Object.keys(r.depends_on).length
                 ? `Pinned to ${Object.keys(r.depends_on).join(", ")}`
                 : "Pinned to nothing — this holds for every future version of the part."}
-              {r.created_at ? ` · ${new Date(r.created_at).toLocaleString()}` : ""}
+              {r.created_at ? ` · ${localWhen(r.created_at)}` : ""}
             </p>
           </div>
         )}
@@ -828,10 +854,9 @@ function ExceptionsTab() {
   );
 }
 
-function CountList({ title, counts }: { title: string; counts: Record<string, number> }) {
+function CountList({ title, counts, quiet }: { title: string; counts: Record<string, number>; quiet?: boolean }) {
   return (
-    <section className="card pad meta-card">
-      <h3 className="card-title">{title}</h3>
+    <FoldSection title={title} count={Object.keys(counts).length} limit={quiet ? -1 : undefined} foldKey={`reviews:health:${title}`}>
       <dl className="kv">
         {Object.entries(counts)
           .sort((a, b) => b[1] - a[1])
@@ -839,7 +864,7 @@ function CountList({ title, counts }: { title: string; counts: Record<string, nu
             <Item key={k} k={k} v={v} />
           ))}
       </dl>
-    </section>
+    </FoldSection>
   );
 }
 
@@ -929,110 +954,111 @@ function HealthTab({ health }: { health: ReviewHealth }) {
     <div className="field-grid">
       <CountList title={`Review states (${health.components.total} components)`} counts={health.components.review} />
       <CountList title="Production sign-off" counts={health.components.signoff} />
-      <CountList title="Lifecycle" counts={health.components.lifecycle} />
+      <CountList title="Lifecycle" counts={health.components.lifecycle} quiet />
       {(["footprint", "symbol", "component"] as ReviewKind[]).map((kind) =>
         health.failing_keys[kind]?.length ? (
-          <section key={kind} className="card pad meta-card">
-            <h3 className="card-title">Failing {kind} checks, by item</h3>
+          <FoldSection
+            key={kind}
+            title={`Failing ${kind} checks, by item`}
+            count={health.failing_keys[kind].length}
+            foldKey={`reviews:health:failing:${kind}`}
+            chips={<StatChip n={health.failing_keys[kind].reduce((a, f) => a + f.count, 0).toLocaleString()} tone="err">failures</StatChip>}
+          >
             <p className="muted">
               One systemic fix clears a whole row. Open a key to see every {kind} it fails on.
             </p>
-            <FoldList items={health.failing_keys[kind]} noun="item">
-              {(shown) => (
-                <dl className="kv">
-                  {shown.map((f) => (
-                    <FailingKey key={f.key} kind={kind} itemKey={f.key} count={f.count} />
-                  ))}
-                </dl>
-              )}
-            </FoldList>
-          </section>
+            <dl className="kv">
+              {health.failing_keys[kind].map((f) => (
+                <FailingKey key={f.key} kind={kind} itemKey={f.key} count={f.count} />
+              ))}
+            </dl>
+          </FoldSection>
         ) : null,
       )}
-      <section className="card pad meta-card">
-        <h3 className="card-title">Used in a project, not signed</h3>
+      <FoldSection
+        title="Used in a project, not signed"
+        count={health.used_not_signed.length}
+        foldKey="reviews:health:not-signed"
+        chips={health.used_not_signed.length ? <StatChip n={health.used_not_signed.length} tone="warn">to sign</StatChip> : undefined}
+      >
         {health.used_not_signed.length === 0 ? (
           <p className="muted">None — every part on a board is signed off.</p>
         ) : (
-          <FoldList items={health.used_not_signed} noun="part">
-            {(shown) => (
-              <ul className="val-list">
-                {shown.map((n) => (
-                  <li key={n}>{n}</li>
-                ))}
-              </ul>
-            )}
-          </FoldList>
+          <ul className="val-list">
+            {health.used_not_signed.map((n) => (
+              <li key={n}>{n}</li>
+            ))}
+          </ul>
         )}
-      </section>
-      <section className="card pad meta-card">
-        <h3 className="card-title">Deprecated parts still on boards</h3>
+      </FoldSection>
+      <FoldSection
+        title="Deprecated parts still on boards"
+        count={health.used_deprecated.length}
+        foldKey="reviews:health:deprecated"
+        chips={health.used_deprecated.length ? <StatChip n={health.used_deprecated.length} tone="warn">to replace</StatChip> : undefined}
+      >
         {health.used_deprecated.length === 0 ? (
           <p className="muted">None.</p>
         ) : (
-          <FoldList items={health.used_deprecated} noun="part">
-            {(shown) => (
-              <ul className="val-list">
-                {shown.map((n) => (
-                  <li key={n}>{n}</li>
-                ))}
-              </ul>
-            )}
-          </FoldList>
+          <ul className="val-list">
+            {health.used_deprecated.map((n) => (
+              <li key={n}>{n}</li>
+            ))}
+          </ul>
         )}
-      </section>
-      <section className="card pad meta-card">
-        <h3 className="card-title">Items most often marked "does not apply"</h3>
+      </FoldSection>
+      <FoldSection
+        title={'Items most often marked "does not apply"'}
+        count={health.top_na_items.length}
+        limit={-1}
+        foldKey="reviews:health:top-na"
+      >
         {health.top_na_items.length === 0 ? (
           <p className="muted">Nothing is being closed as inapplicable.</p>
         ) : (
-          <FoldList items={health.top_na_items} noun="item">
-            {(shown) => (
-              <dl className="kv">
-                {shown.map((s) => (
-                  <Item key={s.key} k={s.key} v={s.count} />
-                ))}
-              </dl>
-            )}
-          </FoldList>
+          <dl className="kv">
+            {health.top_na_items.map((s) => (
+              <Item key={s.key} k={s.key} v={s.count} />
+            ))}
+          </dl>
         )}
-      </section>
+      </FoldSection>
       {health.legacy_skipped_items.length ? (
-        <section className="card pad meta-card">
-          <h3 className="card-title">Left over from the retired "skipped" answer</h3>
+        <FoldSection
+          title={'Left over from the retired "skipped" answer'}
+          count={health.legacy_skipped_items.length}
+          foldKey="reviews:health:legacy-skipped"
+          chips={<StatChip n={health.legacy_skipped_items.reduce((a, s) => a + s.count, 0).toLocaleString()} tone="warn">open answers</StatChip>}
+        >
           <p className="muted">
             These were answered "skipped" before 2026-09-13, which meant "applies, but I
             could not verify it". They now read as UNANSWERED and are real open work —
             most say only that a datasheet was out of scope for that pass.
           </p>
-          <FoldList items={health.legacy_skipped_items} noun="item">
-            {(shown) => (
-              <dl className="kv">
-                {shown.map((s) => (
-                  <Item key={s.key} k={s.key} v={s.count} />
-                ))}
-              </dl>
-            )}
-          </FoldList>
-        </section>
+          <dl className="kv">
+            {health.legacy_skipped_items.map((s) => (
+              <Item key={s.key} k={s.key} v={s.count} />
+            ))}
+          </dl>
+        </FoldSection>
       ) : null}
       {health.na_reasons.length ? (
-        <section className="card pad meta-card">
-          <h3 className="card-title">Why items do not apply</h3>
+        <FoldSection
+          title="Why items do not apply"
+          count={health.na_reasons.length}
+          limit={-1}
+          foldKey="reviews:health:na-reasons"
+        >
           <p className="muted">
             A reason names the kind of exemption — "kind exempt" means the convention
             itself excuses this class of part, and the convention is where to check it.
           </p>
-          <FoldList items={health.na_reasons} noun="reason">
-            {(shown) => (
-              <dl className="kv">
-                {shown.map((s) => (
-                  <Item key={s.reason} k={s.reason} v={s.count} />
-                ))}
-              </dl>
-            )}
-          </FoldList>
-        </section>
+          <dl className="kv">
+            {health.na_reasons.map((s) => (
+              <Item key={s.reason} k={s.reason} v={s.count} />
+            ))}
+          </dl>
+        </FoldSection>
       ) : null}
     </div>
   );

@@ -2211,10 +2211,9 @@ class ProductionRun(Base):
     notes: Mapped[str] = mapped_column(Text, default="")
     frozen: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     overrides: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
-    # What this batch is programmed with. Soft pointers (like snapshot_id): a
-    # ProgrammingRun pins its own deployment version, so re-assigning the batch
-    # never rewrites what was already programmed. Either pin a version outright
-    # or follow a channel by name and let it resolve at run creation.
+    # Dormant: nothing reads or writes these two since 2026-11-07. A batch's process
+    # names its procedures (decision 0076). The columns stay because old journal rows
+    # name them, and a reversal must still find them.
     deployment_version_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     deployment_channel: Mapped[str] = mapped_column(String(40), default="")
     # Must a unit of THIS batch pass the project's test to count as programmed?
@@ -2677,11 +2676,62 @@ class MaterialItem(Base):
     lcsc: Mapped[str] = mapped_column(String(50), default="")
     project_id: Mapped[int | None] = mapped_column(Integer, nullable=True)  # soft ptr
     uom: Mapped[str] = mapped_column(String(10), default="pcs")
-    #: What the floor states at a use: `count` (FIFO, nobody asked), `lot`
-    #: (the lot, once per batch), `serial` (the unit, by its identifier).
+    #: What the floor states at a use: `count` (nobody asked), `lot` (the lot,
+    #: once per batch), `serial` (the unit, by its identifier).
     tracking: Mapped[str] = mapped_column(String(10), default="count")
     identifier_kind: Mapped[str] = mapped_column(String(20), default="")  # mac | engraved | label
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class OrganizerBox(Base):
+    """One compartment of a parts organizer in the office (decision 0104).
+
+    A box belongs to no company: both companies share the organizers. What is
+    in it belongs to a company, on `OrganizerMove`. The code is what is printed
+    on the box. It is unique inside its organizer only, so a new organizer may
+    number its boxes from 1 again."""
+
+    __tablename__ = "organizer_boxes"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    organizer: Mapped[str] = mapped_column(String(60))
+    code: Mapped[str] = mapped_column(String(40))
+    note: Mapped[str] = mapped_column(String(300), default="")
+    created_by: Mapped[str] = mapped_column(String(100), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    __table_args__ = (UniqueConstraint("organizer", "code", name="uq_organizer_box_code"),)
+
+
+class OrganizerMove(Base):
+    """One change of what one box holds of one item, for one company (0104).
+
+    Append-only: a box's balance is the sum of its moves, never stored. It says
+    where the pieces ARE. The money stays in the material ledger, and
+    `material_move_id` names the draw or the adjustment a move wrote there. A
+    move between boxes and a batch's take for a crafted batch write none."""
+
+    __tablename__ = "organizer_moves"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    box_id: Mapped[int] = mapped_column(ForeignKey("organizer_boxes.id"))
+    item_id: Mapped[int] = mapped_column(ForeignKey("material_items.id"))
+    company_id: Mapped[int] = mapped_column(Integer)
+    qty: Mapped[float] = mapped_column(Float, default=0.0)  # signed
+    kind: Mapped[str] = mapped_column(String(12))  # opening | count | take | move | clear
+    #: A take only: research (a cost of no batch) | batch
+    purpose: Mapped[str] = mapped_column(String(12), default="")
+    at: Mapped[str] = mapped_column(String(20), default="")  # ISO date
+    material_move_id: Mapped[int | None] = mapped_column(Integer, nullable=True)  # soft ptr
+    run_id: Mapped[int | None] = mapped_column(Integer, nullable=True)  # soft ptr
+    note: Mapped[str] = mapped_column(String(500), default="")
+    actor: Mapped[str] = mapped_column(String(100), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    __table_args__ = (
+        Index("ix_organizer_move_box", "box_id", "item_id"),
+        Index("ix_organizer_move_item", "item_id"),
+    )
 
 
 class MaterialStateMap(Base):
@@ -2879,7 +2929,9 @@ class MaterialMove(Base):
     project_id: Mapped[int | None] = mapped_column(ForeignKey("projects.id"), nullable=True)
     #: A draw: how the quantity is known, so an estimate is never read as a
     #: measurement: measured (JLC stock deltas), bom (BOM x units), allocated
-    #: (historical backfill), manual (typed), step, transformation, transfer.
+    #: (historical backfill), manual (typed), step, transformation, transfer,
+    #: research (used for R&D: a cost no batch pays, 0104), external (used by a
+    #: project the platform does not track; uncharged, 0104).
     basis: Mapped[str] = mapped_column(String(20), default="")
     #: An adjustment: attrition | scrap | miscount | opening_balance |
     #: correction | external_project | transformation | found
@@ -3882,7 +3934,7 @@ class User(Base):
     # default and means "whatever the OS asks for"; the browser still caches
     # the answer, because the choice has to be applied before the first paint
     # and `/api/auth/me` has not answered yet then (`web/src/theme.ts`).
-    theme: Mapped[str] = mapped_column(String(10), default="system")
+    theme: Mapped[str] = mapped_column(String(10), default="dark")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
@@ -4126,7 +4178,8 @@ class DeviceEvent(Base):
     allocated       order_line_id, shipment_id when packed  allocated
                     into an OPEN shipment (decision 0053)
     unallocated     order_line_id, shipment_id — taken out  in_stock
-                    of the box before it was sent
+                    of the box before it was sent. No
+                    shipment: a reservation released.
     shipped         order_line_id, shipment_id,             shipped
                     replaces_device_id (a replacement),
                     auto (FIFO picked it, nobody typed it)

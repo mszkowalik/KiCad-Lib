@@ -1,15 +1,14 @@
 /** Circuit simulator: a schematic with its own simulation drawn on top.
  *
- *  A source is either a board's schematic at an ingested commit (linked from
- *  the project schematic tab) or a sheet set dropped here from KiCad. Both run
- *  the same way: kicad-cli flattens the hierarchy and resolves the Sim.*
- *  fields, ngspice runs the scenario the schematic itself carries, and the
- *  result is drawn back onto the drawing — node voltages as colour, current as
- *  moving charge.
+ *  A source is a board's schematic at an ingested commit (linked from the
+ *  project schematic tab), a sheet set uploaded here from KiCad, or a sketch
+ *  drawn here. All run the same way: kicad-cli flattens the hierarchy and resolves
+ *  the Sim.* fields, ngspice runs the circuit, and the result is drawn back onto
+ *  the drawing — node voltages as colour, current as moving charge.
  *
- *  This is the SCENARIO mode: a finite run, returned whole, which the page
- *  replays and scrubs. Live continuous simulation is a separate mode and is
- *  not built yet (docs/simulator/design.md).
+ *  Two modes. SCENARIO is a finite run, returned whole, which the page replays and
+ *  scrubs. LIVE is an endless run, streamed, that you change while it runs
+ *  (`sim/live.ts`). See docs/simulator/design.md.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
@@ -55,8 +54,10 @@ import { readVerdicts } from "../sim/scenario";
 import { FALLBACK_THEME, type LibSymbol, type SchTheme } from "../sim/draw/types";
 import { emptyDoc, type PaletteEntry, type SchDoc } from "../sim/edit/doc";
 import { LiveSession, liveControls, type LiveControl, type LiveState } from "../sim/live";
+import FilePick from "../components/FilePick";
 import SiInput from "../components/SiInput";
 import { parseSpice, quantityForUnit, toSpice } from "../components/si";
+import TabStrip from "../components/TabStrip";
 import {
   decodeSimPayload,
   eng,
@@ -68,6 +69,8 @@ import {
   type SimPlot,
   type SimRun,
 } from "../sim/payload";
+import { plural } from "../format";
+import Field from "../components/Field";
 
 /** How long one replay of a whole run takes, in seconds of wall clock. */
 const REPLAY_SECONDS = 5;
@@ -77,13 +80,6 @@ const REPLAY_SECONDS = 5;
  *  circuit nets. */
 const isUnconnected = (n: SimNet): boolean => n.name.startsWith("unconnected-");
 
-/** Is this part a contact rather than a component? A switch drawn in the
- *  editor netlists as a resistor (`Sim.Device R`), so the netlist alone
- *  cannot tell one from a real resistor — the reference can. Outside the
- *  component: a new function every render would defeat every memo that
- *  depends on it. */
-/** How much WALL clock a live scope shows, and in how many columns. The
- *  worker caps its own history at the same number. */
 /** The charge-dot speed knob. Slider 0..100 -> a multiple of the default,
  *  logarithmically, with 1x in the middle and 0 meaning stopped. Logarithmic
  *  because the useful range is a factor of sixty and a linear slider spends
@@ -100,9 +96,16 @@ function currentSpeedOf(slider: number): number {
  *  the first frame sets it rather than being lost inside it. */
 const LIVE_SCALE_START = { min: -1, max: 1, peak: 1e-6 };
 
+/** How much WALL clock a live scope shows, and in how many columns. The
+ *  worker caps its own history at the same number. */
 const LIVE_WINDOW_S = 4;
 const LIVE_COLUMNS = 600;
 
+/** Is this part a contact rather than a component? A switch drawn in the
+ *  editor netlists as a resistor (`Sim.Device R`), so the netlist alone
+ *  cannot tell one from a real resistor — the reference can. Outside the
+ *  component: a new function every render would defeat every memo that
+ *  depends on it. */
 const isSwitch = (ref: string) => ref.toUpperCase().startsWith("SW");
 
 export default function Simulator() {
@@ -754,13 +757,6 @@ export default function Simulator() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [docJson, live, sketchLive]);
 
-  /** What each open trace asks the worker to watch.
-   *
-   *  A live scope is fed CLOSED COLUMNS, one per pixel, so the browser says
-   *  how much simulated time a pixel is worth. Tie it to the speed and a
-   *  scope is the same few seconds of WALL clock at every setting — which is
-   *  what a person means by "the last few seconds".
-   */
   /** Which devices this run reports a branch current for. It decides how a
    *  wire's or a terminal's current can be written, so it has to come from the
    *  run itself and not from a guess about naming. */
@@ -779,6 +775,13 @@ export default function Simulator() {
     return plot ? names.some((n) => plot.byName.has(n)) : false;
   }, [live, runVectors, plot]);
 
+  /** What each open trace asks the worker to watch.
+   *
+   *  A live scope is fed CLOSED COLUMNS, one per pixel, so the browser says
+   *  how much simulated time a pixel is worth. Tie it to the speed and a
+   *  scope is the same few seconds of WALL clock at every setting — which is
+   *  what a person means by "the last few seconds".
+   */
   const liveScopes = useMemo(
     () => panes.flatMap((p) => p.traces).map((t) => {
       const span = (liveSpeed * LIVE_WINDOW_S) / LIVE_COLUMNS;
@@ -921,12 +924,11 @@ export default function Simulator() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [source, geometry, busy, editable, live]);
 
-  const onUpload = async (files: FileList | null) => {
-    if (!files || !files.length) return;
+  const onUpload = async (files: File[]) => {
     setBusy(true);
     setError(null);
     try {
-      const meta = await uploadSimSheets(Array.from(files));
+      const meta = await uploadSimSheets(files);
       setParams({ upload: meta.id });
     } catch (err) {
       setError(errorMessage(err));
@@ -1017,14 +1019,6 @@ export default function Simulator() {
     return plot ? plotReader(plot, sample) : null;
   }, [live, liveState, liveIndex, plot, sample]);
 
-  /** How big the numbers get in a LIVE run.
-   *
-   *  A finished run knows its own extremes, because every point of it is in
-   *  hand. A live one has only the latest frame, so the scale is learned as
-   *  the run goes and only ever GROWS: a peak that tracked the instant would
-   *  make the tint flicker and the charge dots change speed thirty times a
-   *  second, which reads as noise rather than as current.
-   */
   /** How fast the charge moves on the drawing. A viewing preference, so it is
    *  remembered for the session like the other selections on this page. */
   const [currentSlider, setCurrentSlider] = useStickyState("sim:current-speed", CURRENT_SLIDER_MID);
@@ -1052,6 +1046,14 @@ export default function Simulator() {
     return () => window.removeEventListener("resize", measure);
   }, [hasGeometry]);
 
+  /** How big the numbers get in a LIVE run.
+   *
+   *  A finished run knows its own extremes, because every point of it is in
+   *  hand. A live one has only the latest frame, so the scale is learned as
+   *  the run goes and only ever GROWS: a peak that tracked the instant would
+   *  make the tint flicker and the charge dots change speed thirty times a
+   *  second, which reads as noise rather than as current.
+   */
   const [liveScale, setLiveScale] = useState(LIVE_SCALE_START);
   useEffect(() => { setLiveScale(LIVE_SCALE_START); }, [live, source]);
   useEffect(() => {
@@ -1230,34 +1232,17 @@ export default function Simulator() {
 
 
   const tabBar = (
-    <div className="seg proj-tabs" role="tablist" aria-label="Simulator tool">
-      <button
-        type="button"
-        role="tab"
-        aria-selected={tab === "circuit"}
-        className={tab === "circuit" ? "on" : ""}
-        onClick={() => {
-          const next = new URLSearchParams(params);
-          next.delete("tab");
-          setParams(next, { replace: true });
-        }}
-      >
-        Circuit
-      </button>
-      <button
-        type="button"
-        role="tab"
-        aria-selected={tab === "field"}
-        className={tab === "field" ? "on" : ""}
-        onClick={() => {
-          const next = new URLSearchParams(params);
-          next.set("tab", "field");
-          setParams(next, { replace: true });
-        }}
-      >
-        Field solver
-      </button>
-    </div>
+    <TabStrip
+      tabs={[{ id: "circuit", label: "Circuit" }, { id: "field", label: "Field solver" }]}
+      value={tab}
+      onChange={(t) => {
+        const next = new URLSearchParams(params);
+        if (t === "field") next.set("tab", "field");
+        else next.delete("tab");
+        setParams(next, { replace: true });
+      }}
+      label="Simulator tool"
+    />
   );
 
   if (tab === "field") {
@@ -1277,16 +1262,21 @@ export default function Simulator() {
         {tabBar}
         <div className="card pad">
           <p className="muted">
-            Drop a schematic to simulate it. Send the sheet you want, every sub-sheet it
+            Choose a schematic to simulate it. Send the sheet you want, every sub-sheet it
             uses, and any model file it references next to itself — the netlist resolves
             those relative to the sheet.
           </p>
-          <input
-            type="file"
-            multiple
-            accept=".kicad_sch,.kicad_pro,.lib,.sp,.cir,.mod,.sub,.txt"
-            onChange={(e) => void onUpload(e.target.files)}
-          />
+          <div className="btn-row">
+            <FilePick
+              className="btn"
+              multiple
+              accept=".kicad_sch,.kicad_pro,.lib,.sp,.cir,.mod,.sub,.txt"
+              disabled={busy}
+              onPick={(files) => void onUpload(files)}
+            >
+              Choose files…
+            </FilePick>
+          </div>
           {busy ? <Spinner label="Uploading" /> : null}
           {error ? <ErrorBanner message={error} /> : null}
           <p className="muted">
@@ -1299,10 +1289,10 @@ export default function Simulator() {
             so the circuit you sketch opens in KiCad afterwards.
           </p>
           <div className="toolbar">
-            <button type="button" className="primary" onClick={() => void startSketch()} disabled={busy}>
+            <button type="button" className="btn btn-primary" onClick={() => void startSketch()} disabled={busy}>
               {busy ? "Starting…" : "Draw a circuit"}
             </button>
-            <button type="button" onClick={() => void openExample()} disabled={busy}>
+            <button type="button" className="btn" onClick={() => void openExample()} disabled={busy}>
               Open the example
             </button>
           </div>
@@ -1321,6 +1311,31 @@ export default function Simulator() {
   const verdicts = readVerdicts(run?.header.log ?? "");
   const sheetOwn = scenarios?.scenarios?.[0]?.text ?? "";
 
+  // A live run has its bar in the top strip, bare. Any other run has it in the dock.
+  const runBar = geometry ? (
+    <RunBar
+      bare={live}
+      live={live}
+      scenarios={scenarios}
+      control={control}
+      onControl={setControl}
+      analysis={analysis}
+      onAnalysis={setAnalysis}
+      busy={busy}
+      progress={progress}
+      onRun={() => void doRun()}
+      verdicts={verdicts}
+      ran={!!run}
+      state={liveState}
+      speed={liveSpeed}
+      onSpeed={(v) => { setLiveSpeed(v); session.current?.setSpeed(v); }}
+      onHold={() => {
+        if (liveState?.status === "halted") session.current?.resume();
+        else session.current?.halt();
+      }}
+    />
+  ) : null;
+
   return (
     <div className="page page-wide page-sim">
       {error ? <ErrorBanner message={error} /> : null}
@@ -1334,8 +1349,7 @@ export default function Simulator() {
         {/* A dropdown, not a row of buttons: a repository has as many
             simulation blocks as it likes. */}
         {projects && projects.length > 1 ? (
-          <label className="sim-runbar-pick">
-            <span>Simulation</span>
+          <Field inline className="sim-runbar-pick" label="Simulation">
             <select
               className="text"
               value={board}
@@ -1347,11 +1361,10 @@ export default function Simulator() {
                 </option>
               ))}
             </select>
-          </label>
+          </Field>
         ) : null}
         {sheets && sheets.length > 1 ? (
-          <label className="sim-runbar-pick">
-            <span>Sheet</span>
+          <Field inline className="sim-runbar-pick" label="Sheet">
             <select
               className="text"
               value={sheetPath}
@@ -1364,43 +1377,16 @@ export default function Simulator() {
                 </option>
               ))}
             </select>
-          </label>
+          </Field>
         ) : null}
 
         <span className="sim-runbar-spacer" />
 
-        {live && geometry ? <RunBar
-            bare
-            live={live}
-            scenarios={scenarios}
-            control={control}
-            onControl={setControl}
-            analysis={analysis}
-            onAnalysis={setAnalysis}
-            busy={busy}
-            progress={progress}
-            onRun={() => void doRun()}
-            verdicts={verdicts}
-            ran={!!run}
-            state={liveState}
-            speed={liveSpeed}
-            onSpeed={(v) => { setLiveSpeed(v); session.current?.setSpeed(v); }}
-            onHold={() => {
-              if (liveState?.status === "halted") session.current?.resume();
-              else session.current?.halt();
-            }}
-          /> : null}
+        {live ? runBar : null}
 
-        {/* A drawing has no page to fit to and no page to show whole: it opens
-            on a working window and the wheel does the rest. */}
-        {/* How fast the charge moves. It says nothing about the simulation —
-            the dots are drawn at a speed proportional to each wire's share of
-            the peak current, and this is the constant of proportionality. Zero
-            stops them, which is what a screenshot wants. */}
         {/* The volt scale the colours mean. Falstad's convention: green above
             ground, red below, nothing at zero. */}
-        <label className="sim-runbar-pick" title="The voltage at which the wire colour saturates">
-          <span>Volts</span>
+        <Field inline className="sim-runbar-pick" label="Volts" title="The voltage at which the wire colour saturates">
           <select
             className="text"
             value={String(voltRef)}
@@ -1411,9 +1397,12 @@ export default function Simulator() {
             ))}
             <option value="0">auto</option>
           </select>
-        </label>
-        <label className="sim-runbar-pick sim-speed" title="How fast the charge dots travel">
-          <span>Current</span>
+        </Field>
+        {/* How fast the charge moves. It says nothing about the simulation —
+            the dots are drawn at a speed proportional to each wire's share of
+            the peak current, and this is the constant of proportionality. Zero
+            stops them, which is what a screenshot wants. */}
+        <Field inline className="sim-runbar-pick sim-speed" label="Current" title="How fast the charge dots travel">
           <input
             type="range"
             min={0}
@@ -1426,7 +1415,9 @@ export default function Simulator() {
           <span className="mono sim-speed-read">
             {currentSpeed === 0 ? "off" : `${currentSpeed < 1 ? currentSpeed.toFixed(2) : currentSpeed.toFixed(1)}\u00d7`}
           </span>
-        </label>
+        </Field>
+        {/* A drawing has no page to fit to and no page to show whole: it opens
+            on a working window and the wheel does the rest. */}
         {editable ? null : (
           <div className="seg" role="group" aria-label="View">
             <button type="button" className={fit ? "on" : ""} onClick={() => setFit(true)}>Fit</button>
@@ -1437,7 +1428,7 @@ export default function Simulator() {
             Download is the way OUT of the playground — live edits never write
             a project file, so the file in hand is the only artefact. */}
         {editable ? (
-          <button type="button" className="ghost" onClick={() => void downloadSketch()}>
+          <button type="button" className="btn btn-sm" onClick={() => void downloadSketch()}>
             Download
           </button>
         ) : null}
@@ -1508,26 +1499,7 @@ export default function Simulator() {
               Falstad's one-window feel. The page can still scroll for the
               reference drawer underneath. */}
           <div className="sim-dock">
-          {!live && geometry ? <RunBar
-            live={live}
-            scenarios={scenarios}
-            control={control}
-            onControl={setControl}
-            analysis={analysis}
-            onAnalysis={setAnalysis}
-            busy={busy}
-            progress={progress}
-            onRun={() => void doRun()}
-            verdicts={verdicts}
-            ran={!!run}
-            state={liveState}
-            speed={liveSpeed}
-            onSpeed={(v) => { setLiveSpeed(v); session.current?.setSpeed(v); }}
-            onHold={() => {
-              if (liveState?.status === "halted") session.current?.resume();
-              else session.current?.halt();
-            }}
-          /> : null}
+          {live ? null : runBar}
 
           {/* The waveform, whichever kind of run made it. One scope, stacked
               panes, one X axis — a live run and a finished one differ only in
@@ -1549,7 +1521,7 @@ export default function Simulator() {
               head={(
                 <>
                   {!live && plot && plot.scale.length > 1 ? (
-                    <button type="button" onClick={() => setPlaying((x) => !x)}>
+                    <button type="button" className="btn btn-sm" onClick={() => setPlaying((x) => !x)}>
                       {playing ? "Pause" : "Play"}
                     </button>
                   ) : null}
@@ -1613,7 +1585,7 @@ export default function Simulator() {
                   spellCheck={false}
                 />
                 {control ? (
-                  <button type="button" className="ghost" onClick={() => setControl("")}>
+                  <button type="button" className="btn btn-sm" onClick={() => setControl("")}>
                     Revert to the sheet&apos;s own
                   </button>
                 ) : null}
@@ -1625,7 +1597,7 @@ export default function Simulator() {
                     wired. On a real board they outnumber the real nets. */}
                 {nets.some(isUnconnected) ? (
                   <p className="muted">
-                    <button type="button" onClick={() => setShowUnconnected((v) => !v)}>
+                    <button type="button" className="btn btn-sm" onClick={() => setShowUnconnected((v) => !v)}>
                       {showUnconnected ? "Hide" : "Show"} {nets.filter(isUnconnected).length}{" "}
                       unconnected pins
                     </button>
@@ -1741,7 +1713,7 @@ function LiveControls({
           <span className="muted">{c.unit}</span>
         </>
       )}
-      {zero ? <button type="button" disabled={busy} onClick={() => apply(c, "0")}>0</button> : null}
+      {zero ? <button type="button" className="btn btn-sm" disabled={busy} onClick={() => apply(c, "0")}>0</button> : null}
     </label>
     );
   };
@@ -1763,7 +1735,7 @@ function LiveControls({
       {passives.length ? (
         <>
           <p className="muted">
-            {passives.length} more part{passives.length === 1 ? "" : "s"} sit on other sheets
+            {plural(passives.length, "more part")} sit on other sheets
             of this design. Open the sheet to click one, or name it here.
           </p>
           <div className="sim-knobs">
@@ -1807,6 +1779,7 @@ function LiveControls({
         />
         <button
           type="button"
+          className="btn btn-sm"
           disabled={busy || !text.trim()}
           onClick={() => { onAlter(text.trim()); onText(""); }}
         >

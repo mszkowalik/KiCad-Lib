@@ -889,7 +889,8 @@ def list_projects() -> str:
 def get_project_bom(project: str, board: str = "", variant: str = "", volume: int = 1) -> str:
     """Priced BOM of a project's latest ingested snapshot at a production
     volume: per-line unit prices from current LCSC ladders, manual cost
-    items, and per-device / per-run totals in the project's display currency.
+    items, and per-device / per-run totals in the platform's display currency
+    (PLN). Each line also has `unit_usd`, the component's price in USD.
 
     Args:
         project: Project name (exact, case-insensitive).

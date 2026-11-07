@@ -24,6 +24,7 @@ import {
   errorMessage,
   getShipment,
   isAbortError,
+  markShipmentReplacement,
   packShipment,
   patchShipment,
   sendShipment,
@@ -34,40 +35,12 @@ import {
   shipmentMosquittoPath,
 } from "../api";
 import DataTable, { type Column } from "../components/DataTable";
-import { fmtWhen } from "../components/flasher/common";
 import { useDialog } from "../components/Dialog";
 import Field, { FieldRow } from "../components/Field";
+import FoldSection, { StatChip } from "../components/FoldSection";
+import { ScanBox, useScanList, type Scan, type ScanBoxHandle } from "../components/ScanList";
 import { BackLink, ErrorBanner, Spinner, StatusPill } from "../components/Ui";
-import { parseScanSheet } from "./Orders";
-
-type ScanState = "pending" | "checking" | "done" | "error";
-interface Scan {
-  code: string;
-  state: ScanState;
-  check?: ShipmentCheck;
-  error?: string;
-}
-
-const scanKey = (id: number) => `kicadlib:shipment-scan:${id}`;
-
-function loadScans(id: number): Scan[] {
-  try {
-    const raw = window.localStorage.getItem(scanKey(id));
-    const codes: unknown = raw ? JSON.parse(raw) : [];
-    return Array.isArray(codes) ? codes.filter((c) => typeof c === "string").map((code) => ({ code, state: "pending" })) : [];
-  } catch {
-    return [];
-  }
-}
-
-function saveScans(id: number, scans: Scan[]) {
-  try {
-    if (scans.length) window.localStorage.setItem(scanKey(id), JSON.stringify(scans.map((s) => s.code)));
-    else window.localStorage.removeItem(scanKey(id));
-  } catch {
-    /* private window or blocked storage: the list just does not survive a reload */
-  }
-}
+import { localWhen, today, plural } from "../format";
 
 export default function ShipmentDetail() {
   const { id: idParam } = useParams();
@@ -92,7 +65,7 @@ export default function ShipmentDetail() {
   return (
     <div className="main-solo">
       <div className="page">
-        <BackLink to="/production/shipments">← Shipments</BackLink>
+        <BackLink to="/sales/shipments">← Shipments</BackLink>
         <div className="toolbar">
           <h1>Shipment #{id}</h1>
           {sh ? <StatusPill status={sh.status} /> : null}
@@ -131,42 +104,29 @@ export default function ShipmentDetail() {
 function HeaderCard({ sh }: { sh: Detail }) {
   const open = sh.status === "open";
   const o = sh.order;
+  const hereOf = (l: Detail["order"]["lines"][number]) => sh.per_line[String(l.id)] ?? 0;
+  const over = (l: Detail["order"]["lines"][number]) => open && hereOf(l) > l.qty_open;
+  const columns: Column<Detail["order"]["lines"][number]>[] = [
+    { key: "line", label: "Line", width: 40, get: (l) => l.product || l.project },
+    { key: "ordered", label: "Ordered", width: 15, numeric: true, get: (l) => l.qty_ordered, render: (l) => <>{l.qty_ordered.toLocaleString()}</> },
+    { key: "shipped", label: "Shipped", width: 15, numeric: true, get: (l) => l.qty_shipped, render: (l) => <>{l.qty_shipped.toLocaleString()}</> },
+    { key: "open", label: "Open", width: 15, numeric: true, get: (l) => l.qty_open, render: (l) => <>{l.qty_open.toLocaleString()}</> },
+    {
+      key: "here",
+      label: open ? "In this box" : "On this shipment",
+      width: 15,
+      numeric: true,
+      get: hereOf,
+      title: (l) => (over(l) ? "More devices in the box than the line has open" : undefined),
+      render: (l) => <span className={over(l) ? "warn-text" : undefined}>{hereOf(l).toLocaleString()}</span>,
+    },
+  ];
   return (
     <div className="card pad">
       <h2 className="card-title">
-        <Link to={`/production/orders/${o.id}`}>{o.order_ref}</Link> · {o.customer}
+        <Link to={`/sales/orders/${o.id}`}>{o.order_ref}</Link> · {o.customer}
       </h2>
-      <div className="table-wrap">
-        <table className="data order-table">
-          <thead>
-            <tr>
-              <th>Line</th>
-              <th className="num">Ordered</th>
-              <th className="num">Shipped</th>
-              <th className="num">Open</th>
-              <th className="num">{open ? "In this box" : "On this shipment"}</th>
-            </tr>
-          </thead>
-          <tbody>
-            {o.lines.map((l) => {
-              const here = sh.per_line[String(l.id)] ?? 0;
-              const over = open && here > l.qty_open;
-              return (
-                <tr key={l.id}>
-                  <td>{l.product || l.project}</td>
-                  <td className="num">{l.qty_ordered.toLocaleString()}</td>
-                  <td className="num">{l.qty_shipped.toLocaleString()}</td>
-                  <td className="num">{l.qty_open.toLocaleString()}</td>
-                  <td className={"num" + (over ? " warn-text" : "")}
-                      title={over ? "More devices in the box than the line has open" : undefined}>
-                    {here.toLocaleString()}
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
+      <DataTable rows={o.lines} rowKey={(l) => l.id} columns={columns} empty="This order has no lines." />
       {open ? null : (
         <dl className="kv">
           <dt>Sent on</dt>
@@ -194,7 +154,7 @@ function SendCard({ sh, onChange }: { sh: Detail; onChange: (s: Detail) => void 
   const [note, setNote] = useState(sh.delivery_note);
   const [tracking, setTracking] = useState(sh.tracking);
   const [notes, setNotes] = useState(sh.notes);
-  const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
+  const [date, setDate] = useState(today);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
@@ -248,7 +208,7 @@ function SendCard({ sh, onChange }: { sh: Detail; onChange: (s: Detail) => void 
           onClick={async () => {
             if (
               await dialog.confirm(
-                `Mark this shipment as sent on ${date}? ${sh.qty} device${sh.qty === 1 ? "" : "s"} are recorded as shipped to ${sh.order.customer}, and the box is closed.`,
+                `Mark this shipment as sent on ${date}? ${plural(sh.qty, "device")} are recorded as shipped to ${sh.order.customer}, and the box is closed.`,
                 { confirmLabel: "Mark as sent" },
               )
             ) {
@@ -267,7 +227,7 @@ function SendCard({ sh, onChange }: { sh: Detail; onChange: (s: Detail) => void 
               if (await dialog.confirm("Delete this empty shipment?", { tone: "danger" })) {
                 await run(async () => {
                   await deleteShipment(sh.id);
-                  navigate("/production/shipments");
+                  navigate("/sales/shipments");
                 });
               }
             }}
@@ -282,7 +242,7 @@ function SendCard({ sh, onChange }: { sh: Detail; onChange: (s: Detail) => void 
             onClick={async () => {
               if (
                 await dialog.confirm(
-                  `Cancel this shipment? ${sh.qty} packed device${sh.qty === 1 ? "" : "s"} go back to stock. The shipment stays in the list as cancelled.`,
+                  `Cancel this shipment? ${plural(sh.qty, "packed device")} go back to stock. The shipment stays in the list as cancelled.`,
                   { tone: "danger", confirmLabel: "Cancel shipment" },
                 )
               ) {
@@ -305,13 +265,15 @@ function ContentCard({ sh }: { sh: Detail }) {
       {
         key: "serial",
         label: "Serial",
-        width: 40,
+        // The widths sum to 100 with the broker column and without it.
+        width: sh.broker ? 28 : 40,
         className: "mono",
         get: (d) => d.serial || d.mac,
         render: (d) => <Link to={`/production/devices/${d.device_id}`}>{d.serial || d.mac}</Link>,
       },
-      { key: "run", label: "Batch", width: 20, numeric: true, get: (d) => d.run_id ?? "" },
-      { key: "state", label: "State now", width: 40, get: (d) => d.state },
+      { key: "run", label: "Batch", width: sh.broker ? 12 : 20, numeric: true, get: (d) => d.run_id ?? "" },
+      { key: "state", label: "State now", width: sh.broker ? 20 : 40,
+        get: (d) => (d.replaces_serial ? `${d.state}, replaces ${d.replaces_serial}` : d.state) },
       ...(sh.broker
         ? [{
             key: "broker",
@@ -319,21 +281,34 @@ function ContentCard({ sh }: { sh: Detail }) {
             width: 40,
             get: (d: ShipmentDeviceRow) => d.broker?.heard_at ?? "",
             title: (d: ShipmentDeviceRow) =>
-              d.broker ? `topic ${d.broker.topic}, counted after ${fmtWhen(d.broker.since)}` : "",
+              d.broker ? `topic ${d.broker.topic}, counted after ${localWhen(d.broker.since)}` : "",
             render: (d: ShipmentDeviceRow) =>
               !d.broker?.heard_at
                 ? <span className="muted">not heard</span>
                 : d.broker.online
-                  ? `online${d.broker.online_since ? ` since ${fmtWhen(d.broker.online_since)}` : ""}`
-                  : `last heard ${fmtWhen(d.broker.heard_at)}`,
+                  ? `online${d.broker.online_since ? ` since ${localWhen(d.broker.online_since)}` : ""}`
+                  : `last heard ${localWhen(d.broker.heard_at)}`,
           } as Column<ShipmentDeviceRow>]
         : []),
     ],
     [sh.broker],
   );
+  const returned = sh.devices.filter((d) => d.state === "returned").length;
+  const disposed = sh.devices.filter((d) => d.state === "disposed").length;
   return (
-    <div className="card pad">
-      <h2 className="card-title">Devices</h2>
+    <FoldSection
+      title="Devices"
+      count={sh.devices.length}
+      foldKey={`shipment:${sh.id}:devices`}
+      chips={
+        <>
+          {sh.broker ? <StatChip n={sh.broker.heard} tone="ok">heard on the broker</StatChip> : null}
+          {sh.broker && sh.broker.of > sh.broker.heard ? <StatChip n={sh.broker.of - sh.broker.heard} tone="warn">not heard</StatChip> : null}
+          {returned ? <StatChip n={returned} tone="warn">returned</StatChip> : null}
+          {disposed ? <StatChip n={disposed} tone="err">disposed</StatChip> : null}
+        </>
+      }
+    >
       {sh.status === "cancelled" ? <p className="muted dim">Cancelled before it was sent. Its devices went back to stock.</p> : null}
       {sh.broker ? (
         <p className="muted">
@@ -343,21 +318,20 @@ function ContentCard({ sh }: { sh: Detail }) {
         </p>
       ) : null}
       <DataTable rows={sh.devices} columns={columns} rowKey={(d) => d.device_id} empty="No device on this shipment." />
-    </div>
+    </FoldSection>
   );
 }
 
 /** The packing station: scan field, SCANNED list, arrows, IN THIS SHIPMENT. */
+type PackScan = Scan<ShipmentCheck>;
+
 function PackCard({ sh, onChange }: { sh: Detail; onChange: (s: Detail) => void }) {
-  const [scans, setScans] = useState<Scan[]>(() => loadScans(sh.id));
-  const [code, setCode] = useState("");
-  const [notice, setNotice] = useState<string | null>(null);
+  const dialog = useDialog();
   const [error, setError] = useState<string | null>(null);
   const [left, setLeft] = useState<Set<string>>(new Set());
   const [right, setRight] = useState<Set<number>>(new Set());
   const [busy, setBusy] = useState(false);
-  const inflight = useRef(false);
-  const input = useRef<HTMLInputElement>(null);
+  const box = useRef<ScanBoxHandle>(null);
 
   // A line only needs naming when two lines of the order carry the same product.
   const ambiguous = useMemo(() => {
@@ -365,60 +339,24 @@ function PackCard({ sh, onChange }: { sh: Detail; onChange: (s: Detail) => void 
     return sh.order.lines.some((l) => (seen.has(l.project_id) ? true : (seen.add(l.project_id), false)));
   }, [sh.order.lines]);
   const [lineId, setLineId] = useState<number | null>(null);
+  const list = useScanList<ShipmentCheck>({
+    storageKey: `kicadlib:shipment-scan:${sh.id}`,
+    check: (codes) => checkShipmentCodes(sh.id, codes, lineId),
+    codeOf: (c) => c.code,
+    isOk: (c) => c.ok,
+    describe: (c) => (c.ok
+      ? { tone: "ok", text: `${c.code} is ready for this box.` }
+      : { tone: "err", text: `${c.code}: ${c.reason}. The next scan works.` }),
+    taken: (c) => sh.devices.some((d) => d.serial === c),
+  });
+  const { scans } = list;
 
-  useEffect(() => saveScans(sh.id, scans), [sh.id, scans]);
-
-  // Check whatever is pending, in batches, one request at a time. Scans that
-  // arrive while a request is out wait for the next round.
-  useEffect(() => {
-    if (inflight.current) return;
-    const pending = scans.filter((s) => s.state === "pending").map((s) => s.code);
-    if (!pending.length) return;
-    inflight.current = true;
-    const want = new Set(pending);
-    setScans((ss) => ss.map((s) => (want.has(s.code) && s.state === "pending" ? { ...s, state: "checking" } : s)));
-    checkShipmentCodes(sh.id, pending, lineId)
-      .then((res) => {
-        const by = new Map(res.map((r) => [r.code, r]));
-        setScans((ss) =>
-          ss.map((s) => (s.state === "checking" && by.has(s.code) ? { ...s, state: "done", check: by.get(s.code) } : s)),
-        );
-      })
-      .catch((err) => {
-        const msg = errorMessage(err);
-        setScans((ss) => ss.map((s) => (s.state === "checking" && want.has(s.code) ? { ...s, state: "error", error: msg } : s)));
-      })
-      .finally(() => {
-        inflight.current = false;
-        // Wake the effect for anything scanned meanwhile.
-        setScans((ss) => [...ss]);
-      });
-  }, [scans, sh.id, lineId]);
-
-  /** One scan is taken as typed; only a PASTED list goes through
-   *  `parseScanSheet`, which drops tokens with `:` or `-` (timestamps and MACs
-   *  in a scanner's CSV export) — a scanned `PROTO-0045` must not vanish. */
-  const add = (raw: string, list = false) => {
-    const codes = list ? parseScanSheet(raw) : [raw.trim()].filter(Boolean);
-    if (!codes.length) return;
-    const have = new Set([...scans.map((s) => s.code), ...sh.devices.map((d) => d.serial)]);
-    const dup = codes.filter((c) => have.has(c));
-    setNotice(dup.length ? `${dup.length === 1 ? `${dup[0]} is` : `${dup.length} codes are`} already on a list — not added again.` : null);
-    // The updater re-checks against the list as it is NOW: two scans can land
-    // before this render's `scans` is replaced.
-    setScans((ss) => {
-      const now = new Set(ss.map((s) => s.code));
-      const fresh = codes.filter((c) => !have.has(c) && !now.has(c));
-      return fresh.length ? [...fresh.map((c) => ({ code: c, state: "pending" as ScanState })), ...ss] : ss;
-    });
-  };
-
-  const recheckAll = () => setScans((ss) => ss.map((s) => ({ code: s.code, state: "pending" })));
+  const recheckAll = list.recheck;
 
   const ready = scans.filter((s) => s.check?.ok);
   const selectedReady = ready.filter((s) => left.has(s.code));
 
-  const pack = async (rows: Scan[]) => {
+  const pack = async (rows: PackScan[]) => {
     const ids = rows.map((s) => s.check!.device_id!).filter(Boolean);
     if (!ids.length) return;
     setBusy(true);
@@ -426,7 +364,7 @@ function PackCard({ sh, onChange }: { sh: Detail; onChange: (s: Detail) => void 
     try {
       const r = await packShipment(sh.id, ids, lineId);
       const gone = new Set(rows.map((s) => s.code));
-      setScans((ss) => ss.filter((s) => !gone.has(s.code)));
+      list.removeWhere((s) => gone.has(s.code));
       setLeft(new Set());
       onChange(r);
     } catch (err) {
@@ -434,7 +372,7 @@ function PackCard({ sh, onChange }: { sh: Detail; onChange: (s: Detail) => void 
       recheckAll();
     } finally {
       setBusy(false);
-      input.current?.focus();
+      box.current?.focus();
     }
   };
 
@@ -448,16 +386,39 @@ function PackCard({ sh, onChange }: { sh: Detail; onChange: (s: Detail) => void 
       const r = await unpackShipment(sh.id, ids);
       setRight(new Set());
       onChange(r);
-      setScans((ss) => [...back.map((c) => ({ code: c, state: "pending" as ScanState })), ...ss]);
+      list.add(back, "scanned");
     } catch (err) {
       setError(errorMessage(err));
     } finally {
       setBusy(false);
-      input.current?.focus();
+      box.current?.focus();
     }
   };
 
-  const scanCols: Column<Scan>[] = [
+  /** A scanner works in this prompt too: it types the code and Enter, and that is
+   *  the answer. The scan box itself still never meets a dialog. */
+  const askReplacement = async (d: ShipmentDeviceRow) => {
+    const code = await dialog.prompt(
+      `${d.serial || d.mac} replaces which device? Scan or type the serial of a device delivered on this order.`,
+      { title: "Warranty replacement", confirmLabel: "Save" },
+    );
+    if (code?.trim()) await setReplacement(d, code.trim());
+  };
+
+  const setReplacement = async (d: ShipmentDeviceRow, code: string) => {
+    setBusy(true);
+    setError(null);
+    try {
+      onChange(await markShipmentReplacement(sh.id, d.device_id, code));
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setBusy(false);
+      box.current?.focus();
+    }
+  };
+
+  const scanCols: Column<PackScan>[] = [
     {
       key: "sel",
       label: (
@@ -501,7 +462,7 @@ function PackCard({ sh, onChange }: { sh: Detail; onChange: (s: Detail) => void 
       render: (s) =>
         s.state === "done" ? (
           s.check!.ok ? (
-            <span className="pill ok">ready</span>
+            <StatusPill status="ready" />
           ) : (
             <span className="err-text">{s.check!.reason}</span>
           )
@@ -520,7 +481,7 @@ function PackCard({ sh, onChange }: { sh: Detail; onChange: (s: Detail) => void 
       get: () => "",
       render: (s) => (
         <button type="button" className="btn btn-sm" title="Remove from the scanned list"
-                onClick={() => setScans((ss) => ss.filter((x) => x.code !== s.code))}>
+                onClick={() => list.remove(s.code)}>
           ×
         </button>
       ),
@@ -562,27 +523,37 @@ function PackCard({ sh, onChange }: { sh: Detail; onChange: (s: Detail) => void 
     {
       key: "serial",
       label: "Serial",
-      width: 34,
+      width: "126px",
       className: "mono",
       get: (d) => d.serial || d.mac,
+      title: (d) => (d.packed_at ? `Packed ${localWhen(d.packed_at)}` : undefined),
       render: (d) => <Link to={`/production/devices/${d.device_id}`}>{d.serial || d.mac}</Link>,
     },
     {
       key: "line",
       label: "Line",
-      width: 30,
+      width: 36,
       get: (d) => {
         const l = sh.order.lines.find((x) => x.id === d.order_line_id);
         return l ? l.product || l.project : "";
       },
     },
     {
-      key: "packed",
-      label: "Packed",
-      width: 30,
-      className: "mono",
-      get: (d) => d.packed_at ?? "",
-      render: (d) => (d.packed_at ? new Date(d.packed_at).toLocaleString() : ""),
+      // A warranty replacement does not count against the ordered quantity (decision 0003).
+      key: "replaces",
+      label: "Replaces",
+      width: 56,
+      interactive: false,
+      get: (d) => d.replaces_serial ?? "",
+      title: (d) => (d.replaces_serial ? `Goes out as the replacement of ${d.replaces_serial}` : undefined),
+      render: (d) => (d.replaces_serial ? (
+        <>
+          <span className="mono">{d.replaces_serial}</span>{" "}
+          <button type="button" className="linklike" disabled={busy} onClick={() => void setReplacement(d, "")}>clear</button>
+        </>
+      ) : (
+        <button type="button" className="btn btn-sm" disabled={busy} onClick={() => void askReplacement(d)}>Replacement…</button>
+      )),
     },
   ];
 
@@ -600,32 +571,10 @@ function PackCard({ sh, onChange }: { sh: Detail; onChange: (s: Detail) => void 
         Select the ready ones and press → to put them in the shipment; ← takes devices back out to stock.
       </p>
       {error ? <ErrorBanner message={error} /> : null}
-      <FieldRow>
-        <Field label="Scan" hint={notice ?? "Enter adds the code. Pasting a list works too."}>
-          <input
-            ref={input}
-            className="text mono"
-            autoFocus
-            value={code}
-            placeholder="scan a serial…"
-            onChange={(e) => setCode(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") {
-                e.preventDefault();
-                add(code);
-                setCode("");
-              }
-            }}
-            onPaste={(e) => {
-              const text = e.clipboardData.getData("text");
-              if (/\s/.test(text.trim())) {
-                e.preventDefault();
-                add(text, true);
-              }
-            }}
-          />
-        </Field>
-        {ambiguous ? (
+      <ScanBox ref={box} label="Scan" placeholder="scan a serial…" onScan={list.scan} onPaste={list.paste}
+        notice={list.notice} hint="Enter adds the code. Pasting a list works too." />
+      {ambiguous ? (
+        <FieldRow>
           <Field label="Pack onto line" hint="Two lines of this order carry the same product.">
             <select className="text" value={lineId ?? ""} onChange={(e) => {
               setLineId(e.target.value ? Number(e.target.value) : null);
@@ -639,8 +588,8 @@ function PackCard({ sh, onChange }: { sh: Detail; onChange: (s: Detail) => void 
               ))}
             </select>
           </Field>
-        ) : null}
-      </FieldRow>
+        </FieldRow>
+      ) : null}
       <div className="ship-pack">
         <div>
           <div className="toolbar">
@@ -650,7 +599,7 @@ function PackCard({ sh, onChange }: { sh: Detail; onChange: (s: Detail) => void 
               {counts.checking ? ` · ${counts.checking} checking` : ""}
             </span>
             <button type="button" className="btn btn-sm" disabled={!counts.refused}
-                    onClick={() => setScans((ss) => ss.filter((s) => !(s.state === "done" && !s.check?.ok)))}>
+                    onClick={() => list.removeWhere((s) => s.state === "done" && !s.check?.ok)}>
               Clear refused
             </button>
             <button type="button" className="btn btn-sm" disabled={!scans.length} onClick={recheckAll}>
@@ -676,7 +625,7 @@ function PackCard({ sh, onChange }: { sh: Detail; onChange: (s: Detail) => void 
         <div>
           <div className="toolbar">
             <h3 className="card-subtitle">In this shipment</h3>
-            <span className="toolbar-total">{sh.qty} device{sh.qty === 1 ? "" : "s"}</span>
+            <span className="toolbar-total">{plural(sh.qty, "device")}</span>
           </div>
           <DataTable rows={sh.devices} columns={boxCols} rowKey={(d) => d.device_id} empty="The box is empty." />
         </div>

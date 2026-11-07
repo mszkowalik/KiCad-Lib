@@ -1,4 +1,5 @@
-/** Light, dark, or the operating system's answer — for the whole app.
+/** Light, dark, or the operating system's answer — for the whole app. Dark is
+ *  the default for everybody (2026-11-07).
  *
  *  **`data-theme` on `<html>` is always `light` or `dark`, never `system`.**
  *  The OS preference is resolved here rather than by a `prefers-color-scheme`
@@ -29,15 +30,15 @@ function isPref(value: unknown): value is ThemePref {
 }
 
 /** The cached choice. Private browsing can make `localStorage` throw, and the
- *  OS answer is a fine thing to fall back to, so a failure is not an error. */
+ *  default is a fine thing to fall back to, so a failure is not an error. */
 export function storedTheme(): ThemePref {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (isPref(raw)) return raw;
   } catch {
-    /* no storage — follow the OS */
+    /* no storage: the default */
   }
-  return "system";
+  return "dark";
 }
 
 function osPrefersDark(): boolean {

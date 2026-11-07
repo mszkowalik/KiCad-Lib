@@ -19,11 +19,14 @@ import {
   type StockCheck,
 } from "../../api";
 import DataTable from "../DataTable";
+import FoldSection, { StatChip } from "../FoldSection";
 import { ErrorBanner, Spinner } from "../Ui";
 import { useStickyState } from "../../useStickyState";
 import CostCurve from "./CostCurve";
 
-import { price as money } from "../../format";
+import { localDate, price as money } from "../../format";
+import CountTile from "../CountTile";
+import Field from "../Field";
 
 interface Props {
   project: ProjectInfo;
@@ -37,10 +40,6 @@ export default function BomTab({ project, snapshot, snapshots, board, variant }:
   // BOM settings — remembered per project across navigation.
   const [volume, setVolume] = useStickyState(`project:${project.id}:bom:volume`, 100);
   const [volumeInput, setVolumeInput] = useState(() => String(volume));
-  const [currency, setCurrency] = useStickyState(
-    `project:${project.id}:bom:currency`,
-    project.effective_currency,
-  );
   const [bom, setBom] = useState<PricedBom | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -60,7 +59,7 @@ export default function BomTab({ project, snapshot, snapshots, board, variant }:
     setLoading(true);
     setError(null);
     setStock(null);
-    getBom(snapshot.id, board, variant, volume, currency, ctrl.signal)
+    getBom(snapshot.id, board, variant, volume, undefined, ctrl.signal)
       .then((b) => {
         setBom(b);
         setLoading(false);
@@ -70,11 +69,11 @@ export default function BomTab({ project, snapshot, snapshots, board, variant }:
         setError(errorMessage(err));
         setLoading(false);
       });
-    getBomCurve(snapshot.id, board, variant, [1, 10, 100, 1000], currency, ctrl.signal)
+    getBomCurve(snapshot.id, board, variant, [1, 10, 100, 1000], undefined, ctrl.signal)
       .then(setCurve)
       .catch(() => setCurve(null));
     return () => ctrl.abort();
-  }, [snapshot.id, board, variant, volume, currency]);
+  }, [snapshot.id, board, variant, volume]);
 
   const stockByKey = useMemo(() => {
     const map = new Map<string, StockCheck["lines"][number]>();
@@ -110,7 +109,7 @@ export default function BomTab({ project, snapshot, snapshots, board, variant }:
   }, [diffAgainst, snapshot.id, board, variant, project.id]);
 
   const lines = bom?.lines.filter((li) => showExcluded || !li.excluded) ?? [];
-  const cur = bom?.currency ?? currency;
+  const cur = bom?.currency ?? "PLN";
 
   // Schematic lines + manual extra items in one interactive table; extras
   // stay pinned after the lines whatever the sort order.
@@ -160,8 +159,7 @@ export default function BomTab({ project, snapshot, snapshots, board, variant }:
   return (
     <div>
       <div className="toolbar">
-        <label className="proj-inline-field">
-          Volume
+        <Field inline label="Volume">
           <input
             className="text num-input"
             value={volumeInput}
@@ -175,7 +173,7 @@ export default function BomTab({ project, snapshot, snapshots, board, variant }:
               if (e.key === "Enter") (e.target as HTMLInputElement).blur();
             }}
           />
-        </label>
+        </Field>
         <div className="seg" role="group" aria-label="Quick volumes">
           {[1, 10, 100, 1000].map((v) => (
             <button
@@ -191,29 +189,19 @@ export default function BomTab({ project, snapshot, snapshots, board, variant }:
             </button>
           ))}
         </div>
-        <label className="proj-inline-field">
-          Currency
-          <input
-            className="text num-input"
-            value={currency}
-            onChange={(e) => setCurrency(e.target.value.toUpperCase())}
-            maxLength={3}
-          />
-        </label>
-        <label className="proj-inline-field proj-check">
+        <Field inline className="proj-check">
           <input
             type="checkbox"
             checked={showExcluded}
             onChange={(e) => setShowExcluded(e.target.checked)}
           />
           show DNP/excluded
-        </label>
+        </Field>
         <span className="toolbar-total" />
         <button className="btn btn-sm" disabled={stockRunning} onClick={doStockCheck}>
           {stockRunning ? "Checking stock…" : "Check stock"}
         </button>
-        <label className="proj-inline-field">
-          Diff vs
+        <Field inline label="Diff vs">
           <select
             className="text"
             value={diffAgainst}
@@ -228,7 +216,7 @@ export default function BomTab({ project, snapshot, snapshots, board, variant }:
                 </option>
               ))}
           </select>
-        </label>
+        </Field>
       </div>
 
       {error ? <ErrorBanner message={error} /> : null}
@@ -237,30 +225,12 @@ export default function BomTab({ project, snapshot, snapshots, board, variant }:
       {bom ? (
         <>
           <div className="counts counts-sm">
-            <div className="count-tile">
-              <div className="v">{money(bom.totals.device_total, cur)}</div>
-              <div className="muted">per device</div>
-            </div>
-            <div className="count-tile">
-              <div className="v">{money(bom.totals.bom_per_device, cur)}</div>
-              <div className="muted">parts / device</div>
-            </div>
-            <div className="count-tile">
-              <div className="v">{money(bom.totals.extra_per_device, cur)}</div>
-              <div className="muted">extra parts / device</div>
-            </div>
-            <div className="count-tile">
-              <div className="v">{money(bom.totals.cost_per_device, cur)}</div>
-              <div className="muted">mfg costs / device</div>
-            </div>
-            <div className="count-tile">
-              <div className="v">{money(bom.totals.run_total, cur)}</div>
-              <div className="muted">run total × {bom.volume}</div>
-            </div>
-            <div className="count-tile">
-              <div className="v">{money(bom.totals.order_parts_total, cur)}</div>
-              <div className="muted">parts order (MOQ-rounded)</div>
-            </div>
+            <CountTile value={money(bom.totals.device_total, cur)} label="per device" />
+            <CountTile value={money(bom.totals.bom_per_device, cur)} label="parts / device" />
+            <CountTile value={money(bom.totals.extra_per_device, cur)} label="extra parts / device" />
+            <CountTile value={money(bom.totals.cost_per_device, cur)} label="mfg costs / device" />
+            <CountTile value={money(bom.totals.run_total, cur)} label={`run total × ${bom.volume}`} />
+            <CountTile value={money(bom.totals.order_parts_total, cur)} label="parts order (MOQ-rounded)" />
           </div>
 
           {bom.totals.unpriced_lines > 0 ? (
@@ -405,9 +375,10 @@ export default function BomTab({ project, snapshot, snapshots, board, variant }:
                   label: "Unit",
                   width: 10,
                   numeric: true,
-                  get: (r) => (r.kind === "line" ? r.li.unit_price : r.x.unit_price) ?? null,
+                  // A component's price stays in USD (decision 0103).
+                  get: (r) => (r.kind === "line" ? r.li.unit_usd : r.x.unit_usd) ?? null,
                   render: (r) =>
-                    money((r.kind === "line" ? r.li.unit_price : r.x.unit_price) ?? null, cur),
+                    money((r.kind === "line" ? r.li.unit_usd : r.x.unit_usd) ?? null, "USD"),
                 },
                 {
                   key: "total",
@@ -440,7 +411,7 @@ export default function BomTab({ project, snapshot, snapshots, board, variant }:
                       : r.x.price_source ?? "—",
                   title: (r) =>
                     r.kind === "line" && r.li.price_updated
-                      ? `updated ${r.li.price_updated.slice(0, 10)}`
+                      ? `updated ${localDate(r.li.price_updated)}`
                       : undefined,
                 },
                 {
@@ -457,8 +428,14 @@ export default function BomTab({ project, snapshot, snapshots, board, variant }:
           </div>
 
           {bom.costs.length > 0 ? (
-            <div className="card pad">
-              <div className="card-title">Manufacturing costs</div>
+            <FoldSection title="Manufacturing costs" count={bom.costs.length} foldKey={`project:${project.id}:bom-costs`}
+              chips={
+                <>
+                  <StatChip n={bom.costs.filter((c) => c.basis === "per_run").length}>per run</StatChip>
+                  <StatChip n={bom.costs.filter((c) => c.basis !== "per_run").length}>per device</StatChip>
+                  <StatChip n={money(bom.costs.reduce((a, c) => a + (c.per_device ?? 0), 0), cur)}>per device @ {bom.volume}</StatChip>
+                </>
+              }>
               <DataTable
                 rows={bom.costs}
                 rowKey={(c) => c.key}
@@ -497,7 +474,7 @@ export default function BomTab({ project, snapshot, snapshots, board, variant }:
                   },
                 ]}
               />
-            </div>
+            </FoldSection>
           ) : null}
 
           <div className="card pad">
@@ -506,10 +483,18 @@ export default function BomTab({ project, snapshot, snapshots, board, variant }:
           </div>
 
           {diff ? (
-            <div className="card pad">
-              <div className="card-title">
-                BOM diff: {diff.from.ref} → {diff.to.ref}
-              </div>
+            <FoldSection
+              title={`BOM diff: ${diff.from.ref} → ${diff.to.ref}`}
+              count={diff.added.length + diff.removed.length + diff.changed.length}
+              foldKey={`project:${project.id}:bom-diff`}
+              chips={
+                <>
+                  {diff.added.length ? <StatChip n={diff.added.length} tone="ok">added</StatChip> : null}
+                  {diff.removed.length ? <StatChip n={diff.removed.length} tone="err">removed</StatChip> : null}
+                  {diff.changed.length ? <StatChip n={diff.changed.length} tone="warn">changed</StatChip> : null}
+                </>
+              }
+            >
               {diff.added.length + diff.removed.length + diff.changed.length === 0 ? (
                 <p className="muted">No BOM changes between these snapshots.</p>
               ) : (
@@ -564,7 +549,7 @@ export default function BomTab({ project, snapshot, snapshots, board, variant }:
                   ]}
                 />
               )}
-            </div>
+            </FoldSection>
           ) : null}
         </>
       ) : null}

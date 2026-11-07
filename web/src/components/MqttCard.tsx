@@ -23,15 +23,19 @@ import {
   type MqttStatusPayload,
   type MqttUnlinkedRow,
 } from "../api";
+import DataTable from "./DataTable";
 import { useDialog } from "./Dialog";
-import { ErrorBanner, Spinner } from "./Ui";
-import { fmtWhen } from "./flasher/common";
+import { CheckField } from "./Field";
+import FoldSection, { StatChip } from "./FoldSection";
+import NumberInput from "./NumberInput";
+import { ErrorBanner, Spinner, StatusPill } from "./Ui";
+import { localWhen } from "../format";
 
 export default function MqttCard() {
   const dialog = useDialog();
   const [status, setStatus] = useState<MqttStatusPayload | null>(null);
-  const [unlinked, setUnlinked] = useState<MqttUnlinkedRow[] | null>(null);
-  const [mismatches, setMismatches] = useState<MacMismatchRow[] | null>(null);
+  /** a relink changes who is unlinked: an open list reads it again */
+  const [listTick, setListTick] = useState(0);
   const [error, setError] = useState("");
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
@@ -112,23 +116,6 @@ export default function MqttCard() {
     }
   };
 
-  const showUnlinked = async () => {
-    try {
-      const r = await getMqttUnlinked();
-      setUnlinked(r.items);
-    } catch (err) {
-      setError(errorMessage(err));
-    }
-  };
-
-  const showMismatches = async () => {
-    try {
-      setMismatches((await getMacMismatches()).items);
-    } catch (err) {
-      setError(errorMessage(err));
-    }
-  };
-
   const relink = async () => {
     setBusy(true);
     try {
@@ -137,7 +124,7 @@ export default function MqttCard() {
         `Linked ${r.linked} presence row(s); filled ${r.macs_filled} missing MAC(s). ` +
           "An existing MAC is never overwritten.",
       );
-      setUnlinked(null);
+      setListTick((t) => t + 1);
       load();
     } catch (err) {
       setError(errorMessage(err));
@@ -152,11 +139,7 @@ export default function MqttCard() {
     <div className="card pad">
       <div className="toolbar">
         <h2 className="card-title">Fleet MQTT broker</h2>
-        {m ? (
-          <span className={`pill ${m.connected ? "ok" : m.enabled ? "err" : ""}`}>
-            {m.connected ? "connected" : m.enabled ? "disconnected" : "off"}
-          </span>
-        ) : null}
+        {m ? <StatusPill status={m.connected ? "connected" : m.enabled ? "disconnected" : "off"} /> : null}
         <span className="toolbar-total">{m?.host ?? ""}</span>
       </div>
 
@@ -189,23 +172,13 @@ export default function MqttCard() {
               <tr>
                 <td className="muted">Not in the platform</td>
                 <td className="mono">
-                  {status.unlinked.toLocaleString()}{" "}
-                  {status.unlinked > 0 ? (
-                    <button type="button" className="btn btn-sm" onClick={showUnlinked}>
-                      show
-                    </button>
-                  ) : null}
+                  {status.unlinked.toLocaleString()}
                 </td>
               </tr>
               <tr>
                 <td className="muted">MAC disagreements</td>
                 <td className="mono">
-                  {status.mac_mismatches.toLocaleString()}{" "}
-                  {status.mac_mismatches > 0 ? (
-                    <button type="button" className="btn btn-sm" onClick={showMismatches}>
-                      show
-                    </button>
-                  ) : null}
+                  {status.mac_mismatches.toLocaleString()}
                 </td>
               </tr>
               {m ? (
@@ -218,7 +191,7 @@ export default function MqttCard() {
                   </tr>
                   <tr>
                     <td className="muted">Last message</td>
-                    <td className="mono">{fmtWhen(m.last_message_at)}</td>
+                    <td className="mono">{localWhen(m.last_message_at)}</td>
                   </tr>
                   <tr>
                     <td className="muted">Watching</td>
@@ -237,85 +210,22 @@ export default function MqttCard() {
             </tbody>
           </table>
 
-          {mismatches && mismatches.length > 0 ? (
-            <>
-              <p className="muted dim">
-                The programmed MAC disagrees with what the broker says. Nothing is changed
-                automatically — a disagreement usually means a swapped board or a configuration
-                restored onto different hardware, and picking a side would destroy the evidence.
-              </p>
-              <div className="table-wrap">
-                <table className="data data-fixed">
-                  <thead>
-                    <tr>
-                      <th>Device</th>
-                      <th>Topic</th>
-                      <th>Programmed</th>
-                      <th>Broker says</th>
-                      <th>Evidence</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {mismatches.map((r) => (
-                      <tr key={r.device_id}>
-                        <td className="mono">#{r.device_id}</td>
-                        <td className="mono">{r.topic}</td>
-                        <td className="mono">{r.programmed_mac}</td>
-                        <td className="mono">{r.broker_mac}</td>
-                        <td className="muted">
-                          {r.source === "device_report"
-                            ? `the device reported it (${r.reported_mac_field})`
-                            : "encoded in its topic"}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </>
+          {status.mac_mismatches > 0 ? (
+            <FoldSection bare title="MAC disagreements" count={status.mac_mismatches} foldKey="admin:mqtt:mismatches"
+              chips={<StatChip n={status.mac_mismatches} tone="err">to check</StatChip>}>
+              <MacMismatches tick={listTick} onError={setError} />
+            </FoldSection>
           ) : null}
 
-          {unlinked ? (
-            <div className="table-wrap">
-              <table className="data data-fixed">
-                <thead>
-                  <tr>
-                    <th>Topic</th>
-                    <th>Broker</th>
-                    <th>Inverter</th>
-                    <th>Firmware</th>
-                    <th>Last heard</th>
-                    <th title="Link rules that matched. A row with candidates is still unlinked because its rules name different units.">
-                      Candidates
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {unlinked.map((r) => (
-                    <tr key={r.topic}>
-                      <td className="mono">{r.topic}</td>
-                      <td>
-                        <span className={`pill ${r.online ? "ok" : "err"}`}>
-                          {r.online ? "online" : "offline"}
-                        </span>
-                      </td>
-                      <td className="mono">{r.inverter || "—"}</td>
-                      <td className="mono">{r.dongle_version || "—"}</td>
-                      <td className="muted">{fmtWhen(r.last_seen_at)}</td>
-                      <td className="mono">
-                        {r.candidates.length
-                          ? r.candidates.map((c) => `#${c.device_id} (${c.rule})`).join(", ")
-                          : "—"}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+          {status.unlinked > 0 ? (
+            <FoldSection bare title="Not in the platform" count={status.unlinked} foldKey="admin:mqtt:unlinked"
+              chips={<StatChip n={status.unlinked} tone="warn">not linked</StatChip>}>
+              <UnlinkedTopics total={status.unlinked} tick={listTick} onError={setError} />
+            </FoldSection>
           ) : null}
 
           <h3>Connection</h3>
-          {/* The `kv settings-table` pattern the Setup page uses — this card
+          {/* The `kv settings-table` pattern of Admin → Configuration: this card
               invents no form layout of its own. */}
           <table className="kv settings-table">
             <tbody>
@@ -325,14 +235,7 @@ export default function MqttCard() {
                   <div className="muted">Subscribe and keep device presence current.</div>
                 </td>
                 <td>
-                  <label className="muted">
-                    <input
-                      type="checkbox"
-                      checked={enabled}
-                      onChange={(e) => setEnabled(e.target.checked)}
-                    />{" "}
-                    enabled
-                  </label>
+                  <CheckField checked={enabled} onChange={setEnabled}>enabled</CheckField>
                 </td>
               </tr>
               <tr>
@@ -349,12 +252,7 @@ export default function MqttCard() {
               <tr>
                 <td><div>Port</div></td>
                 <td>
-                  <input
-                    className="text mono"
-                    type="number"
-                    value={port}
-                    onChange={(e) => setPort(Number(e.target.value))}
-                  />
+                  <NumberInput className="text mono" value={port} min={1} max={65535} onChange={setPort} />
                 </td>
               </tr>
               <tr>
@@ -366,14 +264,7 @@ export default function MqttCard() {
                   </div>
                 </td>
                 <td>
-                  <label className="muted">
-                    <input
-                      type="checkbox"
-                      checked={tls}
-                      onChange={(e) => setTls(e.target.checked)}
-                    />{" "}
-                    use TLS
-                  </label>
+                  <CheckField checked={tls} onChange={setTls}>use TLS</CheckField>
                 </td>
               </tr>
               <tr>
@@ -420,12 +311,7 @@ export default function MqttCard() {
                   </div>
                 </td>
                 <td>
-                  <input
-                    className="text mono"
-                    type="number"
-                    value={flushS}
-                    onChange={(e) => setFlushS(Number(e.target.value))}
-                  />
+                  <NumberInput className="text mono" value={flushS} min={5} onChange={setFlushS} />
                 </td>
               </tr>
             </tbody>
@@ -447,12 +333,85 @@ export default function MqttCard() {
           {status.configured.updated_at ? (
             <p className="muted dim">
               Last changed by {status.configured.updated_by || "—"} on{" "}
-              {fmtWhen(status.configured.updated_at)}. The watcher reads its credential once at
+              {localWhen(status.configured.updated_at)}. The watcher reads its credential once at
               startup, so a change needs an API restart.
             </p>
           ) : null}
         </>
       )}
+    </div>
+  );
+}
+
+/** The children of a fold render only while it is open, so these two lists are
+ *  read then, and a closed one costs no request. */
+function MacMismatches({ tick, onError }: { tick: number; onError: (message: string) => void }) {
+  const [mismatches, setMismatches] = useState<MacMismatchRow[] | null>(null);
+  useEffect(() => {
+    const ac = new AbortController();
+    getMacMismatches(ac.signal)
+      .then((r) => setMismatches(r.items))
+      .catch((err) => { if (!isAbortError(err)) onError(errorMessage(err)); });
+    return () => ac.abort();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tick]);
+  if (!mismatches) return <Spinner label="Reading the disagreements…" />;
+  return (
+    <>
+      <p className="muted dim">
+        The programmed MAC disagrees with what the broker says. Nothing is changed
+        automatically — a disagreement usually means a swapped board or a configuration
+        restored onto different hardware, and picking a side would destroy the evidence.
+      </p>
+      <div className="table-wrap">
+        <DataTable
+          rows={mismatches}
+          rowKey={(r) => r.device_id}
+          columns={[
+            { key: "device", label: "Device", width: 10, className: "mono", get: (r) => `#${r.device_id}` },
+            { key: "topic", label: "Topic", width: 30, className: "mono", get: (r) => r.topic },
+            { key: "programmed", label: "Programmed", width: 16, className: "mono", get: (r) => r.programmed_mac },
+            { key: "broker", label: "Broker says", width: 16, className: "mono", get: (r) => r.broker_mac },
+            { key: "evidence", label: "Evidence", width: 28, className: "muted",
+              get: (r) => (r.source === "device_report"
+                ? `the device reported it (${r.reported_mac_field})`
+                : "encoded in its topic") },
+          ]}
+        />
+      </div>
+    </>
+  );
+}
+
+function UnlinkedTopics({ total, tick, onError }: { total: number; tick: number; onError: (message: string) => void }) {
+  const [unlinked, setUnlinked] = useState<MqttUnlinkedRow[] | null>(null);
+  useEffect(() => {
+    const ac = new AbortController();
+    getMqttUnlinked(ac.signal)
+      .then((r) => setUnlinked(r.items))
+      .catch((err) => { if (!isAbortError(err)) onError(errorMessage(err)); });
+    return () => ac.abort();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tick]);
+  if (!unlinked) return <Spinner label="Reading the topics…" />;
+  return (
+    <div className="table-wrap">
+      {unlinked.length < total ? <p className="muted dim">The server sends the first {unlinked.length} of {total} topics.</p> : null}
+      <DataTable
+        rows={unlinked}
+        rowKey={(r) => r.topic}
+        columns={[
+          { key: "topic", label: "Topic", width: 30, className: "mono", get: (r) => r.topic },
+          { key: "broker", label: "Broker", width: 10, get: (r) => (r.online ? "online" : "offline"),
+            render: (r) => <StatusPill status={r.online ? "online" : "offline"} /> },
+          { key: "inverter", label: "Inverter", width: 12, className: "mono", get: (r) => r.inverter || "—" },
+          { key: "fw", label: "Firmware", width: 10, className: "mono", get: (r) => r.dongle_version || "—" },
+          { key: "heard", label: "Last heard", width: 14, className: "muted", get: (r) => localWhen(r.last_seen_at) },
+          // A row with candidates is still unlinked because its rules name different units.
+          { key: "candidates", label: "Link rules that matched", width: 24, className: "mono",
+            get: (r) => (r.candidates.length ? r.candidates.map((c) => `#${c.device_id} (${c.rule})`).join(", ") : "—") },
+        ]}
+      />
     </div>
   );
 }

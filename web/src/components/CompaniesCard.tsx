@@ -8,6 +8,7 @@
 import { useEffect, useState } from "react";
 import {
   applyHistory,
+  fillKsefDocuments,
   getKsefStatus,
   runKsefSync,
   setKsefToken,
@@ -15,7 +16,6 @@ import {
   errorMessage,
   isAbortError,
   listCompanies,
-  lotHistory,
   setDrawCompany,
   stockBackfill,
   LEGAL_FORM_TEXT,
@@ -23,15 +23,18 @@ import {
   updateCompany,
   type CompanyDetail,
   type HistoryPlan,
-  type LotHistoryResult,
+  type KsefFillResult,
   type StockBackfillResult,
 } from "../api";
 import { useAuth } from "../auth";
-import { plain } from "../format";
+import { localWhen, plain, pln } from "../format";
+import { useTodayRate } from "../useTodayRate";
 import DataTable, { type Column } from "./DataTable";
 import { useDialog } from "./Dialog";
 import Field, { CheckField, FieldGrid } from "./Field";
+import FoldSection, { StatChip } from "./FoldSection";
 import NumberInput from "./NumberInput";
+import { DryRunDialog } from "./process/StageDialogs";
 import { ErrorBanner, Spinner } from "./Ui";
 
 /** The text fields an admin may change, in the order the form draws them. */
@@ -91,7 +94,7 @@ function CompanyForm({ company, onSaved }: { company: CompanyDetail; onSaved: (c
             />
           </Field>
         ))}
-        <Field label="Sales invoices">
+        <Field group label="Sales invoices">
           <CheckField checked={!!draft.issues_invoices}
             onChange={(v) => setDraft((d) => ({ ...d, issues_invoices: v }))}>
             The platform writes this company's invoices
@@ -147,13 +150,14 @@ function KsefCard() {
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState<number | null>(null);
   const [result, setResult] = useState("");
+  const [filling, setFilling] = useState(false);
   const load = () => getKsefStatus().then(setRows).catch((e) => setErr(errorMessage(e)));
   useEffect(() => { void load(); }, []);
 
   const cols: Column<KsefStatus>[] = [
     { key: "company", label: "Company", width: 14, get: (r) => r.company },
     { key: "token", label: "Token", width: 9, get: (r) => (r.configured ? "set" : "none") },
-    { key: "last", label: "Last sync", width: 17, className: "mono", get: (r) => r.last_sync_at?.slice(0, 16) ?? "never" },
+    { key: "last", label: "Last sync", width: 17, className: "mono", get: (r) => localWhen(r.last_sync_at) ?? "never" },
     { key: "read", label: "Read up to", width: 18, className: "mono",
       get: (r) => [r.sales_read_to && `sales ${r.sales_read_to}`, r.purchases_read_to && `purch. ${r.purchases_read_to}`]
         .filter(Boolean).join(" · ") },
@@ -193,9 +197,9 @@ function KsefCard() {
   ];
   return (
     <div className="card pad">
-      <h2>KSeF</h2>
+      <h2 className="card-title">KSeF</h2>
       <p className="muted dim">
-        Each company's read-only KSeF token. A sync reads its sales and purchase invoices into Production → KSeF,
+        Each company's read-only KSeF token. A sync reads its sales and purchase invoices into Finance → KSeF,
         links the sales ones to their records and spends one or two of KSeF's 20 hourly queries.
       </p>
       <ErrorBanner message={err} />
@@ -203,6 +207,38 @@ function KsefCard() {
       {rows === null ? <Spinner label="Loading…" /> : (
         <DataTable rows={rows} rowKey={(r) => r.company_id} columns={cols} empty="No companies." />
       )}
+      <div className="btn-row">
+        <button type="button" className="btn btn-sm" onClick={() => setFilling(true)}>
+          Fill documents from KSeF…
+        </button>
+      </div>
+      {filling ? (
+        <DryRunDialog<KsefFillResult>
+          title="Fill documents from KSeF"
+          intro={
+            "Gives each supplier document imported from KSeF the invoice's tax data, from the XML the inbox stored " +
+            "(decision 0084). It reads no new data from KSeF and uses no KSeF query. A document that has the data " +
+            "reports no change, so a second run is safe. A document that KSeF does not hold stays as it is. " +
+            "Preview writes nothing."
+          }
+          fields={null}
+          run={async (dry) => {
+            const r = await fillKsefDocuments(dry);
+            if (!dry) setResult(`KSeF fill: ${r.filled.length} document(s) filled, ${r.checked} checked.`);
+            return r;
+          }}
+          describe={(r) => (
+            <>
+              {r.checked} document(s) checked. {r.filled.length} would change.
+              {r.no_xml.length ? ` No stored XML: ${r.no_xml.map((x) => x.ksef_number).join(", ")}.` : ""}
+              {r.failed.length ? ` Failed: ${r.failed.map((x) => `${x.ksef_number} (${x.error})`).join("; ")}.` : ""}
+            </>
+          )}
+          canApply={(r) => r.filled.length > 0}
+          applyLabel={(r) => (r.filled.length ? `Fill ${r.filled.length}` : "Apply")}
+          onClose={() => setFilling(false)}
+        />
+      ) : null}
     </div>
   );
 }
@@ -251,20 +287,21 @@ function DrawCompanyPick({ draw, onDone }: { draw: UnresolvedDraw; onDone: () =>
 }
 
 type Proposed = HistoryPlan["transfers"][number];
-const PROPOSED_COLUMNS: Column<Proposed>[] = [
+const proposedColumns = (rate: number | null): Column<Proposed>[] => [
   { key: "date", label: "Date", width: 12, className: "mono", get: (t) => t.date },
   { key: "dir", label: "Direction", width: 20, get: (t) => `${t.sender} → ${t.receiver}` },
   { key: "batch", label: "Receiving batch", width: 30, get: (t) => t.batch || "—" },
   { key: "ev", label: "Evidence", width: 12, get: (t) => (t.evidence === "lot" ? "JLC lot" : "balance") },
   { key: "lines", label: "Parts", width: 10, numeric: true, get: (t) => t.lines.length },
-  { key: "value", label: "USD", width: 16, numeric: true, get: (t) => t.value_usd,
-    render: (t) => <>{plain(t.value_usd)}</> },
+  { key: "value", label: "Value", width: 16, numeric: true, get: (t) => t.value_usd,
+    render: (t) => <>{pln(t.value_usd, rate)}</> },
 ];
 
 /** Decision 0064: getting every stock record a company, then moving the
  *  history between the companies, then — on the Configuration tab — turning
  *  stock per company on. Each step is a dry run first. */
-function StockSplitCard() {
+export function StockSplitCard() {
+  const rate = useTodayRate();
   const dialog = useDialog();
   const [fill, setFill] = useState<StockBackfillResult | null>(null);
   const [fetchJlc, setFetchJlc] = useState(false);
@@ -288,7 +325,7 @@ function StockSplitCard() {
   };
   const runHistory = async (dryRun: boolean) => {
     if (!dryRun && !(await dialog.confirm(
-      `Write ${history?.totals.transfers ?? 0} in-house transfers? Each one can be reversed on Production → Transfers.`,
+      `Write ${history?.totals.transfers ?? 0} in-house transfers? Each one can be reversed on Stock → Transfers.`,
       { title: "Write the history", confirmLabel: "Write" }))) return;
     setBusy("history");
     setErr("");
@@ -304,7 +341,7 @@ function StockSplitCard() {
 
   return (
     <div className="card pad">
-      <h2>Stock per company</h2>
+      <h2 className="card-title">Stock per company</h2>
       <p className="muted dim">
         Each company draws parts only from its own stock once <b>Stock per company</b> is on
         (Configuration tab). First every purchase, draw and adjustment needs its company. Then the
@@ -335,16 +372,20 @@ function StockSplitCard() {
               : "Every stock record names its company."}
           </p>
           {fill.unresolved_documents.length ? (
-            <>
+            <FoldSection bare title="Documents with no buyer" count={fill.unresolved_documents.length}
+              foldKey="admin:stock-split:documents"
+              chips={<StatChip n={fill.unresolved_documents.length} tone="warn">to name</StatChip>}>
               <p className="muted dim">
-                Set the buyer of these on Production → Invoices (open the document, Edit, Buyer).
+                Set the buyer of these on Finance → Purchase invoices (open the document, Edit, Buyer).
               </p>
               <DataTable rows={fill.unresolved_documents} rowKey={(d) => d.document_id}
                 columns={UNRESOLVED_COLUMNS} empty="None." />
-            </>
+            </FoldSection>
           ) : null}
           {fill.unresolved_draws.length ? (
-            <>
+            <FoldSection bare title="Draws with no company" count={fill.unresolved_draws.length}
+              foldKey="admin:stock-split:draws"
+              chips={<StatChip n={fill.unresolved_draws.length} tone="warn">to name</StatChip>}>
               <p className="muted dim">
                 These draws are charged to no batch and bound to no lot of one company, so nothing says whose
                 stock they took. Name it for each.
@@ -359,7 +400,7 @@ function StockSplitCard() {
                     render: (d) => <DrawCompanyPick draw={d} onDone={() => void runFill(true)} /> },
                 ]}
                 empty="None." />
-            </>
+            </FoldSection>
           ) : null}
         </>
       ) : null}
@@ -379,118 +420,25 @@ function StockSplitCard() {
             {history.written ? `Wrote ${history.written.length}, refused ${history.refused?.length ?? 0}. `
               : history.totals.transfers === 0 ? "Nothing to move. "
               : `${history.totals.transfers} transfer(s), ${history.totals.lines} part(s) (${history.totals.from_lots} from JLC lots), `
-                + `${plain(history.totals.value_usd)} USD: `
+                + `${pln(history.totals.value_usd, rate)}: `
                 + Object.entries(history.totals.by_direction).map(([k, v]) => `${k} ${plain(v)}`).join(", ") + ". "}
             {history.totals.unexplained
               ? `${history.totals.unexplained} shortfall(s) neither company covers — usually a document with no buyer yet.`
               : ""}
           </p>
           {!history.written ? (
-            <DataTable rows={history.transfers} rowKey={(t) => `${t.date}-${t.batch}-${t.evidence}-${t.sender}`}
-              columns={PROPOSED_COLUMNS} empty="Nothing to move." />
-          ) : null}
-        </>
-      ) : null}
-    </div>
-  );
-}
-
-type LotBatch = LotHistoryResult["batches"][number];
-const LOT_BATCH_COLUMNS: Column<LotBatch>[] = [
-  { key: "batch", label: "Batch", width: 40, get: (b) => b.batch ?? (b.run_id ? `#${b.run_id}` : "no batch") },
-  { key: "closed", label: "State", width: 14, get: (b) => (b.closed ? "closed" : "open"),
-    render: (b) => (b.closed ? <span className="pill warn">closed</span> : <span className="muted">open</span>) },
-  { key: "closed_cost", label: "Closed cost USD", width: 22, numeric: true, get: (b) => b.closed_cost_usd ?? 0,
-    render: (b) => <>{b.closed ? plain(b.closed_cost_usd) : "—"}</> },
-  { key: "change", label: "Change USD", width: 24, numeric: true, get: (b) => b.change_usd,
-    render: (b) => <>{plain(b.change_usd)}</> },
-];
-
-type LotUncovered = LotHistoryResult["uncovered"][number];
-const LOT_UNCOVERED_COLUMNS: Column<LotUncovered>[] = [
-  { key: "date", label: "Date", width: 13, className: "mono", get: (u) => (u.date ?? "").slice(0, 10) || "—" },
-  { key: "batch", label: "Batch", width: 25, get: (u) => u.batch ?? "no batch" },
-  { key: "part", label: "Part", width: 26, className: "mono", get: (u) => u.label },
-  { key: "qty", label: "Qty", width: 12, numeric: true, get: (u) => u.qty },
-  { key: "uncovered", label: "In no lot", width: 12, numeric: true, get: (u) => u.uncovered },
-  { key: "draw", label: "Draw", width: 12, className: "mono", get: (u) => `#${u.consumption_id}` },
-];
-
-/** Decision 0073: bind every live draw to the lots it came from, oldest
- *  first, and price it at their cost. A check first; the write changes
- *  closed batches too, so its confirmation is a danger one. */
-function LotHistoryCard() {
-  const dialog = useDialog();
-  const [res, setRes] = useState<LotHistoryResult | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState("");
-
-  const run = async (dryRun: boolean) => {
-    if (!dryRun) {
-      const closed = res?.batches.filter((b) => b.closed).length ?? 0;
-      if (!(await dialog.confirm(
-        `Bind ${res?.draws_bound ?? 0} draw(s) to their lots and give them the lots' cost? The cost of `
-          + `${res?.batches.length ?? 0} batch(es) changes by ${plain(res?.change_usd ?? 0)} USD in total. `
-          + `${closed} of these batches are closed, and their cost changes too.`,
-        { title: "Bind draws to lots", confirmLabel: "Write", tone: "danger" }))) return;
-    }
-    setBusy(true);
-    setErr("");
-    try {
-      setRes(await lotHistory(dryRun));
-    } catch (e) {
-      setErr(errorMessage(e));
-    } finally {
-      setBusy(false);
-    }
-  };
-  const closed = res ? res.batches.filter((b) => b.closed).length : 0;
-
-  return (
-    <div className="card pad">
-      <h2>Bind draws to lots</h2>
-      <p className="muted dim">
-        Each draw takes its parts from the purchase lots, oldest first, and takes their cost (decision 0073).
-        This job binds the draws that have no lots yet, in date order. It changes the cost of closed batches too.
-      </p>
-      <ErrorBanner message={err} />
-      <div className="btn-row">
-        <button type="button" className="btn btn-sm" disabled={busy} onClick={() => void run(true)}>
-          {busy ? "Working…" : "Check"}
-        </button>
-        <button type="button" className="btn btn-primary btn-sm" disabled={busy || !res || !res.dry_run || !res.draws_bound}
-          onClick={() => void run(false)}>
-          Write
-        </button>
-      </div>
-      <p className="muted dim">
-        You can turn on <b>Lot pricing (FIFO)</b> on the Configuration tab only when no draw is left without lots.
-      </p>
-      {res ? (
-        <>
-          <p className="muted">
-            {res.dry_run ? "Would bind" : "Bound"} {res.draws_bound} draw(s). Total change {plain(res.change_usd)} USD
-            over {res.batches.length} batch(es), {closed} closed.
-            {res.batch_id ? ` Journal entry #${res.batch_id}.` : ""}
-            {res.uncovered.length ? ` ${res.uncovered.length} draw(s) are in no lot.` : " Every draw is in a lot."}
-          </p>
-          {res.batches.length ? (
-            <>
-              <p className="muted dim">
-                Change per batch. A closed batch keeps its closed cost, so its change shows as a variance.
-              </p>
-              <DataTable rows={res.batches} rowKey={(b) => String(b.run_id ?? "none")} columns={LOT_BATCH_COLUMNS}
-                empty="No change." />
-            </>
-          ) : null}
-          {res.uncovered.length ? (
-            <>
-              <p className="muted dim">
-                No lot holds these draws. They keep their price. Enter the missing purchase, then check again.
-              </p>
-              <DataTable rows={res.uncovered} rowKey={(u) => u.consumption_id} columns={LOT_UNCOVERED_COLUMNS}
-                empty="None." />
-            </>
+            <FoldSection bare title="Proposed transfers" count={history.transfers.length}
+              foldKey="admin:stock-split:transfers"
+              chips={history.transfers.length ? (
+                <>
+                  <StatChip n={history.totals.lines.toLocaleString()}>parts</StatChip>
+                  <StatChip n={pln(history.totals.value_usd, rate)}>value</StatChip>
+                  {history.totals.unexplained ? <StatChip n={history.totals.unexplained} tone="warn">shortfalls</StatChip> : null}
+                </>
+              ) : undefined}>
+              <DataTable rows={history.transfers} rowKey={(t) => `${t.date}-${t.batch}-${t.evidence}-${t.sender}`}
+                columns={proposedColumns(rate)} empty="Nothing to move." />
+            </FoldSection>
           ) : null}
         </>
       ) : null}
@@ -518,7 +466,7 @@ export default function CompaniesCard() {
   return (
     <>
       <div className="card pad">
-        <h2>Companies</h2>
+        <h2 className="card-title">Companies</h2>
         <p className="muted dim">
           Each project, batch and order belongs to one of these. Open a row to change what the company
           prints as a seller. The NIP is the company itself and does not change.
@@ -535,8 +483,6 @@ export default function CompaniesCard() {
         />
       </div>
       <KsefCard />
-      <StockSplitCard />
-      <LotHistoryCard />
     </>
   );
 }

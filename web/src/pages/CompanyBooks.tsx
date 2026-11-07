@@ -37,11 +37,14 @@ import { useAuth } from "../auth";
 import { askNotSentReason } from "../components/AccountantMark";
 import { forgetOverheadCategories } from "../components/costs";
 import DataTable, { type Column } from "../components/DataTable";
+import FoldSection, { FOLD_LIMIT, StatChip } from "../components/FoldSection";
+import TabStrip from "../components/TabStrip";
 import RecordFiles from "../components/RecordFiles";
 import SiInput from "../components/SiInput";
 import { useDialog } from "../components/Dialog";
 import Field, { FieldRow } from "../components/Field";
 import { ErrorBanner, Spinner } from "../components/Ui";
+import { pl, today } from "../format";
 
 const BUCKET_TEXT: Record<string, string> = {
   stock: "Stock bought", batches: "Batch costs", projects: "Project costs", prepared: "Prepared parts",
@@ -49,11 +52,6 @@ const BUCKET_TEXT: Record<string, string> = {
 };
 /** The health contribution is paid with ZUS and entered as ZUS (decision 0081). */
 const KIND_TEXT: Record<string, string> = { vat: "VAT", pit: "PIT", cit: "CIT", zus: "ZUS", other: "Other" };
-
-function pl(x: string | null | undefined): string {
-  if (x == null) return "—";
-  return Number(x).toLocaleString("pl-PL", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-}
 
 function acc(m: BooksMonth, kind: string): string {
   const e = m.accountant[kind];
@@ -277,12 +275,12 @@ function AccountantCard({ companyId }: { companyId: number }) {
   };
   const markPicked = async () => {
     const day = await dialog.prompt("Sent to the accountant on (YYYY-MM-DD):",
-      { title: "Mark as sent", initial: new Date().toISOString().slice(0, 10) });
+      { title: "Mark as sent", initial: today() });
     if (day) await recordPicked(day, "manual");
   };
   const keepPicked = async () => {
     const reason = await askNotSentReason(dialog, picked.size);
-    if (reason) await recordPicked(new Date().toISOString().slice(0, 10), "not_sent", reason);
+    if (reason) await recordPicked(today(), "not_sent", reason);
   };
   const cols: Column<AccountantRow>[] = [
     { key: "pick", label: "", width: 4, className: "ctr", interactive: false, get: () => "",
@@ -322,13 +320,26 @@ function AccountantCard({ companyId }: { companyId: number }) {
             <span className="muted">{data.count} document(s) to send</span>
           </div>
           {[...data.months].reverse().map((m) => (
-            <div key={m.month}>
-              <h3 className="card-subtitle">
-                {m.month} · send by {m.deadline}{" "}
-                <span className={`pill ${m.overdue ? "err" : "warn"}`}>{m.overdue ? "late" : "due"}</span>
-              </h3>
+            <FoldSection
+              key={m.month}
+              bare
+              title={`${m.month} · send by ${m.deadline}`}
+              count={m.rows.length}
+              // Many months are a long list of their own, so each folds.
+              limit={data.months.length > FOLD_LIMIT ? -1 : undefined}
+              foldKey={`books:${companyId}:accountant:${m.month}`}
+              forceOpen={m.rows.some((r) => picked.has(keyOf(r)))}
+              chips={
+                <>
+                  <StatChip n={m.rows.length} tone={m.overdue ? "err" : "warn"}>{m.overdue ? "late" : "not sent, due"}</StatChip>
+                  {m.rows.some((r) => !r.files) ? <StatChip n={m.rows.filter((r) => !r.files).length} tone="warn">no PDF</StatChip> : null}
+                  {m.rows.some((r) => r.kind === "document") ? <StatChip n={m.rows.filter((r) => r.kind === "document").length}>purchase</StatChip> : null}
+                  {m.rows.some((r) => r.kind !== "document") ? <StatChip n={m.rows.filter((r) => r.kind !== "document").length}>sales</StatChip> : null}
+                </>
+              }
+            >
               <DataTable rows={m.rows} rowKey={keyOf} columns={cols} empty="—" />
-            </div>
+            </FoldSection>
           ))}
         </>
       )}
@@ -350,15 +361,23 @@ function CategoryDocuments({ categoryKey }: { categoryKey: string }) {
   if (err) return <ErrorBanner message={err} />;
   if (docs === null) return <Spinner label="Loading documents" />;
   return (
+    <FoldSection
+      bare
+      title="Documents"
+      count={docs.length}
+      foldKey={`books:overhead:${categoryKey}:documents`}
+      chips={docs.length ? <StatChip n={docs.reduce((a, d) => a + d.positions, 0).toLocaleString()}>positions</StatChip> : undefined}
+    >
     <DataTable rows={docs} rowKey={(d) => d.id} empty="No document names this category." columns={[
       { key: "date", label: "Date", width: 14, className: "mono", get: (d) => d.doc_date },
       { key: "supplier", label: "Supplier", width: 36, get: (d) => d.supplier, title: (d) => d.supplier },
       { key: "number", label: "Number", width: 24, className: "mono", get: (d) => d.doc_number,
-        render: (d) => <Link className="comp-link" to={`/production/invoices?doc=${d.id}`}>{d.doc_number || "no number"}</Link> },
+        render: (d) => <Link className="comp-link" to={`/finance/invoices?doc=${d.id}`}>{d.doc_number || "no number"}</Link> },
       { key: "pos", label: "Positions", width: 10, numeric: true, get: (d) => d.positions },
       { key: "net", label: "Net", width: 16, numeric: true, get: (d) => d.net,
         render: (d) => <>{pl(String(d.net))} {d.currency !== "PLN" ? d.currency : ""}</> },
     ]} />
+    </FoldSection>
   );
 }
 
@@ -523,7 +542,7 @@ export default function CompanyBooks() {
     <div className="main-solo">
       <div className="page">
         <div className="toolbar">
-          <h1 className="page-title">Company books</h1>
+          <h1>Company books</h1>
           {books ? (
             <span className="toolbar-total">
               {books.year}: revenue {pl(books.totals.revenue_net)} · costs {pl(books.totals.costs_net)} · income {pl(books.totals.income)} PLN
@@ -551,14 +570,12 @@ export default function CompanyBooks() {
           </Field>
         </FieldRow>
         <ErrorBanner message={error} />
-        <div className="seg proj-tabs" role="tablist" aria-label="Company books section">
-          {([["books", "Books"], ["overhead", "Overhead"]] as const).map(([t, text]) => (
-            <button key={t} type="button" role="tab" aria-selected={tab === t} className={tab === t ? "on" : ""}
-              onClick={() => setTab(t)}>
-              {text}
-            </button>
-          ))}
-        </div>
+        <TabStrip
+          tabs={[{ id: "books", label: "Books" }, { id: "overhead", label: "Overhead" }]}
+          value={tab}
+          onChange={setTab}
+          label="Company books section"
+        />
         {tab === "books" ? (
           <>
             <div className="card pad">

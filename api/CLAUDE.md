@@ -62,7 +62,7 @@ new parallel implementations are the main thing to avoid.
 | DB session in a route | `Depends(get_db)` from `db.py` |
 | Price key → column map | `services/generator.py` → `PRICE_KEY_TO_COL` |
 | Create a draft proposal | the pattern in `services/agent_tools.py` (`propose_new_component` / `propose_component_edit`) |
-| Expose an agent capability over HTTP | `routers/agent.py` dispatches `services/agent_tools.py::TOOLS` by name — add a tool there and it's exposed to the MCP server automatically; never hand-write a per-tool agent route |
+| Expose an agent capability over HTTP | Tag the route: `openapi_extra={"x-agent-tool": "<name>"}` (decision 0106). Only when the answer must be shaped, add a function to `services/agent_tools.py::TOOLS`. `routers/agent.py` dispatches both by name; never hand-write a per-tool agent route |
 | S-expr parsing / symbol+footprint parse cache | `util/sexpr.py`, `services/parse_cache.py` |
 | Free-form notes on ANY entity | the generic `comments` table (`M.Comment`, `target_type`+`target_id`) via `routers/comments.py` — never add a per-entity comment table |
 | A file download's `Content-Disposition` | `routers/util.py` → `content_disposition(kind, filename)` — a name with "Ł" in a plain `filename="…"` answers 500 (headers are latin-1) |

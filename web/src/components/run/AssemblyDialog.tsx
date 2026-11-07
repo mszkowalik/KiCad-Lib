@@ -40,20 +40,18 @@ import {
   type RecordAssemblyResult,
   type RunInfo,
 } from "../../api";
-import { amount, usd } from "../../format";
+import { amount, plural, pln, today } from "../../format";
 import AutoTextarea from "../AutoTextarea";
 import ComponentPickDialog from "../ComponentPickDialog";
 import DataTable, { type Column } from "../DataTable";
 import Field, { CheckField, FieldGrid } from "../Field";
 import { useModal } from "../modal";
 import NumberInput from "../NumberInput";
-import { today } from "../process/MakeDialog";
 import { ErrorBanner, Spinner } from "../Ui";
 
-/** "1 position", "3 positions". */
-export function plural(n: number, one: string, many = `${one}s`): string {
-  return `${n} ${n === 1 ? one : many}`;
-}
+/** What an invoice line of an assembly is. A line written before `kind` existed
+ *  says it with `is_parts_lump`. */
+export const lineKind = (l: AssemblyDraftLine) => l.kind ?? (l.is_parts_lump ? "parts_lump" : "position");
 
 /** A row of "Parts from our stock": a measured draw already written (linked
  *  by id, quantity fixed), or a NEW draw from our stock (quantity typed). */
@@ -190,10 +188,9 @@ export default function AssemblyDialog({ run, draft, onClose }: {
     setRepl((rs) => rs.map((r) => (r.key === key ? { ...r, ...next } : r)));
   const newKey = (p: string) => `${p}${++seq.current}`;
 
-  const kindOf = (l: AssemblyDraftLine) => l.kind ?? (l.is_parts_lump ? "parts_lump" : "position");
-  const positionLines = draft.lines.filter((l) => kindOf(l) === "position");
-  const suppliedLines = draft.lines.filter((l) => kindOf(l) === "supplied_part");
-  const lumpLines = new Map(draft.lines.filter((l) => kindOf(l) === "parts_lump").map((l) => [l.line_id, l]));
+  const positionLines = draft.lines.filter((l) => lineKind(l) === "position");
+  const suppliedLines = draft.lines.filter((l) => lineKind(l) === "supplied_part");
+  const lumpLines = new Map(draft.lines.filter((l) => lineKind(l) === "parts_lump").map((l) => [l.line_id, l]));
   // A total with ticked rows is split into them, and goes in with them.
   const splitLumps = new Set(supplied.filter((r) => r.on).map((r) => r.parent_line_id));
   const lineTicked = (l: AssemblyDraftLine) => !!lineOn[l.line_id] || splitLumps.has(l.line_id);
@@ -301,7 +298,7 @@ export default function AssemblyDialog({ run, draft, onClose }: {
       )) },
     { key: "value", label: "Value", width: 18, numeric: true, get: (r) => r.draw?.value_usd ?? 0,
       title: (r) => (r.draw ? undefined : "Priced at the stock average on the day. Preview shows the total."),
-      render: (r) => (r.draw ? usd(r.draw.value_usd) : <span className="muted">at the average</span>) },
+      render: (r) => (r.draw ? pln(r.draw.value_usd, run.pln_per_usd) : <span className="muted">at the average</span>) },
   ];
 
   const suppliedCols = (rows: SuppliedRow[], currency = "USD"): Column<SuppliedRow>[] => [
@@ -438,7 +435,7 @@ export default function AssemblyDialog({ run, draft, onClose }: {
           <>
             <p className="muted">
               <b>Itemised on the invoice</b> — {plural(suppliedLines.length, "part")},{" "}
-              {usd(suppliedLines.reduce((a, l) => a + l.amount, 0))}.
+              {amount(suppliedLines.reduce((a, l) => a + l.amount, 0), suppliedLines[0].currency)}.
             </p>
             <DataTable rows={suppliedLines} columns={itemisedCols} rowKey={(l) => l.line_id} />
           </>
@@ -498,9 +495,9 @@ export default function AssemblyDialog({ run, draft, onClose }: {
             Preview: the step would be {P.status === "extended" ? "extended" : "recorded"}, with{" "}
             {plural(P.units, "unit")} in all ({P.twins_added} new).{" "}
             {plural(P.lines_linked, "invoice line")} linked
-            {P.value_usd.lines != null ? ` (${usd(P.value_usd.lines)})` : ""}.{" "}
-            {plural(P.draws_linked, "draw")} linked ({usd(P.value_usd.draws ?? 0)}) and{" "}
-            {plural(P.draws_written, "new draw")} from our stock ({usd(P.value_usd.parts ?? 0)}).{" "}
+            {P.value_usd.lines != null ? ` (${pln(P.value_usd.lines, run.pln_per_usd)})` : ""}.{" "}
+            {plural(P.draws_linked, "draw")} linked ({pln(P.value_usd.draws ?? 0, run.pln_per_usd)}) and{" "}
+            {plural(P.draws_written, "new draw")} from our stock ({pln(P.value_usd.parts ?? 0, run.pln_per_usd)}).{" "}
             {plural(P.supplied_children, "supplied part row")} split from the parts totals.{" "}
             {plural(P.replacements_recorded, "replacement")} recorded.
             {(P.supplied_residual ?? []).map((x) => (

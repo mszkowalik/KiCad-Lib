@@ -7,7 +7,7 @@
  *  are the server's job — a browser holding 100 of 5502 rows cannot honestly
  *  answer "no rows match". */
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import {
   errorMessage,
   getProjects,
@@ -18,9 +18,11 @@ import {
   type ProjectInfo,
 } from "../api";
 import DataTable, { type Column } from "../components/DataTable";
+import { StatChip, NarrowChip } from "../components/FoldSection";
 import { ErrorBanner, Spinner, StatusPill } from "../components/Ui";
+import { useDebounced } from "../components/useDebounced";
 import { useInfiniteScroll } from "../components/useInfiniteScroll";
-import { fmtWhen } from "../components/flasher/common";
+import { localWhen } from "../format";
 import { useStickyState } from "../useStickyState";
 
 const PAGE = 100;
@@ -36,11 +38,14 @@ export default function Devices() {
   const [projectId, setProjectId] = useStickyState<number | null>("devices.project", null);
   const [status, setStatus] = useStickyState<string>("devices.status", "");
   const [q, setQ] = useState("");
+  // "Where used" on a procedure version links here with its id.
+  const [params, setParams] = useSearchParams();
+  const deploymentVersion = Number(params.get("deployment_version")) || undefined;
 
   // Column filters and sort, both applied server-side. `typed` debounces so a
   // keystroke is not a query.
   const [typed, setTyped] = useState<Record<string, string>>({});
-  const [columns, setColumns] = useState<Record<string, string>>({});
+  const columns = useDebounced(typed, DEBOUNCE_MS);
   const [sort, setSort] = useState<{ key: string; dir: "asc" | "desc" }>({
     key: "last_seen",
     dir: "desc",
@@ -56,16 +61,12 @@ export default function Devices() {
     return () => ac.abort();
   }, []);
 
-  useEffect(() => {
-    const t = window.setTimeout(() => setColumns(typed), DEBOUNCE_MS);
-    return () => window.clearTimeout(t);
-  }, [typed]);
-
   const query = useCallback(
     (offset: number, signal?: AbortSignal) =>
       listDevices(
         {
-          project_id: projectId ?? undefined,
+          project_id: deploymentVersion ? undefined : projectId ?? undefined,
+          deployment_version: deploymentVersion,
           status: status || undefined,
           q: q || undefined,
           columns,
@@ -76,7 +77,7 @@ export default function Devices() {
         },
         signal,
       ),
-    [projectId, status, q, columns, sort],
+    [projectId, deploymentVersion, status, q, columns, sort],
   );
 
   // Any filter or sort change is a different list: reset to the first page, or
@@ -149,7 +150,7 @@ export default function Devices() {
       ),
     },
     { key: "mac", label: "MAC", width: 21, serverFilter: true, className: "mono dim", get: (d) => d.mac },
-    { key: "chip", label: "Chip", width: 23, serverFilter: true, get: (d) => d.chip || "—" },
+    { key: "chip", label: "Chip", width: 21, serverFilter: true, get: (d) => d.chip || "—" },
     // Four columns are deliberately absent (user decision 2026-09-16). NAME is
     // the serial with a `dongle_` prefix, and the search box above matches it.
     // PROJECT is the selector in the toolbar. IMEI is blank on every unit
@@ -173,7 +174,7 @@ export default function Devices() {
     {
       key: "last_status",
       label: "Result",
-      width: 11,
+      width: 13,
       serverFilter: true,
       get: (d) => d.last_status ?? "",
       render: (d) => (d.last_status ? <StatusPill status={d.last_status} /> : <>—</>),
@@ -187,13 +188,19 @@ export default function Devices() {
       width: "152px",
       className: "muted",
       get: (d) => d.last_seen ?? "",
-      render: (d) => <>{fmtWhen(d.last_seen)}</>,
+      render: (d) => <>{localWhen(d.last_seen)}</>,
     },
   ];
 
   return (
     <div className="main-solo">
       <div className="page">
+        {deploymentVersion ? (
+          <div className="banner-ok">
+            Showing the devices a run of one procedure version touched.{" "}
+            <button type="button" className="btn btn-sm" onClick={() => setParams({}, { replace: true })}>Show every device</button>
+          </div>
+        ) : null}
         <div className="toolbar">
           <h1>Devices</h1>
           <select
@@ -208,21 +215,12 @@ export default function Devices() {
               </option>
             ))}
           </select>
-          <select className="row-input" value={status} onChange={(e) => setStatus(e.target.value)}>
-            <option value="">any result</option>
-            <option value="pass">pass</option>
-            <option value="fail">fail</option>
-            <option value="aborted">aborted</option>
-          </select>
           <input
             className="search"
             placeholder="MAC / serial / name / IMEI / ICCID…"
             value={q}
             onChange={(e) => setQ(e.target.value)}
           />
-          <span className="toolbar-total">
-            {rows.length === total ? `${total} devices` : `${rows.length} of ${total} devices`}
-          </span>
           {/* Follows the PROJECT selector only: the broker needs every device of
               a project, not the rows the result/search filters happen to show. */}
           <a
@@ -235,6 +233,15 @@ export default function Devices() {
           </a>
         </div>
         {error ? <ErrorBanner message={error} /> : null}
+        {/* The list is paged, so only the server's total is a count. A result chip
+            asks the server: it has no figure until it is on. */}
+        <div className="stat-row">
+          <StatChip n={total.toLocaleString()} title="Every device that matches the filters">devices</StatChip>
+          {rows.length < total ? <StatChip n={rows.length.toLocaleString()}>loaded</StatChip> : null}
+          <NarrowChip tone="ok" value="pass" current={status} onNarrow={setStatus}>pass</NarrowChip>
+          <NarrowChip tone="err" value="fail" current={status} onNarrow={setStatus}>fail</NarrowChip>
+          <NarrowChip tone="warn" value="aborted" current={status} onNarrow={setStatus}>aborted</NarrowChip>
+        </div>
         <div className="card">
           <div className="table-wrap">
             <DataTable

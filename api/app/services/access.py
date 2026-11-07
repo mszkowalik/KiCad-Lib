@@ -298,6 +298,8 @@ def write_batch_companies(db: Session, batch_id) -> set[int]:
             "device_units": _device,
             "device_events": _via(M.DeviceEvent, "device_id", _device),
             "programming_runs": _programming_run,
+            # a box is shared, the pieces in it are a company's (decision 0104)
+            "organizer_moves": _via(M.OrganizerMove, "company_id", _company),
             # A batch journalled before the switch names the old tables. The
             # migration kept the ids of draws, adjustments, their lots, clicks,
             # units, unit steps, click costs and makes (decision 0098), so each
@@ -350,7 +352,6 @@ _add(["/api/order-lines/"], "line_id", _via(M.SalesOrderLine, "order_id", _order
 _add(["/api/order-invoices/"], "invoice_id", _via(M.OrderInvoice, "order_id", _order))
 _add(["/api/shipments/", "/api/flasher/shipments/"], "shipment_id", _via(M.Shipment, "order_id", _order))
 _add(["/api/devices/", "/api/flasher/devices/"], "device_id", _device)
-_add(["/api/run-devices/"], "device_id", _via(M.RunDevice, "run_id", _run))
 _add(["/api/snapshots/", "/api/sim/snapshot/"], "snapshot_id",
      _via(M.ProjectSnapshot, "project_id", _project))
 _add(["/api/cost-items/"], "item_id", _via(M.ProjectCostItem, "project_id", _project))
@@ -380,6 +381,8 @@ _add(["/api/stock-adjustments/"], "adj_id", _stock_row(M.Adjustment))
 
 #: Parameters that name data both companies share on purpose.
 NOT_COMPANY_DATA: set[str] = {
+    # the shared office organizers; the pieces are gated by `company_id` (decision 0104)
+    "box_id",
     # the library, its reviews and the convention documents
     "comp_id", "sym_id", "fp_id", "version_no", "cat_id", "model_id", "skill_id", "ds_id",
     "page_no", "cl_id", "kind", "parent_id", "key", "exc_id", "req_id", "row_id", "link_id",
@@ -405,6 +408,7 @@ NOT_COMPANY_DATA: set[str] = {
 #: companies of the record. `(route path, key)` overrides `("*", key)` where a
 #: key means something else on one route.
 FIELD_RESOLVERS: dict[tuple[str, str], Callable[[Session, str], set[int]]] = {
+    ("*", "device_id"): _device,
     ("*", "project_id"): _project,
     ("*", "run_id"): _run,
     ("*", "charge_run_id"): _run,
@@ -477,6 +481,8 @@ NOT_COMPANY_FIELDS: set[str] = {
     "row_id",
     # the library part a material-ledger state map names (admin, decision 0097)
     "item_component_id",
+    # the shared office organizers; the pieces are gated by `company_id` (decision 0104)
+    "box_id", "to_box_id", "item_id",
 }
 
 

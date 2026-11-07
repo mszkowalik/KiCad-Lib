@@ -1,24 +1,33 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import {
   errorMessage,
   getAllChecklists,
   getCategories,
+  getChecklist,
   getChecklistCoverage,
   getChecklistMeta,
+  getChecklistVersion,
   isAbortError,
+  saveChecklist,
   saveChecklistScope,
   type CheckParamValue,
+  type ChecklistDetail,
   type ChecklistItem,
   type ChecklistMeta,
   type ChecklistScopeRows,
+  type ChecklistVersionDetail,
   type ReviewKind,
   type VariantCoverage,
 } from "../api";
 import DataTable, { type Column } from "../components/DataTable";
+import { useDialog } from "../components/Dialog";
 import { flattenCats } from "../components/editing";
-import Field from "../components/Field";
+import Field, { CheckField, FieldRow } from "../components/Field";
+import FoldSection, { StatChip } from "../components/FoldSection";
+import NumberInput from "../components/NumberInput";
 import SiInput from "../components/SiInput";
 import { ErrorBanner, Spinner } from "../components/Ui";
+import { localWhen, plural } from "../format";
 
 /**
  * Every check in the platform, in ONE table.
@@ -50,15 +59,20 @@ import { ErrorBanner, Spinner } from "../components/Ui";
  * 4. **A row is FOLDED to what you scan for.** Settings, the `when` predicate
  *    and a judgment check's wording are behind the row's expansion: one check
  *    can carry four regular expressions.
- * 5. **Editing this list changes nothing already recorded.** Switching a check
- *    off stops it running, but the `failed` answer it already wrote is copied
- *    forward by every later record. "Apply to existing parts" is the one button
- *    that clears those, and it cannot touch a human or agent answer.
+ * 5. **Editing this list rewrites no recorded answer.** Conformance is computed
+ *    on read and its cache is keyed on a digest of the checklist, so a saved
+ *    change re-evaluates every subject on its next read. A human or agent answer
+ *    stays as it was written.
  *
  * **Publishing is per scope.** A checklist version belongs to one scope, so
  * editing rows from three scopes and pressing Publish writes three versions.
  * The toolbar says how many before you press it — silently publishing three
  * documents from one button would be the kind of thing nobody forgives.
+ *
+ * **A past version is read in the Versions fold, and "Put back" publishes its
+ * items as a new one.** The history is append-only, so nothing is lost. It waits
+ * while the table above holds unpublished edits, because the reload after a
+ * publish clears them.
  */
 type Item = ChecklistItem;
 
@@ -73,6 +87,11 @@ const KIND_LABEL: Record<ReviewKind, string> = {
 type ScopeKey = string;
 const scopeKey = (kind: ReviewKind, categoryId: number | null): ScopeKey =>
   `${kind}:${categoryId ?? ""}`;
+
+/** A list as `GET /api/checklists/all` names it. */
+type StoredScope = ChecklistScopeRows["scopes"][number];
+const scopeLabel = (s: Pick<StoredScope, "subject_kind" | "category_path">): string =>
+  s.category_path ?? `base — every ${s.subject_kind}`;
 
 interface Scope {
   key: ScopeKey;
@@ -171,7 +190,7 @@ function AssertEditor({
     >
       <div className="param-pattern">
         <input
-          className="text row-input mono"
+          className="row-input mono"
           value={spec.fact}
           list="when-facts"
           placeholder="$symbol_reference"
@@ -179,7 +198,7 @@ function AssertEditor({
           onChange={(e) => onChange({ ...spec, fact: e.target.value })}
         />
         <select
-          className="text row-input"
+          className="row-input"
           value={current.key}
           aria-label="What it asserts"
           onChange={(e) => {
@@ -198,7 +217,7 @@ function AssertEditor({
         </select>
         {current.shape === "none" ? null : current.shape === "list" ? (
           <input
-            className="text row-input"
+            className="row-input"
             value={(spec.one_of ?? []).join(", ")}
             placeholder="J, CN, BAT"
             aria-label="Accepted values"
@@ -213,16 +232,15 @@ function AssertEditor({
             }
           />
         ) : current.shape === "number" ? (
-          <input
-            className="text row-input num-input"
-            type="number"
-            value={String((spec[current.key as "at_least" | "at_most"] ?? 0) as number)}
-            aria-label="Value it is compared against"
-            onChange={(e) => set(current.key, Number(e.target.value))}
+          <NumberInput
+            className="row-input num-input"
+            value={(spec[current.key as "at_least" | "at_most"] ?? 0) as number}
+            title="Value it is compared against"
+            onChange={(v) => set(current.key, v)}
           />
         ) : (
           <input
-            className="text row-input mono"
+            className="row-input mono"
             value={String(spec[current.key as "matches" | "equals"] ?? "")}
             placeholder={current.key === "matches" ? "^J$" : "J"}
             aria-label="Value it is compared against"
@@ -246,6 +264,15 @@ const SEVERITIES = [
 
 const severityOf = (item: Item): "error" | "warning" | "ignore" =>
   item.severity ?? (item.disabled ? "ignore" : "error");
+
+function SeverityPill({ item }: { item: Item }) {
+  const sev = SEVERITIES.find((x) => x.key === severityOf(item)) ?? SEVERITIES[0];
+  return (
+    <span className={`pill ${sev.tone}`} title={sev.hint}>
+      {sev.label}
+    </span>
+  );
+}
 
 const whenSummary = (when?: Record<string, string>): string =>
   when && Object.keys(when).length
@@ -274,15 +301,9 @@ function CheckParams({
         const changed = JSON.stringify(fallback) !== JSON.stringify(value);
         if (typeof value === "boolean") {
           return (
-            <label key={name} className="field-check">
-              <input
-                type="checkbox"
-                checked={value}
-                disabled={disabled}
-                onChange={(e) => set(name, e.target.checked)}
-              />
-              <span>{label}</span>
-            </label>
+            <CheckField key={name} checked={value} disabled={disabled} onChange={(v) => set(name, v)}>
+              {label}
+            </CheckField>
           );
         }
         if (typeof value === "number") {
@@ -304,7 +325,7 @@ function CheckParams({
           return (
             <Field key={name} label={label} hint="Comma-separated">
               <input
-                className="text row-input"
+                className="row-input"
                 value={value.join(", ")}
                 disabled={disabled}
                 aria-label={label}
@@ -328,7 +349,7 @@ function CheckParams({
               {rows.map(([prop, expr], index) => (
                 <div key={`${index}-${prop}`} className="param-pattern">
                   <input
-                    className="text row-input mono"
+                    className="row-input mono"
                     value={prop}
                     disabled={disabled}
                     placeholder="Property"
@@ -343,7 +364,7 @@ function CheckParams({
                     }
                   />
                   <input
-                    className="text row-input mono"
+                    className="row-input mono"
                     value={expr}
                     disabled={disabled}
                     placeholder="^pattern$"
@@ -387,7 +408,7 @@ function CheckParams({
             hint={changed ? `default ${String(fallback)}` : undefined}
           >
             <input
-              className="text row-input mono"
+              className="row-input mono"
               value={String(value)}
               disabled={disabled}
               aria-label={label}
@@ -420,7 +441,7 @@ function WhenEditor({
       {rows.map(([field, pattern], index) => (
         <div key={`${index}-${field}`} className="param-pattern">
           <input
-            className="text row-input mono"
+            className="row-input mono"
             value={field}
             list="when-facts"
             placeholder="comp_type"
@@ -434,7 +455,7 @@ function WhenEditor({
             }
           />
           <input
-            className="text row-input mono"
+            className="row-input mono"
             value={pattern}
             placeholder="^TVS$"
             aria-label={`Pattern for ${field}`}
@@ -520,6 +541,224 @@ function Coverage({
   );
 }
 
+const itemId = (i: Item) => `${i.key}|${i.variant ?? ""}`;
+
+/** What a put back does to the current list, in a few words. Empty: nothing. */
+function changeWords(current: Item[], next: Item[]): string {
+  const now = new Map(current.map((i) => [itemId(i), JSON.stringify(i)]));
+  const then = new Map(next.map((i) => [itemId(i), JSON.stringify(i)]));
+  const back = [...then.keys()].filter((k) => !now.has(k)).length;
+  const gone = [...now.keys()].filter((k) => !then.has(k)).length;
+  const differ = [...then].filter(([k, v]) => now.has(k) && now.get(k) !== v).length;
+  return [
+    back ? `${back} check(s) come back` : "",
+    gone ? `${gone} check(s) go` : "",
+    differ ? `${differ} check(s) change` : "",
+  ]
+    .filter(Boolean)
+    .join(", ");
+}
+
+const VERSION_ITEM_COLUMNS: Column<Item>[] = [
+  { key: "check", label: "Key", width: 22, className: "mono",
+    get: (i) => i.key + (i.variant ? `.${i.variant}` : "") },
+  { key: "text", label: "What it checks", width: 44, get: (i) => i.text },
+  { key: "type", label: "Type", width: 9, get: (i) => (i.machine ? "automatic" : "judgment"),
+    render: (i) => (i.machine ? <span className="badge">auto</span> : <span className="muted">judgment</span>) },
+  { key: "when", label: "Applies when", width: 15, className: "mono", get: (i) => whenSummary(i.when) },
+  { key: "severity", label: "On failure", width: 10, get: severityOf, render: (i) => <SeverityPill item={i} /> },
+];
+
+/** One item of an old version, in full: a row cuts its text to one line. */
+function VersionItemDetail({ item }: { item: Item }) {
+  return (
+    <div className="check-detail-panel">
+      <p>{item.text}</p>
+      {item.hint ? <p className="muted">{item.hint}</p> : null}
+      {item.params ? (
+        <dl className="kv">
+          {Object.entries(item.params).map(([name, value]) => (
+            <Fragment key={name}>
+              <dt>{PARAM_LABELS[name] ?? name}</dt>
+              <dd className="mono">{typeof value === "string" ? value : JSON.stringify(value)}</dd>
+            </Fragment>
+          ))}
+        </dl>
+      ) : null}
+    </div>
+  );
+}
+
+/** One version, open under its row: its items, and the control that puts them
+ *  back. A version with no items is not offered. On a category that would be the
+ *  empty list the scope route refuses to keep, and on a base list it would leave
+ *  the kind with nothing to answer. */
+function VersionPanel({ scope, versionNo, blocked, onPutBack }: {
+  scope: StoredScope;
+  versionNo: number;
+  /** the table above holds unpublished edits */
+  blocked: boolean;
+  onPutBack: (message: string) => Promise<void>;
+}) {
+  const dialog = useDialog();
+  const [version, setVersion] = useState<ChecklistVersionDetail | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    const ctrl = new AbortController();
+    getChecklistVersion(scope.id, versionNo, ctrl.signal)
+      .then(setVersion)
+      .catch((err) => {
+        if (!isAbortError(err)) setError(errorMessage(err));
+      });
+    return () => ctrl.abort();
+  }, [scope.id, versionNo]);
+
+  if (version === null) return error ? <ErrorBanner message={error} /> : <Spinner label="Loading the version" />;
+
+  const change = changeWords(scope.items, version.items);
+  const putBack = async () => {
+    const asked = await dialog.confirm(
+      `Publish the ${version.items.length} check(s) of v${versionNo} as a new version of ` +
+        `${KIND_LABEL[scope.subject_kind]} · ${scopeLabel(scope)}? Against v${scope.version_no}: ${change}. ` +
+        `v${scope.version_no} stays in the history. No recorded answer changes, but a judgment check that ` +
+        "comes back is open on every part until somebody answers it.",
+      { title: `Put back v${versionNo}`, confirmLabel: "Put back" },
+    );
+    if (!asked) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const saved = await saveChecklist(scope.id, version.items, `Put back v${versionNo}`);
+      await onPutBack(`${scopeLabel(scope)}: v${saved.version_no} has the checks of v${versionNo}.`);
+    } catch (err) {
+      setError(errorMessage(err));
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="check-detail-panel">
+      {error ? <ErrorBanner message={error} /> : null}
+      {versionNo === scope.version_no ? null : version.items.length === 0 ? (
+        <p className="muted">This version has no checks, so it cannot be put back.</p>
+      ) : !change ? (
+        <p className="muted">The current version has the same checks.</p>
+      ) : (
+        <div className="btn-row">
+          <button type="button" className="btn btn-sm" disabled={busy || blocked} onClick={() => void putBack()}>
+            {busy ? "Publishing…" : "Put back"}
+          </button>
+          <span className="rail-hint">
+            {blocked ? "Publish or reset the edits above first." : `Against v${scope.version_no}: ${change}.`}
+          </span>
+        </div>
+      )}
+      <DataTable
+        columns={VERSION_ITEM_COLUMNS}
+        rows={version.items}
+        rowKey={itemId}
+        expand={(i) => <VersionItemDetail item={i} />}
+        persistKey="checks-version-items"
+        defaultSort={{ key: "check", dir: "asc" }}
+        empty="No checks."
+      />
+    </div>
+  );
+}
+
+const VERSION_COLUMNS = (currentNo: number | null): Column<ChecklistDetail["history"][number]>[] => [
+  { key: "version", label: "Version", width: 14, get: (h) => h.version_no,
+    render: (h) => (
+      <>
+        <span className="mono">v{h.version_no}</span>
+        {h.version_no === currentNo ? <> <span className="pill ok">current</span></> : null}
+      </>
+    ) },
+  { key: "date", label: "Date", width: 18, get: (h) => localWhen(h.created_at), sortValue: (h) => h.created_at },
+  { key: "who", label: "Who", width: 16, get: (h) => h.created_by || "—" },
+  { key: "comment", label: "Comment", width: 44, get: (h) => h.comment ?? "" },
+  { key: "items", label: "Checks", width: 8, numeric: true, get: (h) => h.item_count },
+];
+
+/** The versions of one scope. It reads them when the fold opens. A scope that
+ *  states nothing has no row and no history, so only stored scopes are offered. */
+function ChecklistVersions({ scopes, blocked, onPutBack }: {
+  scopes: StoredScope[];
+  blocked: boolean;
+  onPutBack: () => Promise<void>;
+}) {
+  const [picked, setPicked] = useState<number | null>(null);
+  const [history, setHistory] = useState<ChecklistDetail["history"] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const scope = scopes.find((s) => s.id === picked) ?? scopes[0];
+  const scopeId = scope?.id;
+  const currentNo = scope?.version_no ?? null;
+
+  // `currentNo` is here so that a publish from the table above adds its row.
+  useEffect(() => {
+    if (scopeId === undefined) return;
+    const ctrl = new AbortController();
+    setHistory(null);
+    setError(null);
+    getChecklist(scopeId, ctrl.signal)
+      .then((c) => setHistory(c.history))
+      .catch((err) => {
+        if (!isAbortError(err)) setError(errorMessage(err));
+      });
+    return () => ctrl.abort();
+  }, [scopeId, currentNo]);
+
+  if (!scope) return <p className="muted">No scope states a check yet.</p>;
+  return (
+    <>
+      {notice ? (
+        <div className="banner-ok" role="status">
+          {notice}
+        </div>
+      ) : null}
+      {error ? <ErrorBanner message={error} /> : null}
+      <FieldRow>
+        <Field label="Scope">
+          <select className="text" value={scope.id} onChange={(e) => setPicked(Number(e.target.value))}>
+            {scopes.map((s) => (
+              <option key={s.id} value={s.id}>
+                {KIND_LABEL[s.subject_kind]} · {scopeLabel(s)}
+              </option>
+            ))}
+          </select>
+        </Field>
+      </FieldRow>
+      {history === null ? (
+        error ? null : <Spinner label="Loading the versions" />
+      ) : (
+        <DataTable
+          columns={VERSION_COLUMNS(currentNo)}
+          rows={history}
+          rowKey={(h) => h.version_no}
+          expand={(h) => (
+            <VersionPanel
+              key={`${scope.id}:${h.version_no}`}
+              scope={scope}
+              versionNo={h.version_no}
+              blocked={blocked}
+              onPutBack={async (message) => {
+                await onPutBack();
+                setNotice(message);
+              }}
+            />
+          )}
+          persistKey="checks-versions"
+          defaultSort={{ key: "version", dir: "desc" }}
+          empty="No versions."
+        />
+      )}
+    </>
+  );
+}
+
 export default function Checklists() {
   const [data, setData] = useState<ChecklistScopeRows | null>(null);
   const [meta, setMeta] = useState<ChecklistMeta | null>(null);
@@ -580,7 +819,7 @@ export default function Checklists() {
         id: s.id,
         kind: s.subject_kind,
         categoryId: s.category_id,
-        label: s.category_path ?? `base — every ${s.subject_kind}`,
+        label: scopeLabel(s),
         versionNo: s.version_no,
       });
     }
@@ -763,7 +1002,7 @@ export default function Checklists() {
         render: (r) =>
           r.draft ? (
             <select
-              className="text row-input mono"
+              className="row-input mono"
               aria-label="Scope the new check is added to"
               value={draft.scope}
               onClick={(e) => e.stopPropagation()}
@@ -795,7 +1034,7 @@ export default function Checklists() {
         render: (r) =>
           r.draft ? (
             <input
-              className="text row-input mono"
+              className="row-input mono"
               value={draft.key}
               placeholder="cmp.something"
               aria-label="Key for the new check"
@@ -814,7 +1053,7 @@ export default function Checklists() {
         render: (r) =>
           r.draft ? (
             <input
-              className="text row-input"
+              className="row-input"
               value={draft.text}
               placeholder="What a reviewer must confirm"
               aria-label="What the new check asks"
@@ -855,7 +1094,7 @@ export default function Checklists() {
           r.draft ? (
             <button
               type="button"
-              className="btn btn-sm btn-accent"
+              className="btn btn-sm btn-primary"
               disabled={!draftReady}
               title={
                 draftReady
@@ -870,14 +1109,7 @@ export default function Checklists() {
               Add
             </button>
           ) : (
-            (() => {
-              const sev = SEVERITIES.find((x) => x.key === severityOf(r.item)) ?? SEVERITIES[0];
-              return (
-                <span className={`pill ${sev.tone}`} title={sev.hint}>
-                  {sev.label}
-                </span>
-              );
-            })()
+            <SeverityPill item={r.item} />
           ),
       },
     ],
@@ -1002,7 +1234,7 @@ export default function Checklists() {
           }
         >
           <input
-            className="text row-input mono"
+            className="row-input mono"
             value={item.variant ?? ""}
             placeholder="NMOS"
             aria-label={`Variant name for ${item.key}`}
@@ -1015,12 +1247,17 @@ export default function Checklists() {
     );
   };
 
-  if (error !== null && data === null) return <ErrorBanner message={error} />;
-  if (data === null || meta === null) return <Spinner label="Loading checks" />;
+  if (error !== null && data === null) {
+    return <div className="main-solo"><div className="page"><ErrorBanner message={error} /></div></div>;
+  }
+  if (data === null || meta === null) {
+    return <div className="main-solo"><div className="page"><Spinner label="Loading checks" /></div></div>;
+  }
 
   return (
+    <div className="main-solo">
     <div className="page">
-      <h1 className="page-title">Checks</h1>
+      <h1>Checks</h1>
       <p className="muted">
         Every check in the platform, in one table. A category states only what it CHANGES, so a
         row here is something somebody decided. Filter any column — Scope to see what one
@@ -1061,7 +1298,7 @@ export default function Checklists() {
 
       <div className="btn-row">
         <input
-          className="text row-input"
+          className="row-input"
           value={comment}
           maxLength={300}
           placeholder="What changed (kept in every version this publishes)"
@@ -1070,7 +1307,7 @@ export default function Checklists() {
         />
         <button
           type="button"
-          className="btn btn-accent"
+          className="btn btn-primary"
           disabled={busy || dirtyScopes.length === 0 || problems.length > 0}
           onClick={() => void publish()}
         >
@@ -1078,7 +1315,7 @@ export default function Checklists() {
             ? "Publishing…"
             : dirtyScopes.length === 0
               ? "Publish"
-              : `Publish ${dirtyScopes.length} scope${dirtyScopes.length === 1 ? "" : "s"}`}
+              : `Publish ${plural(dirtyScopes.length, "scope")}`}
         </button>
         <button
           type="button"
@@ -1095,6 +1332,20 @@ export default function Checklists() {
           </span>
         ) : null}
       </div>
+
+      <FoldSection
+        title="Versions"
+        count={null}
+        foldKey="checks:versions"
+        chips={<StatChip n={data.scopes.length}>scopes with a list</StatChip>}
+      >
+        <ChecklistVersions
+          scopes={data.scopes}
+          blocked={dirtyScopes.length > 0}
+          onPutBack={() => load()}
+        />
+      </FoldSection>
+    </div>
     </div>
   );
 }

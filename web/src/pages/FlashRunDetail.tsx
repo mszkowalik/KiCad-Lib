@@ -11,13 +11,88 @@ import {
   markRunAborted,
   type ProgrammingLogRow,
   type ProgrammingRunDetail,
+  type ProgrammingStepRow,
 } from "../api";
+import DataTable, { type Column } from "../components/DataTable";
+import FoldSection, { StatChip } from "../components/FoldSection";
+import { CheckField } from "../components/Field";
 import { useDialog } from "../components/Dialog";
 import { BackLink, ErrorBanner, Spinner, StatusPill } from "../components/Ui";
 import CheckGrid from "../components/flasher/CheckGrid";
-import { fmtDuration, fmtWhen } from "../components/flasher/common";
+import { fmtDuration } from "../components/flasher/common";
+import { localWhen, localTime } from "../format";
 
 const DIRS = ["", "tx", "rx", "app", "err", "esptool"];
+
+/** The loudest step state first: a fold never hides a problem. */
+function stepRank(status: string): number {
+  if (status === "fail" || status === "error" || status === "failed") return 0;
+  return status === "aborted" || status === "running" ? 1 : 2;
+}
+
+/* Sorted by its own number first, because the order of the steps is what happened.
+   A failed step's error is on the hover of its Step and Result cells. The card sits
+   in the narrow column, where a filter box needs 76 px with its cell, so only Step
+   and Result take one. A pill and a duration may not be cut; a label may. */
+const STEP_COLS: Column<ProgrammingStepRow>[] = [
+  {
+    key: "idx",
+    label: "#",
+    width: 12,
+    numeric: true,
+    interactive: false,
+    sortable: true,
+    get: (s) => s.idx + 1,
+  },
+  {
+    key: "step",
+    label: "Step",
+    width: 27,
+    get: (s) => `${s.label || s.op} ${s.check ?? ""}`.trim(),
+    title: (s) => s.error ?? s.label,
+    render: (s) => (
+      <>
+        {s.label || s.op}
+        {s.check ? <span className="muted dim mono"> {s.check}</span> : null}
+      </>
+    ),
+  },
+  { key: "op", label: "Op", width: 17, className: "mono dim", interactive: false, sortable: true, get: (s) => s.op },
+  {
+    key: "result",
+    label: "Result",
+    width: 24,
+    get: (s) => s.status,
+    title: (s) => s.error ?? s.status,
+    render: (s) => <StatusPill status={s.status} />,
+  },
+  {
+    key: "took",
+    label: "Took",
+    width: 20,
+    numeric: true,
+    interactive: false,
+    sortable: true,
+    get: (s) => s.duration_ms ?? "",
+    render: (s) => fmtDuration(s.duration_ms),
+  },
+];
+
+/** Named values of one run: what it captured, or what it was given. */
+function RunValues({ values }: { values: Record<string, unknown> }) {
+  return (
+    <table className="data data-fixed identity-table">
+      <tbody>
+        {Object.entries(values).map(([k, v]) => (
+          <tr key={k}>
+            <td className="muted">{k}</td>
+            <td className="mono" title={String(v)}>{String(v)}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
 
 export default function FlashRunDetail() {
   const { id } = useParams();
@@ -29,7 +104,7 @@ export default function FlashRunDetail() {
   const [error, setError] = useState<string | null>(null);
   const [follow, setFollow] = useState(true);
   const lastSeq = useRef(0);
-  const logEnd = useRef<HTMLDivElement>(null);
+  const logBox = useRef<HTMLDivElement>(null);
 
   const loadRun = useCallback(() => {
     const ac = new AbortController();
@@ -73,7 +148,9 @@ export default function FlashRunDetail() {
   }, [runId, dir, run?.status, loadRun]);
 
   useEffect(() => {
-    if (follow) logEnd.current?.scrollIntoView({ block: "end" });
+    // The box and nothing else. `scrollIntoView` also moves every ancestor, and
+    // it pushed the whole `overflow: hidden` page sideways.
+    if (follow && logBox.current) logBox.current.scrollTop = logBox.current.scrollHeight;
   }, [logs, follow]);
 
   const abortZombie = async () => {
@@ -112,7 +189,7 @@ export default function FlashRunDetail() {
           <span className="toolbar-total">
             {run.deployment ? `${run.deployment.name} v${run.deployment.version_no}` : "?"} ·{" "}
             {run.production_run ? run.production_run.label : "?"} · {run.operator || "no operator"} ·{" "}
-            {run.station || "?"} · {fmtWhen(run.started_at)} · {fmtDuration(run.duration_ms)}
+            {run.station || "?"} · {localWhen(run.started_at)} · {fmtDuration(run.duration_ms)}
           </span>
         </div>
         {error ? <ErrorBanner message={error} /> : null}
@@ -130,69 +207,36 @@ export default function FlashRunDetail() {
               </div>
             ) : null}
 
-            <div className="card pad">
-              <h2 className="card-title">Steps</h2>
-              <div className="table-wrap">
-                <table className="data data-fixed progsteps-table">
-                  <thead>
-                    <tr>
-                      <th>#</th>
-                      <th>Step</th>
-                      <th>Op</th>
-                      <th>Result</th>
-                      <th className="num">Took</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {run.steps.map((s) => (
-                      <tr key={s.idx} title={s.error ?? undefined}>
-                        <td className="num">{s.idx + 1}</td>
-                        <td title={s.label}>
-                          {s.label || s.op}
-                          {s.check ? <span className="muted dim mono"> {s.check}</span> : null}
-                        </td>
-                        <td className="mono dim">{s.op}</td>
-                        <td><StatusPill status={s.status} /></td>
-                        <td className="num">{fmtDuration(s.duration_ms)}</td>
-                      </tr>
-                    ))}
-                    {run.steps.length === 0 ? (
-                      <tr><td colSpan={5} className="empty">No steps recorded.</td></tr>
-                    ) : null}
-                  </tbody>
-                </table>
-              </div>
-            </div>
+            <FoldSection
+              title="Steps"
+              count={run.steps.length}
+              foldKey={`flash-run:${run.id}:steps`}
+              forceOpen={run.status === "running"}
+              chips={[...new Set(run.steps.map((st) => st.status))].sort((a, b) => stepRank(a) - stepRank(b)).slice(0, 4).map((st) => (
+                <StatChip key={st} n={run.steps.filter((x) => x.status === st).length}
+                  tone={stepRank(st) === 0 ? "err" : stepRank(st) === 1 ? "warn" : st === "pass" ? "ok" : undefined}>
+                  {st}
+                </StatChip>
+              ))}
+            >
+              <DataTable
+                rows={run.steps}
+                rowKey={(s) => s.idx}
+                columns={STEP_COLS}
+                defaultSort={{ key: "idx", dir: "asc" }}
+                empty="No steps recorded."
+              />
+            </FoldSection>
             {run.results && Object.keys(run.results).length ? (
-              <div className="card pad">
-                <h2 className="card-title">Captured results</h2>
-                <table className="data data-fixed identity-table">
-                  <tbody>
-                    {Object.entries(run.results).map(([k, v]) => (
-                      <tr key={k}>
-                        <td className="muted">{k}</td>
-                        <td className="mono" title={String(v)}>{String(v)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+              <FoldSection title="Captured results" count={Object.keys(run.results).length} foldKey={`flash-run:${run.id}:results`}>
+                <RunValues values={run.results} />
+              </FoldSection>
             ) : null}
             {run.params_snapshot && Object.keys(run.params_snapshot).length ? (
-              <div className="card pad">
-                <h2 className="card-title">Applied parameters</h2>
-                <p className="card-subtitle">Secrets are masked in the snapshot itself.</p>
-                <table className="data data-fixed identity-table">
-                  <tbody>
-                    {Object.entries(run.params_snapshot).map(([k, v]) => (
-                      <tr key={k}>
-                        <td className="muted">{k}</td>
-                        <td className="mono" title={String(v)}>{String(v)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+              <FoldSection title="Applied parameters" count={Object.keys(run.params_snapshot).length} foldKey={`flash-run:${run.id}:params`}>
+                <p className="muted dim">Secrets are masked in the snapshot itself.</p>
+                <RunValues values={run.params_snapshot} />
+              </FoldSection>
             ) : null}
           </div>
 
@@ -205,21 +249,17 @@ export default function FlashRunDetail() {
                     <option key={d} value={d}>{d === "" ? "all directions" : d}</option>
                   ))}
                 </select>
-                <label className="muted">
-                  <input type="checkbox" checked={follow} onChange={(e) => setFollow(e.target.checked)} />{" "}
-                  follow
-                </label>
+                <CheckField checked={follow} onChange={setFollow}>follow</CheckField>
                 <span className="toolbar-total">{logs.length} lines</span>
               </div>
-              <div className="flash-log flash-log-tall mono">
+              <div ref={logBox} className="flash-log flash-log-tall mono">
                 {logs.map((row) => (
                   <div key={row.seq} className={`fl-${row.dir}`} title={row.ts ?? ""}>
-                    <span className="dim">{row.device_ts || (row.ts ?? "").slice(11, 19)}</span>{" "}
+                    <span className="dim">{row.device_ts || (row.ts ? localTime(row.ts) : "")}</span>{" "}
                     {row.dir === "tx" ? "→ " : row.dir === "rx" ? "← " : `[${row.dir}] `}
                     {row.text}
                   </div>
                 ))}
-                <div ref={logEnd} />
               </div>
             </div>
           </div>

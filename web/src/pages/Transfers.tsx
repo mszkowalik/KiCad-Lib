@@ -22,19 +22,20 @@ import DataTable, { type Column } from "../components/DataTable";
 import { useDialog } from "../components/Dialog";
 import Field, { FieldGrid, FieldRow } from "../components/Field";
 import NumberInput from "../components/NumberInput";
-import { ErrorBanner, Spinner } from "../components/Ui";
-import { plain } from "../format";
+import { ErrorBanner, Spinner, StatusPill } from "../components/Ui";
+import { plain, pln, today } from "../format";
+import { useTodayRate } from "../useTodayRate";
 
-const COLUMNS: Column<TransferRow>[] = [
+const transferColumns = (rate: number | null): Column<TransferRow>[] => [
   { key: "date", label: "Date", width: 11, className: "mono", get: (t) => t.date },
   { key: "number", label: "Number", width: 14, className: "mono", get: (t) => t.doc_number },
   { key: "from", label: "From", width: 12, get: (t) => t.sender },
   { key: "to", label: "To", width: 12, get: (t) => t.receiver },
   { key: "lines", label: "Positions", width: 10, numeric: true, get: (t) => t.lines.length },
-  { key: "value", label: "Value (USD)", width: 13, numeric: true, get: (t) => t.value_usd,
-    render: (t) => <>{plain(t.value_usd)}</> },
+  { key: "value", label: "Value", width: 13, numeric: true, get: (t) => t.value_usd,
+    render: (t) => <>{pln(t.value_usd, rate)}</> },
   { key: "state", label: "State", width: 10, get: (t) => (t.reversed ? "reversed" : "in force"),
-    render: (t) => <span className={"pill " + (t.reversed ? "neutral" : "ok")}>{t.reversed ? "reversed" : "in force"}</span> },
+    render: (t) => <StatusPill status={t.reversed ? "reversed" : "in force"} /> },
   { key: "notes", label: "Notes", width: 18, className: "muted", get: (t) => t.notes },
 ];
 
@@ -43,7 +44,7 @@ const LINE_COLUMNS: Column<TransferRow["lines"][number]>[] = [
   { key: "qty", label: "Quantity", width: 15, numeric: true, get: (ln) => ln.qty,
     render: (ln) => <>{plain(ln.qty)}</> },
   { key: "unit", label: "Unit (USD)", width: 15, numeric: true, get: (ln) => ln.unit_cost_usd,
-    render: (ln) => <>{ln.unit_cost_usd.toFixed(4)}</> },
+    render: (ln) => <>{plain(ln.unit_cost_usd, 4)}</> },
   { key: "price", label: "Price", width: 30, className: "muted", get: (ln) => ln.price },
 ];
 
@@ -79,10 +80,11 @@ function TransferDetail({ t, onChanged }: { t: TransferRow; onChanged: () => voi
 interface DraftLine { part: string; qty: number | null }
 
 function NewTransferCard({ onDone }: { onDone: () => void }) {
+  const rate = useTodayRate();
   const { companies } = useAuth();
   const [sender, setSender] = useState<number | "">(companies[0]?.id ?? "");
   const [receiver, setReceiver] = useState<number | "">(companies[1]?.id ?? "");
-  const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
+  const [date, setDate] = useState(today);
   const [lines, setLines] = useState<DraftLine[]>([{ part: "", qty: null }]);
   const [note, setNote] = useState("");
   const [plan, setPlan] = useState<TransferPlan | null>(null);
@@ -184,8 +186,8 @@ function NewTransferCard({ onDone }: { onDone: () => void }) {
             </div>
           ))}
           <p className="muted">
-            {plan.lines.length} part(s), {plain(plan.value_usd)} USD:{" "}
-            {plan.lines.map((ln) => `${ln.mpn || ln.lcsc} ${plain(ln.qty)} × ${ln.unit_cost_usd.toFixed(4)}`).join(", ")}
+            {plan.lines.length} part(s), {pln(plan.value_usd, rate)}, unit prices in USD:{" "}
+            {plan.lines.map((ln) => `${ln.mpn || ln.lcsc} ${plain(ln.qty)} × ${plain(ln.unit_cost_usd, 4)}`).join(", ")}
           </p>
         </>
       ) : null}
@@ -194,6 +196,7 @@ function NewTransferCard({ onDone }: { onDone: () => void }) {
 }
 
 export default function Transfers() {
+  const rate = useTodayRate();
   const [rows, setRows] = useState<TransferRow[] | null>(null);
   const [error, setError] = useState("");
   const load = useCallback((signal?: AbortSignal) => {
@@ -211,7 +214,7 @@ export default function Transfers() {
     <div className="main-solo">
       <div className="page">
         <div className="toolbar">
-          <h1 className="page-title">Transfers</h1>
+          <h1>Transfers</h1>
           {rows ? (
             <span className="toolbar-total">{rows.filter((t) => !t.reversed).length} in force</span>
           ) : null}
@@ -230,7 +233,7 @@ export default function Transfers() {
             <DataTable
               rows={rows}
               rowKey={(t) => t.id}
-              columns={COLUMNS}
+              columns={transferColumns(rate)}
               empty="No transfers yet."
               defaultSort={{ key: "date", dir: "desc" }}
               expand={(t) => <TransferDetail t={t} onChanged={() => load()} />}

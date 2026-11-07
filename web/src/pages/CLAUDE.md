@@ -48,14 +48,18 @@ and the copy was worse.
   revoked copy hid on production for weeks (decision 0010).
 
 
-## Site structure (UI overhaul, 2026-07-29)
+## Site structure
 
-- **Five nav sections**: Library (`/library/...`), Projects (+ `/runs/:id`),
-  Production (`/production/...`), Reviews (`/reviews` queue,
-  `/reviews/checklists` editor), Setup. Second-level navigation is
-  `SectionNav` in `App.tsx`; every pre-overhaul route redirects, so never link
-  to `/components/...`, `/invoices`, `/parts-stock`, `/kicad`, `/proposals` in
-  new code — use the new paths.
+Decision [0103](../../../docs/decisions/0103-a-job-is-a-section-and-a-batch-is-a-board.md).
+Where a new function goes is in [ui-map.md](../../../docs/reference/ui-map.md).
+The top bar has two groups. Engineering: Library, Projects, Simulator, Reviews.
+Operations, one section per job: Production (`/production/...`, making), Stock
+(`/stock...`), Sales (`/sales/...`), Finance (`/finance...`). `/` is Home. The user
+menu holds Account, History and Admin. Second-level navigation is `SectionNav` in
+`App.tsx`, and a section link opens the tab last used there. Every older address
+redirects with its parameters (`Moved` in `App.tsx`), so use the new paths in new
+code, and keep the redirects: saved links depend on them.
+
 - **The Reviews queue is a workbench, not just a table.** A row expands
   inline (`components/ReviewWorkbench.tsx`): one collapsible row per subject on
   the left (`ReviewSubjectRows`, shared with the component page), the
@@ -105,6 +109,10 @@ and the copy was worse.
   `GET/PUT /api/checklists/scope?kind=&category_id=` creates the row on the
   first save and DELETES it when a save leaves it empty, because "adds nothing"
   and "has an empty list" must not be two states.
+  **The Versions fold is the one user of the id**: only a scope with a row has a
+  history. "Put back" writes through `PUT /api/checklists/{id}`, so it never
+  offers a version with no items, and it waits while the table holds unpublished
+  edits, because the reload after a publish clears them.
 - **The editor is where the validator is CONFIGURED, not just switched on.**
   Automatic rows come from `validator.machine_checks` through
   `/api/checklists/meta`: their wording is never typed here — the API rewrites
@@ -158,10 +166,10 @@ and the copy was worse.
   `BackLink` calls `navigate(-1)` when `window.history.state.idx > 0` and falls
   back to its `to` for a directly-opened page, which also keeps a real href for
   middle-click. `to` stays required.
-- **A run is edited only on `/runs/:id`** (`pages/RunDetail.tsx`): the Batch
-  card (label, quantity planned, devices produced, run date), status, the
-  design commit, notes, overrides, materials, costs, files, serials. The
-  project Runs tab is a plain list. Do not add run-editing UI anywhere else.
+- **A batch is edited only on `/production/batches/:id`** (`pages/RunDetail.tsx`):
+  the Batch card (label, quantity planned, devices produced, run date), status, the
+  design commit, notes, overrides, materials, costs, files.
+  The project Runs tab is a plain list. Do not add run-editing UI anywhere else.
   **That sentence has to stay literally true, and it was not.** The page
   claimed every `PATCH /api/runs/{id}` field was editable here while `label`,
   `qty`, `run_date` and `qty_good` had no control anywhere in the app — so a
@@ -184,20 +192,21 @@ and the copy was worse.
 - **Batches have TWO lists and they answer different questions.**
   `components/project/RunsTab.tsx` is "what has this product built", and it
   creates and deletes. `pages/Runs.tsx` (Production → Batches,
-  `/production/runs`, `GET /api/runs`) is "what is in production anywhere" —
+  `/production/batches`, `GET /api/runs`) is "what is in production anywhere" —
   every batch across every project, and it creates nothing, because a batch
-  needs a project's snapshot and board. Both are labelled **Batches**; the
-  route is `/production/runs` to match `/runs/:id`.
-  It is NOT the Overview's "What each batch cost": that table is money and is
+  needs a project's snapshot and board. Both are labelled **Batches**.
+  It is NOT Finance → Cost overview's "What each batch cost": that table is money and is
   built from the invoice register, so a batch nobody had billed was missing
   from it. This one is the batches themselves — status, quantity, devices
-  recorded, whether the books are closed — and it links to Overview for the
+  recorded, whether the books are closed — and it links to Cost overview for the
   cost rather than printing it again.
 - **Money formatters live in `src/format.ts`** (`usd`, `amount`, `price`,
-  `plain`). Never declare a local `money()` — there were eleven copies once,
-  and they drifted.
+  `plain`, `pln`, `plnAmount`, `plnNumber`). Never declare a local `money()` — there were eleven copies once,
+  and they drifted. `pl` (Polish notation, beside KSeF and the accountant's
+  figures), `today()` (the LOCAL date), `localDate`, `localWhen`, `localTime` and
+  `since()` ("3 min") live there too.
 - **Cost-domain primitives live in `components/costs.tsx`**:
-  `COST_LINE_KINDS`, `<StepSelect>` (step catalog grouped by stage),
+  `<StepSelect>` (step catalog grouped by stage),
   `<ChargeToSelect>` (run/project/excluded destination). Reuse, never copy.
 - **The PROJECT page's tab is in the URL too, and its Devices tab takes
   filters.** `/projects/:id?tab=Devices&state=in_stock&condition=faulty` shows
@@ -215,7 +224,7 @@ and the copy was worse.
   A link from another page that means one panel names it —
   `/admin?tab=rates`, not `/admin`.
 - **Each number has one home.** Run economics render on the run page and the
-  Production overview; stock figures on Production → Stock. Link there
+  Cost overview; stock figures on Stock → Parts. Link there
   instead of re-rendering a figure on a new surface.
 - **The Invoices document list is a `DataTable`, and the ROW is the toggle.**
   It was the last hand-rolled `<table className="data">` on a main page — no
@@ -229,10 +238,11 @@ and the copy was worse.
   exactly the rows showing that pill. Its `.invoices-table` width rules were
   deleted with it: `DataTable` takes widths from `Column.width` and carries its
   own `row-expansion` styling.
-- **The shelf has TWO cuts and one source each; neither re-derives the other.**
-  Production → **Stock** (`components/FinishedProductsCard.tsx`,
+- **The shelf has TWO cuts on `pages/FinishedDevices.tsx`, and one source each;
+  neither re-derives the other.**
+  **Per product** (`components/FinishedProductsCard.tsx`,
   `GET /api/finished-products`) is per PRODUCT and counts the DEVICE RECORDS.
-  Production → **Orders** ("Devices on the shelf", `GET /api/finished-stock`)
+  **Per batch** ("Devices on the shelf", `GET /api/finished-stock`)
   is per BATCH and counts per run. The difference is load-bearing: a device
   that names no batch is invisible to every per-batch figure, and 13 were on
   the real shelf on 2026-09-21 — the platform reported 93 devices while
@@ -248,11 +258,11 @@ and the copy was worse.
   open demand says an order can be filled by devices that cannot leave the
   building — it read 34 dongles of supply against 0 sellable ones (user
   decision 2026-09-21).
-- **Orders live on Production → Orders** (`pages/Orders.tsx`,
-  `pages/OrderDetail.tsx`, decision 0003). Its shelf card counts
-  RECORDED DEVICES and nothing else — a batch with no device records is built
-  0, whatever quantity is typed on it, and the "No serial" column that used to
-  hold the difference is gone (decision 0049). Stock splits into
+- **Orders live on Sales → Orders** (`pages/Orders.tsx`,
+  `pages/OrderDetail.tsx`, decision 0003).
+  **The shelf card, "Devices on the shelf, by batch"** (`pages/FinishedDevices.tsx`)
+  counts RECORDED DEVICES and nothing else — a batch with no device records is built
+  0, whatever quantity is typed on it (decision 0049). Stock splits into
   `devices_available` and `devices_held`: only a device whose `condition` is
   `ok` may ship, so a faulty or prototype unit is counted and visible but
   never picked (decision 0032). A unit whose twin is in work, scrapped, or
@@ -265,36 +275,39 @@ and the copy was worse.
   instead of the typed run quantity (decision 0007), because everything they
   held had shipped. A batch is a fact; its remaining stock is a number on it.
   `Recorded` sits beside `Built`, and `overbuilt()` marks a row where built is
-  above recorded. Under-building is ordinary attrition and is not marked. **The Ship card takes SERIALS ONLY** — no quantity, no batch picker,
-  because a number with no device behind it is a guess (decision 0032). Its
-  batch table is read-only, there to show the shelf while you scan; returns,
-  repairs and disposals are on the DEVICE page (`components/DeviceHistoryCard.tsx`),
-  because they are events in a device's history. The run page's sale card
-  stays until the register reads the orders; it now points at the order.
+  above recorded. Under-building is ordinary attrition and is not marked.
+  **A shipment is Pack, then Send** (decision 0103): "Pack…" on an order opens a
+  shipment for it, and a shipment takes serials only, because a number with no
+  device behind it is a guess (decision 0032). "Replacement…" on a packed device names the
+  delivered device it replaces, and a replacement does not count against the ordered
+  quantity (decision 0003 §7). A repaired device sent back to its order counts once by
+  itself, with no statement. Returns, repairs and disposals are
+  on the DEVICE page (`components/DeviceHistoryCard.tsx`), because they are events
+  in a device's history.
+  **A reservation comes back with Release… on its line** (`POST
+  /api/orders/{id}/release`), and it writes `unallocated` with no shipment. A
+  device reserved on this order can go into a box of this order, on its own line.
+  A device reserved on another order cannot. The line under the table counts
+  `reserved` and `packed` apart, because a packed device leaves its box on the
+  shipment page.
   **There is no stock-count card any more** (decision 0032): nothing corrects
   stock automatically, because a mechanism that removes guesses by writing new
-  ones is not a correction. `parseScanSheet` stays and decides nothing — it
-  strips a scanner's CSV export, and the SERVER names any code that is not a
+  ones is not a correction. `parseScanSheet` (`src/scanSheet.ts`) decides nothing —
+  it strips a scanner's CSV export, and the SERVER names any code that is not a
   device rather than shipping a short list.
   A delivery recorded in error is taken back on its row, never deleted, and the
   `×` follows `sh.deletable`, NOT `sh.devices.length` — a reversed shipment
-  carries no device but still carries events. Ship takes scanned serials now.
+  carries no device but still carries events.
   The project window has an **Orders tab** (`components/project/OrdersTab.tsx`):
   read-only, one row per order line of that project, headed by the demand
-  card (`DemandCard` in `pages/Orders.tsx`, from `GET /api/demand`) — open
+  card (`components/DemandCard.tsx`, from `GET /api/demand`) — open
   quantity against the shelf and the planned batches. Both surfaces share
   the one component so the figure has one rendering.
 
-- **Shipments are packed on Production → Shipments** (`pages/Shipments.tsx`,
+- **Shipments are packed on Sales → Shipments** (`pages/Shipments.tsx`,
   `pages/ShipmentDetail.tsx`, decision
   [0053](../../../docs/decisions/0053-a-shipment-is-packed-before-it-is-sent.md)).
-  Three traps:
-  - **A single scan is taken as typed; only a PASTED list goes through
-    `parseScanSheet`.** That parser drops every token with `:` or `-`, so a
-    scanned `PROTO-0045` vanished with no message until the two paths split.
-  - **The scanned list is `localStorage`, not `useStickyState`.** The hook is
-    `sessionStorage` and forbids drafts, and a half-scanned carton must survive
-    a reload. Check results are never stored; they are asked again on load.
+  The scanning itself is `components/ScanList.tsx`, with its rules. One trap:
   - **On an OPEN shipment, `devices` and `qty` are the PACKED devices**, not
     shipped ones. Gate "Take back" on `status === "sent"`, and offer Cancel,
     not Delete, once `deletable` is false.

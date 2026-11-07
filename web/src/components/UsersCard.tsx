@@ -27,8 +27,9 @@ import {
 import { useDialog } from "./Dialog";
 import { CopyButton, ErrorBanner, Spinner } from "./Ui";
 import DataTable, { type Column } from "./DataTable";
-import { CheckField, FieldSet } from "./Field";
+import Field, { CheckField, FieldSet } from "./Field";
 import { useAuth } from "../auth";
+import { localDate, localWhen } from "../format";
 
 function CopyRow({ label, value }: { label: string; value: string }) {
   if (!value) return null;
@@ -113,7 +114,7 @@ function UserDetail({
             {t.token || `${t.prefix}…`}
           </code>
           <span className="muted dim">
-            {t.last_used_at ? `used ${t.last_used_at.slice(0, 10)}` : "never used"}
+            {t.last_used_at ? `used ${localDate(t.last_used_at)}` : "never used"}
           </span>
           <button
             className="btn btn-sm btn-danger"
@@ -291,7 +292,7 @@ export default function UsersCard() {
       label: "Last sign-in",
       width: 20,
       className: "muted dim",
-      get: (u) => u.last_login_at?.slice(0, 16) ?? "never",
+      get: (u) => (u.last_login_at ? localWhen(u.last_login_at) : "never"),
     },
     {
       key: "delete",
@@ -327,7 +328,7 @@ export default function UsersCard() {
 
   return (
     <div className="card pad">
-      <h2>Users</h2>
+      <h2 className="card-title">Users</h2>
       <p className="muted">
         Accounts are created here and nowhere else. The platform has no sign-up page
         and no password recovery — reset a forgotten password below.
@@ -362,26 +363,23 @@ export default function UsersCard() {
 
       <h3 className="users-add-heading">Add a user</h3>
       <div className="field-grid">
-        <label className="login-field">
-          <span className="login-label">Username</span>
+        <Field label="Username">
           <input
             className="text"
             value={username}
             onChange={(e) => setUsername(e.target.value)}
             autoComplete="off"
           />
-        </label>
-        <label className="login-field">
-          <span className="login-label">Display name</span>
+        </Field>
+        <Field label="Display name">
           <input
             className="text"
             value={displayName}
             onChange={(e) => setDisplayName(e.target.value)}
             autoComplete="off"
           />
-        </label>
-        <label className="login-field">
-          <span className="login-label">Password</span>
+        </Field>
+        <Field label="Password">
           <input
             className="text"
             type="password"
@@ -389,14 +387,13 @@ export default function UsersCard() {
             onChange={(e) => setPassword(e.target.value)}
             autoComplete="new-password"
           />
-        </label>
-        <label className="login-field">
-          <span className="login-label">Role</span>
+        </Field>
+        <Field label="Role">
           <select className="text" value={role} onChange={(e) => setRole(e.target.value)}>
             <option value="user">user</option>
             <option value="admin">admin</option>
           </select>
-        </label>
+        </Field>
         <button
           className="btn btn-primary field-grid-submit"
           disabled={busy || !username.trim() || password.length < 10}

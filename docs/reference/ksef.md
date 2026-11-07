@@ -4,7 +4,7 @@ The platform READS both companies' invoices from KSeF. It never sends one.
 The reasoning is in
 [decision 0067](../decisions/0067-the-platform-reads-both-companies-from-ksef.md).
 The code is `api/app/services/ksef/` and `api/app/routers/ksef.py`. The pages
-are Admin → Companies (tokens, "Sync now") and Production → KSeF (the inbox).
+are Admin → Companies (tokens, "Sync now") and Finance → KSeF (the inbox).
 
 ## Rules
 

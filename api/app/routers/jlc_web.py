@@ -32,7 +32,7 @@ def _guard(db: Session) -> None:
     if not jlc_web.available(db):
         raise HTTPException(
             409,
-            "no JLCPCB browser session stored — paste cookies at Settings > JLC session first",
+            "no JLCPCB browser session stored — log in on Stock → JLCPCB first",
         )
 
 

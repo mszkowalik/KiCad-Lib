@@ -9,6 +9,8 @@ import {
   type ProjectNoteRow,
 } from "../../api";
 import { ErrorBanner, Spinner } from "../Ui";
+import { useDialog } from "../Dialog";
+import { localWhen } from "../../format";
 
 interface Props {
   projectId: number;
@@ -18,6 +20,7 @@ interface Props {
 }
 
 export default function NotesTab({ projectId, snapshotId }: Props) {
+  const dialog = useDialog();
   const [notes, setNotes] = useState<ProjectNoteRow[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
@@ -78,7 +81,7 @@ export default function NotesTab({ projectId, snapshotId }: Props) {
           <div key={n.id} className="note">
             <div className="note-head">
               <span className="note-author">{n.author}</span>
-              <span className="note-date">{new Date(n.created_at).toLocaleString()}</span>
+              <span className="note-date">{localWhen(n.created_at)}</span>
               {n.ref_name || n.sha ? (
                 <span className="pill neutral" title={n.sha}>
                   @ {n.ref_name || n.sha.slice(0, 8)}
@@ -87,7 +90,11 @@ export default function NotesTab({ projectId, snapshotId }: Props) {
               <button
                 className="note-del"
                 title="Delete note"
-                onClick={() => deleteProjectNote(n.id).then(() => load())}
+                onClick={async () => {
+                  const ok = await dialog.confirm(`Delete this note by ${n.author || "nobody named"}?`,
+                    { title: "Delete note", confirmLabel: "Delete", tone: "danger" });
+                  if (ok) void deleteProjectNote(n.id).then(() => load());
+                }}
               >
                 ×
               </button>

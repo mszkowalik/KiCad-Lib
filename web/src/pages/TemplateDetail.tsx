@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 import {
   deleteFootprint,
   errorMessage,
@@ -13,12 +13,15 @@ import {
   type TemplateKind,
 } from "../api";
 import CommentsPanel from "../components/CommentsPanel";
+import Field from "../components/Field";
+import FoldSection from "../components/FoldSection";
 import ReviewCard from "../components/ReviewCard";
 import { useDialog } from "../components/Dialog";
 import GeometryPaste from "../components/GeometryPaste";
 import SimLinkCard from "../components/SimLinkCard";
-import { BackLink, ErrorBanner, Spinner } from "../components/Ui";
+import { BackLink, ErrorBanner, LinkList, Spinner, VersionRows } from "../components/Ui";
 import { FootprintPreview } from "../components/GeometryPreview";
+import { plural } from "../format";
 
 function isKind(k: string | undefined): k is TemplateKind {
   return k === "symbols" || k === "footprints";
@@ -58,7 +61,7 @@ export default function TemplateDetail() {
     if (!data) return;
     const ok = await dialog.confirm(
       `Retire footprint ${data.name} — every version and its mirror file? ` +
-        `There is no draft/approve path here and no version to roll back to.`,
+        `There is no version to roll back to.`,
       { title: "Retire footprint", confirmLabel: "Retire", tone: "danger" },
     );
     if (!ok) return;
@@ -108,7 +111,7 @@ export default function TemplateDetail() {
     const ok = await dialog.confirm(
       `Rename ${noun} ${data.name} to ${renameDraft.trim()}?\n\n` +
         (users
-          ? `${users} component${users === 1 ? "" : "s"} will be republished with the new ` +
+          ? `${plural(users, "component")} will be republished with the new ` +
             `reference: ${data.used_by.map((u) => u.name).join(", ")}.\n\n`
           : "No component references it yet.\n\n") +
         "Boards already laid out keep the old library id until their owner updates the " +
@@ -126,7 +129,7 @@ export default function TemplateDetail() {
       setRenameWhy("");
       setRenameNotice(
         `Renamed to ${res.new_name} as v${res.version_no}. ` +
-          `${res.components.length} component${res.components.length === 1 ? "" : "s"} ` +
+          `${plural(res.components.length, "component")} ` +
           `republished, ${kept} kept ${kept === 1 ? "its" : "their"} verification.` +
           (res.mirror_warnings.length ? ` Warnings: ${res.mirror_warnings.join("; ")}` : ""),
       );
@@ -159,13 +162,13 @@ export default function TemplateDetail() {
     }
   };
 
+  const back = <BackLink to="/library/templates">← All templates</BackLink>;
+
   if (error) {
     return (
       <div className="main-solo">
         <div className="page">
-          <BackLink to="/library/templates" className="backlink">
-            ← All templates
-          </BackLink>
+          {back}
           <ErrorBanner message={error} />
         </div>
       </div>
@@ -176,9 +179,7 @@ export default function TemplateDetail() {
     return (
       <div className="main-solo">
         <div className="page">
-          <BackLink to="/library/templates" className="backlink">
-            ← All templates
-          </BackLink>
+          {back}
           <Spinner label="Loading template" />
         </div>
       </div>
@@ -190,9 +191,7 @@ export default function TemplateDetail() {
   return (
     <div className="main-solo">
       <div className="page">
-        <BackLink to="/library/templates" className="backlink">
-          ← All templates
-        </BackLink>
+        {back}
         <div className="toolbar">
           <h1 className="mono">{data.name}</h1>
           <span className="pill neutral">{data.kind}</span>
@@ -203,37 +202,33 @@ export default function TemplateDetail() {
 
         <details className="card pad">
           <summary>Rename this {noun}</summary>
-          <div className="skill-desc">
+          <Field label={`New ${noun} name`}>
             <input
               className="text"
               value={renameDraft}
               maxLength={200}
               placeholder={`Full ${noun} name, without the 7Sigma: prefix`}
               onChange={(e) => setRenameDraft(e.target.value)}
-              aria-label={`New ${noun} name`}
               spellCheck={false}
             />
+          </Field>
+          <Field
+            label="Reason for the rename"
+            hint="Moves the name and every reference to it in one step: one new version carrying the new name, one republished version per component using it, and the mirror file. Verification and sign-off carry — nothing reaching a board changes. History keeps the old name. This is not a way to correct a drawing; paste a new version below for that."
+          >
             <input
               className="text"
               value={renameWhy}
               maxLength={500}
               placeholder="Why the current name is wrong"
               onChange={(e) => setRenameWhy(e.target.value)}
-              aria-label="Reason for the rename"
               spellCheck={false}
             />
-            <span className="rail-hint">
-              Moves the name and every reference to it in one step: one new version
-              carrying the new name, one republished version per component using it, and
-              the mirror file. Verification and sign-off carry — nothing reaching a board
-              changes. History keeps the old name. This is not a way to correct a drawing;
-              paste a new version below for that.
-            </span>
-          </div>
+          </Field>
           <div className="btn-row">
             <button
               type="button"
-              className="btn btn-accent"
+              className="btn btn-primary"
               disabled={
                 renaming || !renameDraft.trim() || renameDraft.trim() === data.name
               }
@@ -248,7 +243,16 @@ export default function TemplateDetail() {
         {noun === "footprint" ? (
           <div className="card pad">
             <h2 className="card-title">Package name</h2>
-            <div className="skill-desc">
+            <Field
+              hint={
+                <>
+                  What <span className="mono">{"{Footprint_Name}"}</span> resolves to in a
+                  component's <span className="mono">ki_description</span>. Stored on the
+                  footprint, so every component using it stays in step — saving rebuilds the
+                  affected symbol libraries.
+                </>
+              }
+            >
               <input
                 className="text"
                 value={nameDraft}
@@ -258,17 +262,11 @@ export default function TemplateDetail() {
                 aria-label="Footprint package name"
                 spellCheck={false}
               />
-              <span className="rail-hint">
-                What <span className="mono">{"{Footprint_Name}"}</span> resolves to in a
-                component's <span className="mono">ki_description</span>. Stored on the
-                footprint, so every component using it stays in step — saving rebuilds the
-                affected symbol libraries.
-              </span>
-            </div>
+            </Field>
             <div className="btn-row">
               <button
                 type="button"
-                className="btn btn-accent"
+                className="btn btn-primary"
                 disabled={savingName || nameDraft === (data.display_name ?? "")}
                 onClick={() => void saveName()}
               >
@@ -306,24 +304,7 @@ export default function TemplateDetail() {
           <h2 className="card-title">Details</h2>
           <table className="kv">
             <tbody>
-              {data.created_at ? (
-                <tr>
-                  <td>Published</td>
-                  <td>{new Date(data.created_at).toLocaleString()}</td>
-                </tr>
-              ) : null}
-              {data.created_by ? (
-                <tr>
-                  <td>Author</td>
-                  <td>{data.created_by}</td>
-                </tr>
-              ) : null}
-              {data.comment ? (
-                <tr>
-                  <td>Version note</td>
-                  <td>{data.comment}</td>
-                </tr>
-              ) : null}
+              <VersionRows at={data.created_at} by={data.created_by} note={data.comment} />
               {facts.map(([label, value]) => (
                 <tr key={label}>
                   <td>{label}</td>
@@ -340,25 +321,13 @@ export default function TemplateDetail() {
           </table>
         </div>
 
-        <div className="card pad">
-          <h2 className="card-title">
-            Used by {data.used_by.length} component{data.used_by.length === 1 ? "" : "s"}
-          </h2>
+        <FoldSection title="Used by components" count={data.used_by.length} foldKey={`template:${kind}:${id}:used-by`}>
           {data.used_by.length === 0 ? (
             <p className="muted">Not used by any component yet.</p>
           ) : (
-            <p>
-              {data.used_by.map((u, i) => (
-                <span key={u.id}>
-                  {i > 0 ? ", " : ""}
-                  <Link to={`/library/components/${u.id}`} className="comp-link">
-                    {u.name}
-                  </Link>
-                </span>
-              ))}
-            </p>
+            <LinkList items={data.used_by} to={(uid) => `/library/components/${uid}`} />
           )}
-        </div>
+        </FoldSection>
 
         {data.source_text ? (
           <details className="card pad">
@@ -378,7 +347,7 @@ export default function TemplateDetail() {
 
         {kind === "footprints" ? (
           <div className="card pad danger-card">
-            <h2>Retire this footprint</h2>
+            <h2 className="card-title">Retire this footprint</h2>
             <p className="muted">
               Deletes the footprint, all its versions and its file in the mirror. The server
               refuses while any component version — including historical ones — still pins it,

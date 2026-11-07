@@ -136,7 +136,7 @@ function TreeNode({
         ) : null}
       </div>
       {hasKids && isOpen ? (
-        <ul className="cat-children">
+        <ul >
           {node.children.map((child) => (
             <TreeNode
               key={child.id}

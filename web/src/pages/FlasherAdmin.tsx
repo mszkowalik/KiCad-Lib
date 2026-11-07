@@ -5,7 +5,7 @@
  *  platform wide — the same driver JSON in three projects is one row — so
  *  those two tabs have no project selector. Firmware is still project-scoped
  *  and keeps it. Composing any of them into a version happens on the
- *  Deployments page.
+ *  Procedures page.
  *
  *  The active section lives in the URL (`?tab=`), and `?open=<set id>` opens
  *  one release on arrival, which is how the version card links here.
@@ -23,6 +23,7 @@ import {
 import { ErrorBanner, Spinner } from "../components/Ui";
 import FileSetsPanel from "../components/flasher/FileSetsPanel";
 import FirmwarePanel from "../components/flasher/FirmwarePanel";
+import TabStrip from "../components/TabStrip";
 import { useStickyState } from "../useStickyState";
 
 const TABS = ["releases", "artwork", "firmware"] as const;
@@ -92,20 +93,12 @@ export default function FlasherAdmin() {
           <span className="toolbar-total">{BLURBS[tab]}</span>
         </div>
 
-        <div className="seg proj-tabs" role="tablist" aria-label="File administration">
-          {TABS.map((t) => (
-            <button
-              key={t}
-              type="button"
-              role="tab"
-              aria-selected={tab === t}
-              className={tab === t ? "on" : ""}
-              onClick={() => setTab(t)}
-            >
-              {LABELS[t]}
-            </button>
-          ))}
-        </div>
+        <TabStrip
+          tabs={TABS.map((t) => ({ id: t, label: LABELS[t] }))}
+          value={tab}
+          onChange={setTab}
+          label="File administration"
+        />
 
         {error ? <ErrorBanner message={error} /> : null}
         {tab === "releases" ? (

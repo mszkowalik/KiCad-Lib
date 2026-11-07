@@ -37,7 +37,7 @@ class SettingIn(BaseModel):
     value: str
 
 
-@router.get("")
+@router.get("", openapi_extra={"x-agent-tool": "get_settings"})
 def list_settings(db: Session = Depends(get_db),
                   admin: M.User = Depends(require_admin)):
     """Every editable field with its live value, source and restart flag.

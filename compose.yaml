@@ -50,7 +50,6 @@ services:
     command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
     environment:
       DATABASE_URL: postgresql+psycopg://kicadlib:kicadlib@db:5432/kicadlib
-      REPO_DIR: /repo
       DATA_DIR: /data
       RENDER_MODE: http
       RENDER_URL: http://render:8100
@@ -92,7 +91,6 @@ services:
       # The repo, mounted read-only. The YAML import station historically read
       # Sources/*.yaml from here; that lives on the archive/yaml-library branch
       # now (check it out here to re-run a full import from YAML).
-      - .:/repo:ro
       - apidata:/data
       # Dev: live-mount the app source so uvicorn --reload picks up host edits
       # without an image rebuild. uvicorn prepends /srv to sys.path, so the code
