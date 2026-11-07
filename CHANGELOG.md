@@ -7,6 +7,10 @@
   of them partly checked. Now the banner, the chip and the batch warning count every state except
   checked, and the banner says how many of them are partly checked. A past review record keeps its old
   count, under the word "unreviewed or failed".
+- **Project → Devices: the total and the online / offline / never seen chips count the devices in the
+  list.** With `?state=` or `?condition=` they counted the whole project. CE_Aqua_V2 on the shelf listed
+  27 devices under "1,015 device(s)", and "online 377" opened 0 rows. Now the shelf view reads 27, split
+  3 offline and 24 never seen.
 
 ## 2026-11-07 (a reopened device keeps its steps on the batch board)
 

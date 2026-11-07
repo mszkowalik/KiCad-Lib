@@ -969,24 +969,28 @@ def project_devices(
 
     _main_presence = ((M.DevicePresence.device_unit_id == M.DeviceUnit.id)
                       & M.DevicePresence.id.in_(mqtt_monitor.main_presence_ids()))
-    rows = (
-        db.query(M.DeviceUnit, M.DevicePresence)
-        .outerjoin(M.DevicePresence, _main_presence)
-        .filter(M.DeviceUnit.project_id == project_id)
-    )
-    if state:
-        rows = rows.filter(M.DeviceUnit.state == state)
-    if condition:
-        rows = rows.filter(M.DeviceUnit.condition == condition)
-    if run_id is not None:
-        rows = rows.filter(M.DeviceUnit.production_run_id == run_id)
-    if q:
-        like = f"%{q.strip()}%"
-        rows = rows.filter(
-            M.DeviceUnit.tasmota_id.ilike(like)
-            | M.DeviceUnit.mac.ilike(like)
-            | M.DeviceUnit.serial.ilike(like)
-        )
+
+    def _scoped(query):
+        """Every narrowing except presence. The list AND the summary read this,
+        so the chips count the devices the list draws."""
+        query = query.outerjoin(M.DevicePresence, _main_presence).filter(
+            M.DeviceUnit.project_id == project_id)
+        if state:
+            query = query.filter(M.DeviceUnit.state == state)
+        if condition:
+            query = query.filter(M.DeviceUnit.condition == condition)
+        if run_id is not None:
+            query = query.filter(M.DeviceUnit.production_run_id == run_id)
+        if q:
+            like = f"%{q.strip()}%"
+            query = query.filter(
+                M.DeviceUnit.tasmota_id.ilike(like)
+                | M.DeviceUnit.mac.ilike(like)
+                | M.DeviceUnit.serial.ilike(like)
+            )
+        return query
+
+    rows = _scoped(db.query(M.DeviceUnit, M.DevicePresence))
     if presence == "online":
         rows = rows.filter(M.DevicePresence.online.is_(True))
     elif presence == "offline":
@@ -1043,18 +1047,13 @@ def project_devices(
         }
         for d, p in rows
     ]
-    # Counted over the WHOLE project, not over the page, so the summary does
-    # not change meaning when a filter or the limit is applied.
-    base_q = (
-        db.query(M.DeviceUnit.id, M.DevicePresence.online)
-        .outerjoin(M.DevicePresence, _main_presence)
-        .filter(M.DeviceUnit.project_id == project_id)
-    )
-    # Scoped to the batch when one is asked for, so "3 of 1025" on a run page
-    # does not silently mean "3 of the whole project".
-    if run_id is not None:
-        base_q = base_q.filter(M.DeviceUnit.production_run_id == run_id)
-    base = base_q.all()
+    # The summary counts the SCOPE of the list — the batch, the stock state,
+    # the condition and the search — and never the page or the presence
+    # narrowing, which is the axis its three chips split. It read the project
+    # (or the batch) alone until 2026-11-07, so CE_Aqua_V2 with
+    # `?state=in_stock` listed 27 devices under "1,015 device(s)" and a chip
+    # "online 377" that opened 0 rows.
+    base = _scoped(db.query(M.DeviceUnit.id, M.DevicePresence.online)).all()
     summary = {
         "total": len(base),
         "online": sum(1 for _, o in base if o is True),
