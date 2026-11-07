@@ -885,6 +885,7 @@ def pool_state(db: Session, project_id: int | None = None, as_of: str | None = N
     events, doc_by_id, surcharge = _pool_events(db, company_id)
     # Conversion costs ride on their transformation's output lot (decision 0058).
     extras = conversion_extras_usd(db)
+    make_ids = make_event_ids(db)
     if as_of:
         # Historical accuracy: a run dated 2024 must be priced from the pool as
         # it stood THEN. Without this cutoff a purchase made in 2026 would
@@ -912,7 +913,22 @@ def pool_state(db: Session, project_id: int | None = None, as_of: str | None = N
                  # defect. Counting them together made "written off" read 1,094
                  # pieces on 2026-09-18 when the true attrition was ZERO.
                  "external": 0.0,
+                 # The positive side of the adjustments, so a row adds up:
+                 # bought + added + made + corrected - used - lost - external
+                 # == qty. Only the losses had a figure, so a part whose stock
+                 # came from a count, a correction or a make read "bought 0,
+                 # drawn 0" over 500 on hand (39 parts on 2026-11-07).
+                 # `added`: counts that found pieces, opening balances.
+                 # `made`: a transformation's output (decision 0058).
+                 # `corrected`: a `correction`, signed. It moves pieces between
+                 # two parts, so it is no loss: 410 Aqua antennas fitted as
+                 # Dongle antennas read "written off 410" on the one and had
+                 # no figure on the other.
+                 "added": 0.0, "made": 0.0, "corrected": 0.0,
                  "value_bought": 0.0, "value_used": 0.0, "value_adj": 0.0,
+                 # `value_used` by `draw_destination`: a batch, a prepared
+                 # part, a transfer, R&D, or nobody yet.
+                 "used_to": {},
                  # Basis for the moving average, kept SEPARATE from the reported
                  # figures and never allowed below zero. `qty`/`value_usd` are the
                  # pure algebraic sums the register's identity depends on, so they
@@ -957,6 +973,8 @@ def pool_state(db: Session, project_id: int | None = None, as_of: str | None = N
             p["value_usd"] -= q * unit
             p["value_used"] += q * unit
             p["used"] += q
+            dest = draw_destination(row, make_ids)
+            p["used_to"][dest] = p["used_to"].get(dest, 0.0) + q * unit
             # a draw can only take value that is actually there — and it takes it
             # at the BASIS's own average, never the draw's snapshotted price. The
             # snap belongs to run costing; using it here leaks the difference into
@@ -984,16 +1002,22 @@ def pool_state(db: Session, project_id: int | None = None, as_of: str | None = N
                 basis_avg = p["_avg_value"] / p["_avg_qty"] if p["_avg_qty"] > 0.0001 else 0.0
                 p["_avg_qty"] -= taken
                 p["_avg_value"] = max(p["_avg_value"] - taken * basis_avg, 0.0)
-            if q < 0:
-                # `external_project` is another project's order consuming stock,
-                # recorded as an adjustment because it has no run to charge. Since
-                # decision 0034 the same fact is written as an UNCHARGED DRAW, so
-                # no new rows of this kind appear; the 27 historical ones are
-                # reported on their own axis rather than as loss.
-                if (getattr(row, "reason", "") or "") == "external_project":
-                    p["external"] += -q
-                else:
-                    p["lost"] += -q
+            reason = getattr(row, "reason", "") or ""
+            if reason == "external_project":
+                # Another project's order consuming stock, recorded as an
+                # adjustment because it has no run to charge. Since decision
+                # 0034 the same fact is written as an UNCHARGED DRAW, so no new
+                # rows of this kind appear; the 27 historical ones are reported
+                # on their own axis rather than as loss.
+                p["external"] -= q
+            elif reason == "transformation":
+                p["made"] += q
+            elif reason == "correction":
+                p["corrected"] += q
+            elif q > 0:
+                p["added"] += q
+            else:
+                p["lost"] += -q
         # average of what is genuinely on hand; when nothing is, the last known
         # average is retained so a later purchase blends against a sane figure
         if p["_avg_qty"] > 0.0001:
@@ -1993,9 +2017,18 @@ def parts_stock(db: Session, company_id: int | None = None) -> dict:
         paid_value = round(p["value_usd"], 4)
         # quantities ADD across codes — two LCSC codes are two reels of one part
         held = sum(c.qty or 0 for c in found.values())
-        market_unit = next((c.unit_price_usd for c in found.values()
-                            if c.unit_price_usd is not None), None)
-        market_value = round(market_unit * held, 4) if market_unit is not None else None
+        # ...and so does their value, each code at its own price. The first
+        # code's price for every piece valued XL-1005SURC's 14,063 at 0.0091
+        # (127.97 USD) where its two codes come to 73.27. The unit is then the
+        # held pieces' average; with nothing held, the first known price.
+        priced = [c for c in found.values() if c.unit_price_usd is not None]
+        priced_qty = sum(c.qty or 0 for c in priced)
+        if priced and priced_qty > 0:
+            market_unit = sum((c.qty or 0) * c.unit_price_usd for c in priced) / priced_qty
+        else:
+            market_unit = priced[0].unit_price_usd if priced else None
+        market_value = (round(sum((c.qty or 0) * c.unit_price_usd for c in priced), 4)
+                        if priced else None)
         # the remainder priced at today's market, so the money delta is like-for-like
         remaining_market = round(market_unit * remaining, 4) if market_unit is not None else None
         rows.append({
@@ -2009,6 +2042,9 @@ def parts_stock(db: Session, company_id: int | None = None) -> dict:
             # when JLC carries the part under more than one code, say so
             "jlc_codes": sorted({c.lcsc for c in found.values() if c.lcsc}),
             "bought": round(p["bought"], 4),
+            "added": round(p["added"], 4),
+            "made": round(p["made"], 4),
+            "corrected": round(p["corrected"], 4),
             "drawn": round(p["used"], 4),
             "lost": round(p["lost"], 4),
             "external": round(p["external"], 4),
@@ -2071,7 +2107,8 @@ def parts_stock(db: Session, company_id: int | None = None) -> dict:
             "component_id": it.component_id,
             "component_name": comp_names.get(it.component_id or -1),
             "mpn": it.mpn or "", "lcsc": it.lcsc or "", "description": it.description or "",
-            "bought": 0.0, "drawn": 0.0, "lost": 0.0, "external": 0.0,
+            "bought": 0.0, "added": 0.0, "made": 0.0, "corrected": 0.0,
+            "drawn": 0.0, "lost": 0.0, "external": 0.0,
             "remaining_qty": 0.0,
             "remaining_at_sync_qty": 0.0,
             "house_qty": 0.0, "house_boxes": [], "expected_at_jlc_qty": 0.0,
@@ -2092,6 +2129,11 @@ def parts_stock(db: Session, company_id: int | None = None) -> dict:
             "parts": len(rows),
             "spent_usd": _round(sum(p["value_bought"] for p in pool.values())),
             "drawn_usd": _round(sum(p["value_used"] for p in pool.values())),
+            # The same drawn value by who carries it (`draw_destination`). The
+            # Stock tile said "drawn by batches" over all of it: 83,617.96 USD,
+            # of which batches drew 79,981.95 (2026-11-07).
+            "drawn_by_usd": {dest: _round(sum(p["used_to"].get(dest, 0.0) for p in pool.values()))
+                             for dest in DRAW_DESTINATIONS},
             "adjusted_usd": _round(sum(p["value_adj"] for p in pool.values())),
             "remaining_at_cost_usd": _round(sum(p["value_usd"] for p in pool.values())),
             # The SAME remainder priced two ways, over the parts that have both a

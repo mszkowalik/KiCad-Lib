@@ -4333,8 +4333,15 @@ export interface PartsStockRow {
   mpn: string;
   lcsc: string;
   description: string;
-  /** money side: pool quantities */
+  /** money side: pool quantities. A row adds up:
+   *  bought + added + made + corrected − drawn − lost − external = remaining_qty */
   bought: number;
+  /** pieces a count found, and opening balances */
+  added: number;
+  /** the output of a transformation (decision 0058) */
+  made: number;
+  /** `correction` adjustments, signed: pieces moved from or to another part */
+  corrected: number;
   drawn: number;
   /** written off — genuine attrition, and a defect signal */
   lost: number;
@@ -4392,7 +4399,19 @@ export interface PartsStock {
   totals: {
     parts: number;
     spent_usd: number | null;
+    /** every draw's value; `drawn_by_usd` says who carries it */
     drawn_usd: number | null;
+    drawn_by_usd: {
+      batch: number | null;
+      /** inputs of a transformation: the value is in the prepared part's lot */
+      into_prepared: number | null;
+      /** sent to the other company by an in-house transfer */
+      transferred_out: number | null;
+      /** used for R&D: a cost of no batch */
+      research: number | null;
+      /** left stock, and no batch is charged yet */
+      uncharged: number | null;
+    };
     adjusted_usd: number | null;
     remaining_at_cost_usd: number | null;
     comparable_cost_usd: number | null;

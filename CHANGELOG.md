@@ -24,6 +24,18 @@
   "Avg cost / device produced" divided every batch's cost by the devices produced, so Batch 2 of
   CE_Dongle_V3, with no device yet, took it from 60.62 to 66.72 PLN. It now divides the cost of the
   batches that produced devices.
+- **Stock's "drawn by batches" is the batches' share.** It printed every draw, 83,617.96 USD. Batches
+  drew 79,981.95. A new tile, "drawn for no batch", holds the rest: R&D 1,942.30, draws waiting for a
+  batch 486.64 and the inputs of prepared parts 1,207.07.
+- **A part's row on Stock adds up.** It showed bought, drawn and written off only, so 39 parts did not
+  add up. A part now also shows "added" (counts that found pieces, opening balances), "made" (the
+  output of a transformation) and "corrected" (a correction, signed). 146153-0050 reads bought 4,830,
+  corrected +410, drawn 5,124, ours 116. 146153-0150 no longer reads "written off 410": the 410 moved to
+  146153-0050, so it reads corrected −410. BW4GJWX195-13KJ marked LTE reads made 500.
+- **A part that JLC holds under two codes is valued code by code.** XL-1005SURC read 14,063 x 0.0091
+  = 127.97 USD. Its 13,676 + 387 pieces are worth 73.27, and "market / unit" is their average. The
+  parts-stock total of what JLC holds (`jlc_held_value_usd`) read 35,974.86 USD and now agrees with the
+  JLC stock page, 35,920.16.
 
 ## 2026-11-07 (figures on the production screens)
 

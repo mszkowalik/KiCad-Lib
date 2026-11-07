@@ -188,11 +188,22 @@ function PartFigures({ row }: { row: PartsStockRow }) {
   const rate = useTodayRate();
   const consigned = row.state !== "pool_only";
   const stale = Math.round(row.remaining_qty) !== Math.round(row.remaining_at_sync_qty);
+  // bought + added + made ± corrected − drawn − written off − other projects = ours now.
+  // A figure that is 0 on this part is left out, except the four every part has.
+  const signed = (n: number) => (n > 0 ? `+${qty(n)}` : qty(n));
   const items: Array<{ label: string; value: string; className?: string; title?: string }> = [
     { label: "bought", value: qty(row.bought) },
+    ...(row.added ? [{ label: "added", value: qty(row.added),
+      title: "pieces a count found, and opening balances" }] : []),
+    ...(row.made ? [{ label: "made", value: qty(row.made),
+      title: "the output of a transformation: pieces made from other parts" }] : []),
+    ...(row.corrected ? [{ label: "corrected", value: signed(row.corrected),
+      title: "correction adjustments: pieces moved from or to another part, not lost" }] : []),
     { label: "drawn", value: qty(row.drawn) },
     { label: "written off", value: row.lost ? qty(row.lost) : "—",
-      title: "genuine attrition — a defect signal, not another project's draw" },
+      title: "losses: scrap, attrition, a count that found fewer — a defect signal" },
+    ...(row.external ? [{ label: "other projects", value: qty(row.external),
+      title: "used by a project the platform does not track, before decision 0034" }] : []),
     { label: "ours when JLC counted", value: consigned ? qty(row.remaining_at_sync_qty) : "—" },
     { label: "ours now", value: qty(row.remaining_qty),
       className: stale ? "warn-text" : undefined,

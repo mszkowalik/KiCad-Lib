@@ -309,6 +309,13 @@ export default function Stock() {
     t && t.comparable_market_usd != null && t.comparable_cost_usd != null
       ? t.comparable_market_usd - t.comparable_cost_usd
       : null;
+  // What left the pool and no batch carries: R&D, draws waiting for a batch, the
+  // inputs of prepared parts, transfers. "Drawn by batches" printed all of it,
+  // 83,617.96 USD where batches drew 79,981.95 (2026-11-07).
+  const otherDrawn = t?.drawn_by_usd
+    ? (t.drawn_by_usd.research ?? 0) + (t.drawn_by_usd.uncharged ?? 0)
+      + (t.drawn_by_usd.into_prepared ?? 0) + (t.drawn_by_usd.transferred_out ?? 0)
+    : 0;
 
   // Column defs for the stock table. The toolbar's state chips and search box
   // pre-filter `rows`; sorting, per-column filtering and chunked rendering are
@@ -638,7 +645,19 @@ export default function Stock() {
             </p>
             <div className="counts counts-sm">
               <CountTile value={pln(t.spent_usd, rate)} label="spent on parts" />
-              <CountTile value={pln(t.drawn_usd, rate)} label="drawn by batches" />
+              <CountTile value={pln(t.drawn_by_usd?.batch ?? t.drawn_usd, rate)} label="drawn by batches" />
+              {otherDrawn ? (
+                <CountTile
+                  value={pln(otherDrawn, rate)}
+                  label="drawn for no batch"
+                  title={[
+                    ["R&D", t.drawn_by_usd.research],
+                    ["waiting for a batch", t.drawn_by_usd.uncharged],
+                    ["into prepared parts", t.drawn_by_usd.into_prepared],
+                    ["to the other company", t.drawn_by_usd.transferred_out],
+                  ].filter(([, v]) => v).map(([k, v]) => `${k}: ${pln(v as number, rate)}`).join("\n")}
+                />
+              ) : null}
               <CountTile value={pln(t.adjusted_usd, rate)} label="adjustments" />
               <CountTile value={pln(t.remaining_at_cost_usd, rate)} label="remainder at cost" />
               <CountTile value={pln(t.comparable_market_usd, rate)} label="same remainder at market" />

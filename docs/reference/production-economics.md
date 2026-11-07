@@ -316,7 +316,10 @@ guard reads one company's stock is in [companies.md](companies.md).
   C965790), so a key maps to a LIST of stock items and quantities add. First-match
   wins showed the same LED twice — once holding the pool's money with no stock, once
   with 18,488 pieces and a bogus "no invoice" flag. `jlc_codes` on each row names
-  every code found.
+  every code found. The value adds code by code, each at its own price, and
+  `market_unit_usd` is the held pieces' average. The first code's price for every
+  piece valued XL-1005SURC at 127.97 USD where its two codes hold 73.27
+  (2026-11-07).
 - **A CANCELLED parts lot is a fee, never stock.** JLC settles one with
   `orderStatus=40` and still reports a non-zero `settlePresaleNumber` —
   lot `754166` said 3,470 LEDs settled at $19.78 and not one arrived.
@@ -527,6 +530,15 @@ guard reads one company's stock is in [companies.md](companies.md).
   [0034](../decisions/0034-stock-moves-when-the-supplier-says-so.md) the same
   fact is written as an uncharged draw, so no new adjustments of this kind
   appear and the 27 historical rows keep their own column.
+- **Every adjustment has a figure, so a part's row adds up**: bought + added +
+  made + corrected − drawn − lost − external = what is on hand. `made` is a
+  `transformation` output, `corrected` is a `correction`, signed, and `added` is
+  any other positive adjustment. `lost` is any other negative one. A correction
+  moves pieces between two parts, so it is never a loss (2026-11-07: 410 Aqua
+  antennas fitted on Dongle boards read "written off 410"). `pool_state` also
+  splits each part's drawn value by `run_actuals.draw_destination`, the split the
+  register's `pool` block uses, so Stock's "drawn by batches" is the batches'
+  share only.
 - **A draw has TWO facts with two sources, written at two times** (decision
   [0034](../decisions/0034-stock-moves-when-the-supplier-says-so.md)). The
   QUANTITY is reported: a JLC manufacturing invoice itemises every consigned lot
