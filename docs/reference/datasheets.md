@@ -36,6 +36,14 @@ before you change a fetch, a hash, a classification or an endpoint.
   emission paths (generated mirror symbols and the KiCad HTTP catalog), so
   `public_base_url` must be the API address as KiCad clients see it, not
   `localhost`, on any non-local deployment.
+  The rule is ONE function, `generator.links_local_copy`, and the Archive
+  tab's figures (`routers/datasheets.archive_counts`) ask it too. Before
+  2026-11-07 the tab said "KiCad reads the archived copy" for every stored
+  document, while 189 stored documents are not PDFs (`text_layer: none`), and
+  for each one of those with a source URL KiCad gets the live link. Every
+  archive figure counts one set, the rows a component
+  still lists: the stored count once included uploads that the total left
+  out, and the tab read "474 / 470".
 - **A new component archives its datasheet AT PUBLISH TIME, before the version
   lands.** `agent_tools.propose_new_component` adds the `Datasheet` row, flushes,
   then calls `_archive_datasheet` (a best-effort wrapper on `fetch_datasheet`)

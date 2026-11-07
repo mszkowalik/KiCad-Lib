@@ -268,7 +268,7 @@ export default function Datasheets() {
     <PageShell>
       <div className="toolbar">
         <h1>Datasheets</h1>
-        <span className="toolbar-total">Every datasheet URL is re-fetched once a night, and KiCad reads the archived copy.</span>
+        <span className="toolbar-total">Every datasheet URL is re-fetched once a night. KiCad opens the archived copy of a PDF, and the live link of a web page.</span>
       </div>
       <TabStrip tabs={TABS} value={tab} label="Datasheet sections"
         onChange={(t) => setParams(t === "search" ? {} : { tab: t }, { replace: true })} />

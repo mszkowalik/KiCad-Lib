@@ -120,8 +120,8 @@ reasoning in
 
 ## Datasheets
 
-Every datasheet URL is re-fetched once a night, and the archive is the document
-KiCad itself is pointed at. Three rules are expensive to get wrong — a version
+Every datasheet URL is re-fetched once a night. For a PDF, the archive is the
+document KiCad itself is pointed at. A stored web page keeps its live link. Three rules are expensive to get wrong — a version
 means the TEXT changed, a real revision is a review event, and a file is stored
 once and shared. They are stated in
 [docs/reference/datasheets.md](docs/reference/datasheets.md), with the reasoning

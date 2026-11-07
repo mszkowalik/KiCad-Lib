@@ -45,6 +45,7 @@ from ..services.datasheet_store import (
     storage_stats,
     store_upload,
 )
+from ..services.generator import links_local_copy
 from ..services.mirror import top_level_of, update_mirror_symbols
 from .users import require_admin
 from .util import actor_of, content_disposition
@@ -65,13 +66,40 @@ def fetch_all(body: FetchAllBody, admin: M.User = Depends(require_admin)):
     return {"status": "started", "mode": body.mode}
 
 
+def archive_counts(db: Session) -> dict:
+    """What the archive holds, every figure over ONE set: the datasheet rows
+    a component still lists (`archived = false`).
+
+    The two figures on the Archive tab used to come from two sets — the total
+    counted rows with a source URL, the stored count counted rows with a copy,
+    uploads with no URL included — so the page read "474 / 470 datasheets
+    stored" (2026-11-07). And a stored copy is not always what KiCad opens:
+    for a stored web page it keeps the live link. `generator.links_local_copy`
+    is that rule, and it is asked here rather than restated.
+    """
+    rows = (db.query(M.Datasheet.source_url, M.DatasheetVersion.id,
+                     M.DatasheetVersion.filename, M.Document.content_type)
+            .outerjoin(M.DatasheetVersion,
+                       M.DatasheetVersion.id == M.Datasheet.current_version_id)
+            .outerjoin(M.Document, M.Document.id == M.DatasheetVersion.document_id)
+            .filter(M.Datasheet.archived.is_(False))
+            .all())
+    stored = [r for r in rows if r[1] is not None]
+    local = sum(1 for url, _, filename, ctype in stored
+                if links_local_copy(url, ctype, filename))
+    return {
+        "datasheets_total": len(rows),
+        "datasheets_with_local_copy": len(stored),
+        # Of the stored ones: KiCad opens the archived copy, or the live link.
+        "datasheets_kicad_local": local,
+        "datasheets_kicad_live": len(stored) - local,
+        "datasheets_without_url": sum(1 for r in rows if not r[0]),
+    }
+
+
 @router.get("/fetch-status")
 def fetch_status(db: Session = Depends(get_db)):
-    total = db.query(M.Datasheet).filter(M.Datasheet.archived.is_(False),
-                                         M.Datasheet.source_url.isnot(None)).count()
-    with_copy = db.query(M.Datasheet).filter(M.Datasheet.archived.is_(False),
-                                             M.Datasheet.current_version_id.isnot(None)).count()
-    return {**FETCH_STATE, "datasheets_total": total, "datasheets_with_local_copy": with_copy,
+    return {**FETCH_STATE, **archive_counts(db),
             "text_layer_counts": classify_counts(db), "storage": storage_stats(db)}
 
 

@@ -71,8 +71,13 @@ export default function DatasheetArchiveCard() {
       ) : (
         <>
           <p className="mono kicad-ds-stat">
+            {/* Both figures count one set, the rows a component lists. A stored
+                web page is a copy KiCad does not open, so it is named apart. */}
             {status.datasheets_with_local_copy} / {status.datasheets_total} datasheets stored
-            locally
+            locally — KiCad opens the stored copy of {status.datasheets_kicad_local}
+            {status.datasheets_kicad_live
+              ? `, and the live link of ${status.datasheets_kicad_live} web page(s)`
+              : ""}
             {status.running
               ? ` — fetching… ${status.done}/${status.total} (${status.new_versions} new, ${status.restamped} re-signed)`
               : ""}

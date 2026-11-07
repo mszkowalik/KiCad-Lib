@@ -31,6 +31,11 @@
 - **Reviews → Library health: "Left over from the retired skipped answer" lists every key.** It showed
   the 10 keys with the most answers, and its "open answers" chip added up those 10 only (49). Now the
   list and the chip cover every key.
+- **Library → Datasheets → Archive: both figures count the same datasheets, and the line says what
+  KiCad opens.** It read "474 / 470 datasheets stored", because the total left out uploads with no URL
+  and the stored count did not. Now both count every datasheet a component lists. The line also says
+  for how many KiCad opens the stored copy, and for how many web pages it opens the live link. The
+  page header no longer says that KiCad reads the archived copy of everything.
 
 ## 2026-11-07 (a reopened device keeps its steps on the batch board)
 

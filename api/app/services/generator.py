@@ -566,6 +566,21 @@ def base_declares_off_board(db, names) -> dict[str, bool]:
     return {name: _BASE_OFF_BOARD_BY_SYMBOL_VERSION[svid] for name, svid in by_name.items()}
 
 
+def links_local_copy(source_url: str | None, content_type: str | None,
+                     filename: str | None) -> bool:
+    """Does KiCad get the ARCHIVED copy of a datasheet that has one stored?
+
+    Yes for a real PDF. Yes for an upload with no source URL, because the
+    local copy is the only address it has, whatever the format. No for a
+    stored web page (an LCSC product page): the live link is better than a
+    saved copy of it. `injected_props` and the archive figures on Library →
+    Datasheets both ask this, so the page cannot claim a link KiCad does not
+    get (docs/reference/datasheets.md).
+    """
+    is_pdf = content_type == "application/pdf" or (filename or "").lower().endswith(".pdf")
+    return is_pdf or not source_url
+
+
 def injected_props(datasheets) -> list[dict]:
     """Datasheets live in their own table, but are injected back into
     generated symbols (and the KiCad HTTP library). First datasheet ->
@@ -596,18 +611,11 @@ def injected_props(datasheets) -> list[dict]:
             if key in seen:
                 key = f"{key} ({i + 1})"
         seen.add(key)
-        # Link the local copy only when it's an actual PDF — a stored HTML
-        # product page is worse than the live link.
         cur = next(
             (v for v in getattr(ds, "versions", []) if v.id == getattr(ds, "current_version_id", None)),
             None,
         )
-        cur_is_pdf = cur is not None and (
-            cur.content_type == "application/pdf" or (cur.filename or "").lower().endswith(".pdf")
-        )
-        # Uploaded files have no source URL at all — the local copy is the
-        # only address they have, whatever the format.
-        if cur_is_pdf or (cur is not None and not ds.source_url):
+        if cur is not None and links_local_copy(ds.source_url, cur.content_type, cur.filename):
             value = f"{settings.public_base_url}/api/datasheets/{ds.id}/file"
         else:
             value = ds.source_url or ""

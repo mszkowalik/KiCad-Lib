@@ -1481,8 +1481,15 @@ export interface DatasheetFetchStatus {
   /** ISO time of the next scheduled nightly re-check (null = disabled). */
   next_nightly_at: string | null;
   last_nightly_at: string | null;
+  /** Every figure below counts ONE set: the datasheet rows a component still
+   *  lists, uploads with no URL included. */
   datasheets_total: number;
   datasheets_with_local_copy: number;
+  /** Of the stored ones: KiCad opens the archived copy (a PDF, or an upload). */
+  datasheets_kicad_local: number;
+  /** Of the stored ones: a web page, so KiCad opens the live link instead. */
+  datasheets_kicad_live: number;
+  datasheets_without_url: number;
   storage: {
     documents: number;
     document_bytes: number;
