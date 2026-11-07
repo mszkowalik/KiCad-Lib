@@ -166,7 +166,10 @@ serials (0059, Consequences).
   only after a new finish. After a reopen, "already done" counts only what
   the unit did since (`twins.since_reopen`, `needs_met(since=…)`), so its
   steps and its finish can be done again; the needs still read the whole
-  history. `device_units` and `device_events` are journalled,
+  history. Every reader of what a unit still needs passes `since`: the batch
+  screen, the `get_batch` and the `find_device` agent tools. `find_device`
+  did not until 2026-11-07, and said "'Finished' is already done" for a
+  reopened unit. `device_units` and `device_events` are journalled,
   so the undo of a scrap gives the device back.
 
 ## The assembly step

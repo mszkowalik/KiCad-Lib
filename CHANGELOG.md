@@ -12,6 +12,8 @@
   board read 799). "Finished" is the units finished in this batch, in the header too: a board that
   another batch's bench took counts as finished in that batch. The rules are in
   `docs/reference/processes.md`.
+- **The `find_device` agent tool reads a reopened device from its reopen, as the batch screen does.**
+  It said "'Finished' is already done" for a reopened device that is active again.
 
 ## 2026-11-07 (the review and library figures match their lists)
 

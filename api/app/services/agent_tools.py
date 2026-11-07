@@ -3488,9 +3488,13 @@ def find_device(code: str) -> str:
             v = db.get(M.ProcessVersion, db.get(M.ProductionRun, tw.run_id).process_version_id
                        or tw.process_version_id)
             g = P._graph(v)
+            # A reopened unit is judged from its reopen on, as the batch screen
+            # judges it (decision 0074): its old Finish is not "already done".
+            since = T.since_reopen(db, [tw.id]).get(tw.id)
             twin = {"status": tw.status, "batch_id": tw.run_id, "origin_batch_id": tw.origin_run_id,
                     "done": sorted(done),
-                    "needs": T.needs_met(g, P.step_of_kind(g, "finish") or {}, done) if tw.status == "active" else []}
+                    "needs": T.needs_met(g, P.step_of_kind(g, "finish") or {}, done, since)
+                    if tw.status == "active" else []}
         runs = (db.query(M.ProgrammingRun).filter_by(device_unit_id=d.id)
                 .order_by(M.ProgrammingRun.id.desc()).limit(10).all())
         names = {}

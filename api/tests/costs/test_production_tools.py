@@ -111,6 +111,25 @@ def test_find_device_and_its_notes(db, world):
     assert "error" in call("find_device", code="NO-SUCH-DEVICE")
 
 
+def test_find_device_reads_a_reopened_unit_from_its_reopen(db, world):
+    """A reopened unit is not finished, so Finish is not "already done"."""
+    from app.services import twins as T
+
+    (d,) = _crafted_devices(db, world, 85, 1)
+    b1 = world["b1"]
+    for k in ("laser", "label"):
+        T.apply_step(db, b1, step_key=k, device_ids=[d.id], chosen="list", stated="test", dry_run=False)
+    for k in ("uvprint", "carton"):
+        T.apply_step(db, b1, step_key=k, device_ids=[d.id], chosen="list", dry_run=False)
+    T.finish(db, b1, device_ids=[d.id], chosen="list", dry_run=False)
+    T.reopen(db, b1, device_ids=[d.id], chosen="list", reason="new label", dry_run=False)
+    db.flush()
+    twin = call("find_device", code=d.serial)["twin"]
+    # Every required step is in its history: it can be finished again.
+    assert (twin["status"], twin["needs"]) == ("active", [])
+    assert call("get_batch", run_id=b1.id, devices=d.serial)["devices"][0]["needs"] == twin["needs"]
+
+
 def test_a_process_edit_publishes_and_a_batch_can_move_to_it(db, world):
     out = call("get_process", project="test-twins")
     assert out["current_version_id"] == world["v"].id
