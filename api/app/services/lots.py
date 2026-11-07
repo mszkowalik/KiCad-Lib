@@ -248,66 +248,7 @@ def check_lot_capacity(db: Session, bindings: list[dict]) -> list[dict]:
     return out
 
 
-# ============================================================ FIFO (0073)
-
-def _lot_companies(db: Session, lots: dict[str, dict]) -> dict[str, int | None]:
-    """The company whose stock each lot is: a purchase line's buyer, a transfer
-    position's receiver, the company of the adjustment that made a stored lot."""
-    docs = {d.id: d.company_id for d in db.query(M.RunCostDocument.id, M.RunCostDocument.company_id)}
-    adjs = {a.id: a.company_id for a in db.query(M.Adjustment.id, M.Adjustment.company_id)}
-    return {k: (docs.get(lot["document_id"]) if lot["kind"] == "line" else adjs.get(lot["adjustment_id"]))
-            for k, lot in lots.items()}
-
-
-class FifoPicker:
-    """Oldest-first lots for draws (decision 0073), from one lot replay.
-
-    `pick` answers one draw: the lots it takes, oldest first, split when one
-    lot does not hold enough, and how much no lot covers. Lots taken by earlier
-    picks of the same picker are not offered again, so the draws of one write
-    never share a unit. Writes nothing."""
-
-    def __init__(self, db: Session, company_id: int | None = None, state: dict | None = None):
-        self.db = db
-        self.company_id = company_id
-        self.lots = (state or lot_state(db))["lots"]
-        self.company = _lot_companies(db, self.lots) if company_id is not None else {}
-        self.taken: dict[str, float] = defaultdict(float)
-
-    def pick(self, component_id: int | None, mpn: str, lcsc: str, qty: float, as_of: str) -> dict:
-        want = set(run_actuals._identity_keys(component_id, mpn or "", lcsc or ""))
-        out = {"bindings": [], "covered": 0.0, "uncovered": float(qty or 0.0), "unit_cost_usd": None}
-        if not want or qty <= 0:
-            return out
-        cands = []
-        for key, lot in self.lots.items():
-            if (lot["date"] or "9999") > (as_of or "9999"):
-                continue
-            if self.company_id is not None and self.company.get(key) != self.company_id:
-                continue
-            left = lot["qty_remaining"] - self.taken[key]
-            if left <= CLOSED_EPS:
-                continue
-            if not (set(run_actuals._identity_keys(lot["component_id"], lot["mpn"], lot["lcsc"])) & want):
-                continue
-            cands.append((lot["date"] or "", lot["id"], key, lot, left))
-        need, value = float(qty), 0.0
-        for _d, _i, key, lot, left in sorted(cands):
-            if need <= CLOSED_EPS:
-                break
-            take = min(left, need)
-            self.taken[key] += take
-            need -= take
-            value += take * (lot["unit_cost_usd"] or 0.0)
-            out["bindings"].append({"lot_line_id": lot["id"] if lot["kind"] == "line" else None,
-                                    "lot_id": lot["id"] if lot["kind"] == "stock" else None,
-                                    "lot": key, "qty": round(take, 6), "unit_cost_usd": lot["unit_cost_usd"],
-                                    "lot_date": lot["date"]})
-        out["covered"] = round(float(qty) - need, 6)
-        out["uncovered"] = round(max(need, 0.0), 6)
-        if out["covered"] > CLOSED_EPS:
-            out["unit_cost_usd"] = round(value / out["covered"], 8)
-        return out
+# ======================================== what a draw holds (0073, 0105)
 
 
 def bound_on(db: Session, *, line_ids=(), lot_ids=()) -> dict[str, tuple[float, list[int]]]:
@@ -428,189 +369,32 @@ def stock_problems(db: Session, before: dict) -> list[str]:
     return out
 
 
-def bind(db: Session, draw: M.Draw, picked: dict, source: str = "fifo") -> None:
-    """Write the bindings `FifoPicker.pick` chose for an existing draw."""
-    for b in picked["bindings"]:
-        db.add(M.MaterialMoveLot(move_id=draw.id, lot_line_id=b["lot_line_id"], lot_id=b["lot_id"], qty=b["qty"],
-                                 unit_cost_usd=b["unit_cost_usd"] or 0.0, source=source))
-    db.flush()
-
-
-def lot_pricing_on() -> bool:
-    from ..config import settings
-
-    return bool(getattr(settings, "lot_pricing", False))
-
-
-def short_text(rows: list[dict]) -> str:
-    return ", ".join(f"{r.get('label') or r.get('mpn') or r.get('lcsc') or r.get('component_id')} "
-                     f"{round(r.get('uncovered') or 0, 4):g} not in any lot" for r in rows[:6])
-
-
-def untraced(db: Session) -> list[tuple[M.Draw, float]]:
-    """Live draws and the part of each no lot binding explains — what
-    `lot_pricing` waits for. A binding with no lot (a JLC row whose lot was
-    never resolved) explains nothing."""
-    traced: dict[int, float] = defaultdict(float)
-    for mid, q, ll, la in db.query(M.MaterialMoveLot.move_id, M.MaterialMoveLot.qty,
-                                   M.MaterialMoveLot.lot_line_id, M.MaterialMoveLot.lot_id):
-        if ll or la:
-            traced[mid] += q or 0.0
-    out = []
-    for c in run_actuals.live_consumption(db).order_by(M.Draw.at, M.Draw.id):
-        rest = c.taken - traced.get(c.id, 0.0)
-        if rest > CLOSED_EPS:
-            out.append((c, round(rest, 6)))
-    return out
-
-
-def bind_history(db: Session, *, actor: str = "", dry_run: bool = True) -> dict:
-    """Bind every unbound live draw to its lots, oldest first, in date order,
-    and price it at the lots' cost (decision 0073). Each company's draws take
-    its own lots while each company keeps its own stock. A draw no lot covers
-    in full keeps its price and is listed; a closed batch's draws are
-    re-priced like any other, and its frozen twin share is computed again.
-
-    Writes, never commits: the caller wraps it in a journal batch, or rolls it
-    back for a dry run. Returns the per-batch cost change and what is left."""
-    from . import twins as T
-
-    per_company = run_actuals.stock_scope(db, 1) is not None
-    state = lot_state(db)
-    pickers: dict[int | None, FifoPicker] = {}
-    runs = {r.id: r for r in db.query(M.ProductionRun).all()}
-    moved: dict[int | None, float] = defaultdict(float)
-    bound_n, uncovered = 0, []
-    for c, rest in untraced(db):
-        cid = c.company_id if per_company else None
-        if cid not in pickers:
-            pickers[cid] = FifoPicker(db, cid, state=state)
-        p = pickers[cid].pick(c.component_id, c.mpn or "", c.lcsc or "", rest, (c.at or "")[:10])
-        if p["uncovered"] > CLOSED_EPS:
-            # The units it took are not in any lot: give back what it reserved,
-            # leave it as it is, and say so.
-            for b in p["bindings"]:
-                pickers[cid].taken[b["lot"]] -= b["qty"]
-            uncovered.append({"consumption_id": c.id, "run_id": c.run_id,
-                              "batch": runs[c.run_id].label if c.run_id in runs else None,
-                              "label": c.lcsc or c.mpn or str(c.component_id), "mpn": c.mpn or "",
-                              "lcsc": c.lcsc or "", "component_id": c.component_id, "date": c.at,
-                              "qty": c.taken, "uncovered": p["uncovered"], "company_id": c.company_id})
-            continue
-        old = c.taken * (c.unit_cost_usd or 0.0)
-        have = [b for b in db.query(M.MaterialMoveLot).filter_by(move_id=c.id).all() if b.lot_line_id or b.lot_id]
-        value = sum((b.qty or 0.0) * (b.unit_cost_usd or 0.0) for b in have) \
-            + sum(b["qty"] * (b["unit_cost_usd"] or 0.0) for b in p["bindings"])
-        unit = round(value / (c.taken or 1.0), 8)
-        if not dry_run:
-            for b in db.query(M.MaterialMoveLot).filter_by(move_id=c.id).all():
-                if not (b.lot_line_id or b.lot_id):
-                    db.delete(b)   # a row that named no lot, now explained
-            bind(db, c, p, source="fifo_history")
-            c.unit_cost_usd = unit
-        moved[c.run_id] += c.taken * unit - old
-        bound_n += 1
-    if not dry_run:
-        db.flush()
-        for rid in moved:
-            run = runs.get(rid)
-            if run is not None and run.closed_at is not None:
-                # The job is the closed batch's correction event (0044, 0073):
-                # its twins' frozen share follows the new figure.
-                run.closed_twin_share_usd = T.freeze_share(db, run)
-        db.flush()
-    return {"dry_run": dry_run, "draws_bound": bound_n, "uncovered": uncovered,
-            "batches": [{"run_id": rid, "batch": runs[rid].label if rid in runs else None,
-                         "closed": bool(rid in runs and runs[rid].closed_at is not None),
-                         "closed_cost_usd": runs[rid].closed_cost_usd if rid in runs else None,
-                         "change_usd": round(v, 4)}
-                        for rid, v in sorted(moved.items(), key=lambda kv: -abs(kv[1])) if abs(v) > 0.00005],
-            "change_usd": round(sum(moved.values()), 4)}
-
-
-def fifo_price(db: Session, rows: list[dict], *, as_of: str, company_id: int | None,
-               picker: FifoPicker | None = None) -> list[dict]:
-    """Price planned draws from their lots, oldest first, while `lot_pricing`
-    is on (decision 0073). Each row (`component_id`, `mpn`, `lcsc`, `qty`) gets
-    `bindings`, `unit_cost_usd` and `value_usd`; a row the lots cannot cover in
-    full is returned as a problem, with `uncovered`, and reserves nothing in the
-    picker. Off: nothing changes and nothing is returned. Rows of one write
-    share one picker, so they never take the same unit."""
-    if not lot_pricing_on():
-        return []
-    picker = picker or FifoPicker(db, company_id)
-    problems = []
-    for r in rows:
-        p = picker.pick(r.get("component_id"), r.get("mpn") or "", r.get("lcsc") or "",
-                        float(r.get("qty") or 0), (as_of or "")[:10])
-        r["bindings"] = p["bindings"]
-        if p["uncovered"] > CLOSED_EPS:
-            # A refused row reserves nothing: what it took goes back to the
-            # picker, so a later row of the same write can still take it.
-            for b in p["bindings"]:
-                picker.taken[b["lot"]] -= b["qty"]
-            r["bindings"] = []
-            problems.append({"component_id": r.get("component_id"), "mpn": r.get("mpn") or "",
-                             "lcsc": r.get("lcsc") or "", "name": r.get("name") or r.get("label") or "",
-                             "label": r.get("name") or r.get("label") or r.get("mpn") or r.get("lcsc") or "",
-                             "needed": r.get("qty"), "uncovered": p["uncovered"],
-                             "problem": f"{p['uncovered']:g} of {float(r.get('qty') or 0):g} are in no lot "
-                                        f"on {as_of} — enter the purchase first (decision 0073)"})
-            continue
-        r["unit_cost_usd"] = p["unit_cost_usd"]
-        r["value_usd"] = round(float(r.get("qty") or 0) * (p["unit_cost_usd"] or 0.0), 4)
-    return problems
-
-
-def resize_bound(db: Session, c: M.Draw, qty: float, *, as_of: str,
-                 company_id: int | None) -> list[dict]:
-    """Change a bound draw's quantity (decision 0073): more takes the next lots
-    oldest first, less gives back the newest bindings first. The draw is priced
-    again over its lots. Returns the problems (the increase no lot covers);
-    nothing is written then. With the switch off, a smaller draw still gives
-    its newest bindings back, so no draw holds more lots than units; a larger
-    one changes no binding. Off, a draw keeps its price, unless its price IS
-    its lots' (the history job or the picker set it): then it shrinks and
-    grows as with the switch on, and takes the price of the lots it holds; a
-    growth no lot covers in full binds nothing and keeps the price."""
-    on = lot_pricing_on()
-    rows = (db.query(M.MaterialMoveLot).filter_by(move_id=c.id).order_by(M.MaterialMoveLot.id).all())
-    have = sum(b.qty or 0.0 for b in rows if b.lot_line_id or b.lot_id)
-    lot_priced = have > CLOSED_EPS and abs(c.taken - have) <= CLOSED_EPS and abs(
-        (c.unit_cost_usd or 0.0) - sum((b.qty or 0.0) * (b.unit_cost_usd or 0.0) for b in rows
-                                       if b.lot_line_id or b.lot_id) / have) <= 1e-6
-    if qty > have + CLOSED_EPS:
-        if not on and not lot_priced:
-            return []
-        if on:
-            want = {"component_id": c.component_id, "mpn": c.mpn or "", "lcsc": c.lcsc or "",
-                    "qty": qty - have, "label": c.lcsc or c.mpn or str(c.component_id)}
-            problems = fifo_price(db, [want], as_of=as_of, company_id=company_id)
-            if problems:
-                return problems
-            bind(db, c, want)
+def resize_bound(db: Session, c: M.Draw, qty: float) -> None:
+    """A draw's quantity is about to change. Less gives back its newest bindings
+    first, so no draw holds more lots than units, and a draw whose price is its
+    lots' price takes the price of the lots it still holds. More binds nothing:
+    the added units come from the pool at its average, and nothing guesses which
+    lot they were (decision 0105)."""
+    rows = db.query(M.MaterialMoveLot).filter_by(move_id=c.id).order_by(M.MaterialMoveLot.id).all()
+    held = [b for b in rows if b.lot_line_id or b.lot_id]
+    have = sum(b.qty or 0.0 for b in held)
+    if qty >= have - CLOSED_EPS:
+        return
+    lot_priced = abs(c.taken - have) <= CLOSED_EPS and abs(
+        (c.unit_cost_usd or 0.0) - sum((b.qty or 0.0) * (b.unit_cost_usd or 0.0) for b in held) / have) <= 1e-6
+    give = have - qty
+    for b in reversed(rows):
+        if give <= CLOSED_EPS:
+            break
+        take = min(b.qty or 0.0, give)
+        give -= take
+        if (b.qty or 0.0) - take <= CLOSED_EPS:
+            db.delete(b)
         else:
-            p = FifoPicker(db, company_id).pick(c.component_id, c.mpn or "", c.lcsc or "", qty - have,
-                                                (as_of or "")[:10])
-            if p["uncovered"] > CLOSED_EPS:
-                return []
-            bind(db, c, p)
-    elif qty < have - CLOSED_EPS:
-        give = have - qty
-        for b in reversed(rows):
-            if give <= CLOSED_EPS:
-                break
-            take = min(b.qty or 0.0, give)
-            give -= take
-            if (b.qty or 0.0) - take <= CLOSED_EPS:
-                db.delete(b)
-            else:
-                b.qty = (b.qty or 0.0) - take
+            b.qty = (b.qty or 0.0) - take
     db.flush()
-    if not on and not lot_priced:
-        return []
-    live = [b for b in db.query(M.MaterialMoveLot).filter_by(move_id=c.id) if b.lot_line_id or b.lot_id]
-    total = sum(b.qty or 0.0 for b in live)
-    if total > CLOSED_EPS:
-        c.unit_cost_usd = round(sum((b.qty or 0.0) * (b.unit_cost_usd or 0.0) for b in live) / total, 8)
-    return []
+    if lot_priced:
+        live = [b for b in db.query(M.MaterialMoveLot).filter_by(move_id=c.id) if b.lot_line_id or b.lot_id]
+        total = sum(b.qty or 0.0 for b in live)
+        if total > CLOSED_EPS:
+            c.unit_cost_usd = round(sum((b.qty or 0.0) * (b.unit_cost_usd or 0.0) for b in live) / total, 8)

@@ -28,9 +28,7 @@ The cut-over is deployed and the rundown is done. The result is in
    enclosures and cartons than devices they produced.** Rebuilt as `short`.
    Do you know where those parts came from (another batch's draws, stock not
    recorded)?
-5. **`lot_pricing` (FIFO for new draws).** The history is bound, so the switch
-   can go on. It refuses a draw that no lot covers, which can stop the bench
-   when a purchase is not entered yet. Switch it on?
+5. Answered 2026-11-07: FIFO is removed (decision 0105).
 6. **Uncharged draws: 34 small JLC movements, $25.87 in total.** Parts of 7
    assembly orders that no batch claims (SMT025030460758, SMT025030460766,
    SMT025040962123, SMT025082862560, SMT025090262482, SMT026032562986,

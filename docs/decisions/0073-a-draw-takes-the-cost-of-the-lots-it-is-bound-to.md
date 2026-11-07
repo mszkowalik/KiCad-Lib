@@ -1,5 +1,5 @@
 ---
-status: "accepted"
+status: "superseded by 0105-a-draw-takes-the-moving-average.md"
 date: 2026-10-05  # accepted 2026-10-05
 decision-makers: Mateusz Kowalik
 consulted: Claude (the user's answers of 2026-10-04/05 on tracing device costs to invoices)

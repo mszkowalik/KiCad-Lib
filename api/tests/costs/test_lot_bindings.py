@@ -1,26 +1,16 @@
-"""A draw takes the cost of the lots it is bound to, oldest first (decision 0073).
+"""What a draw that holds lots keeps (decisions 0073, 0105).
 
-What these pin down:
+No writer picks lots: every new draw takes the pool's moving average. Bindings
+still exist, because JLC names the lots of what it drew and the history job of
+2026-10 bound the older draws, and these tests pin what guards them:
 
-- the picker takes the oldest lot first and splits a draw across lots, each
-  at its own landed cost;
-- while `lot_pricing` is on, every writer binds its draws that way — a step,
-  a BOM draw, a hand draw, the used-quantity screen, a JLC warehouse pick and
-  an in-house transfer — and refuses a draw the lots cannot cover;
-- a smaller used quantity gives back the newest binding first;
-- the history job binds in date order, re-prices a closed batch and freezes
-  its twin share again, and lists (and leaves) what no lot covers;
-- the switch turns on only when every live draw is bound;
-- the register's identities hold before and after the history job;
-- with the switch off nothing changes.
-
-The refusals need a stock the pool holds and the lots do not. That is a draw
-of the OTHER company bound to this company's lots before any transfer (what
-JLC reports for an order the other company paid), so those tests turn stock
-per company on.
+- a smaller used quantity gives back the newest binding first, and a larger one
+  binds nothing;
+- an undo or a redo cannot overdraw a lot;
+- an invoice edit cannot take a lot away from the draws bound to it.
 
 Run from `api/`, with the dev database up:
-    python -m pytest tests/costs/test_lot_pricing.py -q
+    python -m pytest tests/costs/test_lot_bindings.py -q
 """
 import pathlib
 import sys
@@ -37,7 +27,6 @@ from sqlalchemy.orm import Session
 from app import models as M
 from app.config import settings
 from app.db import engine
-from app.services import appconfig, jlc_ledger
 from app.services import companies as C
 from app.services import lots as L
 from app.services import process as P
@@ -45,6 +34,7 @@ from app.services import run_actuals as ra
 from app.services import transfers as TR
 from app.services import twins as T
 from app.services.material_ledger import core as ledger
+from tests.costs.lot_helpers import bind, pick
 
 PART, LCSC = "LP-BOX-1", "CLPBOX1"
 
@@ -61,16 +51,6 @@ def db():
         s.close()
         trans.rollback()
         conn.close()
-
-
-@pytest.fixture
-def lp(monkeypatch):
-    monkeypatch.setattr(settings, "lot_pricing", True)
-
-
-@pytest.fixture
-def off(monkeypatch):
-    monkeypatch.setattr(settings, "lot_pricing", False)
 
 
 @pytest.fixture
@@ -106,18 +86,6 @@ def world(db):
     db.add_all([r7, r9])
     db.flush()
     return SimpleNamespace(s7=s7, s9=s9, p=p, box=box, a=lots[0], b=lots[1], r7=r7, r9=r9)
-
-
-def _starve(db, w, qty, day="2025-01-20"):
-    """A 9Sigma draw JLC bound to 7Sigma's lots, oldest first, with no transfer
-    yet: 7Sigma's stock still holds the units, its lots do not."""
-    c = ledger.draw(db, run_id=None, component_id=w.box.id, mpn=PART, lcsc=LCSC, taken=qty,
-                    unit_cost_usd=1.0, basis="measured", at=day, company_id=w.s9.id,
-                    import_ref=f"jlc:LPX:SMT-LP-{qty}:{LCSC}")
-    picked = L.FifoPicker(db, w.s7.id).pick(w.box.id, PART, LCSC, qty, day)
-    assert picked["uncovered"] == 0
-    L.bind(db, c, picked, source="reported")
-    return c
 
 
 def _bindings(db, c):
@@ -163,41 +131,8 @@ def _process_run(db, w, label="LPC", qty=20):
 
 # ------------------------------------------------------------------ the picker
 
-def test_the_oldest_lot_goes_first_and_a_draw_splits_across_lots(db, world):
-    picker = L.FifoPicker(db, world.s7.id)
-    p = picker.pick(world.box.id, PART, LCSC, 15, "2025-02-01")
-    assert [(b["lot"], b["qty"], b["unit_cost_usd"]) for b in p["bindings"]] == \
-        [(f"L{world.a.id}", 10, 1.0), (f"L{world.b.id}", 5, 2.0)]
-    assert p["unit_cost_usd"] == pytest.approx(20 / 15)
-    # the same picker never hands out a unit twice
-    assert picker.pick(world.box.id, PART, LCSC, 6, "2025-02-01")["uncovered"] == pytest.approx(1)
-    # a lot bought after the draw cannot have fed it
-    early = L.FifoPicker(db, world.s7.id).pick(world.box.id, PART, LCSC, 15, "2025-01-05")
-    assert (early["covered"], early["uncovered"]) == (10, 5)
-    # the other company's picker does not see 7Sigma's lots
-    assert L.FifoPicker(db, world.s9.id).pick(world.box.id, PART, LCSC, 1, "2025-02-01")["covered"] == 0
-
 
 # ------------------------------------------------------------------ the writers
-
-def test_a_step_draw_is_bound_oldest_first_at_the_lots_cost(db, world, lp):
-    run, stack = _process_run(db, world)
-    plan = T.apply_step(db, run, step_key="pack", stack=stack, qty=15, made_at="2025-02-01", dry_run=False)
-    assert plan["value_usd"] == pytest.approx(20.0)
-    c = db.query(M.Draw).filter_by(event_id=plan["step_run_id"]).one()
-    assert c.unit_cost_usd == pytest.approx(20 / 15)
-    assert _bindings(db, c) == [(f"L{world.a.id}", 10, 1.0), (f"L{world.b.id}", 5, 2.0)]
-
-
-def test_a_step_draw_the_lots_cannot_cover_is_refused(db, world, lp, split):
-    run, stack = _process_run(db, world)
-    _starve(db, world, 18)
-    plan = T.apply_step(db, run, step_key="pack", stack=stack, qty=5, made_at="2025-02-01", dry_run=True)
-    assert plan["shortages"] == []          # the stock holds them ...
-    assert plan["problems"][0]["uncovered"] == pytest.approx(3)   # ... the lots do not
-    with pytest.raises(HTTPException) as e:
-        T.apply_step(db, run, step_key="pack", stack=stack, qty=5, made_at="2025-02-01", dry_run=False)
-    assert e.value.status_code == 409
 
 
 def _bom_run(db, w):
@@ -214,43 +149,7 @@ def _bom_run(db, w):
     return run
 
 
-def test_a_bom_draw_is_bound_oldest_first(db, world, lp):
-    run = _bom_run(db, world)
-    res = ra.consume_from_bom(db, run)
-    assert res.get("error") is None, res
-    c = db.query(M.Draw).filter_by(run_id=run.id).one()
-    assert c.unit_cost_usd == pytest.approx(20 / 15)
-    assert [b[1] for b in _bindings(db, c)] == [10, 5]
-
-
-def test_a_bom_draw_the_lots_cannot_cover_is_refused(db, world, lp, split):
-    run = _bom_run(db, world)
-    _starve(db, world, 10)
-    res = ra.consume_from_bom(db, run)
-    assert res["created"] == 0 and res["uncovered"][0]["uncovered"] == pytest.approx(5)
-    assert db.query(M.Draw).filter_by(run_id=run.id).count() == 0
-
-
-def test_a_hand_draw_takes_the_lots_cost_not_a_typed_price(db, world, lp):
-    from app.routers import run_costs as rc
-
-    out = rc.add_consumption(world.r7.id, rc.ConsumptionIn(component_id=world.box.id, qty=15, unit_cost_usd=9.99,
-                                                           consumed_at="2025-02-01"), db=db)
-    assert out["unit_cost_usd"] == pytest.approx(20 / 15)
-    assert [b[1] for b in _bindings(db, db.get(M.Draw, out["id"]))] == [10, 5]
-
-
-def test_a_hand_draw_the_lots_cannot_cover_is_refused(db, world, lp, split):
-    from app.routers import run_costs as rc
-
-    _starve(db, world, 18)
-    with pytest.raises(HTTPException) as e:
-        rc.add_consumption(world.r7.id, rc.ConsumptionIn(component_id=world.box.id, qty=5,
-                                                         consumed_at="2025-02-01"), db=db)
-    assert e.value.status_code == 409 and "not in any lot" in e.value.detail["error"]
-
-
-def test_a_smaller_used_qty_gives_back_the_newest_binding_first(db, world, lp):
+def test_a_smaller_used_qty_gives_back_the_newest_binding_first(db, world):
     from app.routers import run_costs as rc
 
     def used(q):
@@ -258,6 +157,9 @@ def test_a_smaller_used_qty_gives_back_the_newest_binding_first(db, world, lp):
                                                              consumed_at="2025-02-01"), db=db)
 
     c = db.get(M.Draw, used(15)["id"])
+    bind(db, c, pick(db, world.s7.id, world.box.id, PART, LCSC, 15, "2025-02-01"))
+    c.unit_cost_usd = 20 / 15     # priced at its lots, as the history job left it
+    db.flush()
     assert _bindings(db, c) == [(f"L{world.a.id}", 10, 1.0), (f"L{world.b.id}", 5, 2.0)]
     used(12)
     assert _bindings(db, c) == [(f"L{world.a.id}", 10, 1.0), (f"L{world.b.id}", 2, 2.0)]
@@ -265,22 +167,9 @@ def test_a_smaller_used_qty_gives_back_the_newest_binding_first(db, world, lp):
     used(8)
     assert _bindings(db, c) == [(f"L{world.a.id}", 8, 1.0)]
     assert c.unit_cost_usd == pytest.approx(1.0)
-    used(14)   # more takes the next lots oldest first again
-    assert _bindings(db, c) == [(f"L{world.a.id}", 8, 1.0), (f"L{world.a.id}", 2, 1.0),
-                                (f"L{world.b.id}", 4, 2.0)]
-    assert c.unit_cost_usd == pytest.approx(18 / 14)
-
-
-def test_a_used_qty_increase_the_lots_cannot_cover_is_refused(db, world, lp, split):
-    from app.routers import run_costs as rc
-
-    rc.set_used_qty(world.r7.id, rc.ConsumptionIn(component_id=world.box.id, qty=5,
-                                                  consumed_at="2025-02-01"), db=db)
-    _starve(db, world, 15)
-    with pytest.raises(HTTPException) as e:
-        rc.set_used_qty(world.r7.id, rc.ConsumptionIn(component_id=world.box.id, qty=8,
-                                                      consumed_at="2025-02-01"), db=db)
-    assert e.value.status_code == 409 and e.value.detail["uncovered"][0]["uncovered"] == pytest.approx(3)
+    used(14)   # more binds nothing, and the price stays (decision 0105)
+    assert _bindings(db, c) == [(f"L{world.a.id}", 8, 1.0)]
+    assert c.unit_cost_usd == pytest.approx(1.0)
 
 
 def _pick(db, key, qty, when="2025-02-03"):
@@ -292,80 +181,7 @@ def _pick(db, key, qty, when="2025-02-03"):
     db.flush()
 
 
-def test_a_warehouse_pick_takes_its_lots_oldest_first(db, world, lp, split):
-    _pick(db, 990073001, 15)
-    res = jlc_ledger.book(db, [990073001], dry_run=False, company_id=world.s7.id)
-    assert res["refused"] == []
-    w = res["written"][0]
-    assert w["unit_cost_usd"] == pytest.approx(20 / 15) and w["usd"] == pytest.approx(20.0)
-    assert [b[1] for b in _bindings(db, db.get(M.Draw, w["consumption_id"]))] == [10, 5]
-
-
-def test_a_warehouse_pick_the_lots_cannot_cover_is_refused(db, world, lp, split):
-    _starve(db, world, 18)
-    _pick(db, 990073002, 5)
-    _pick(db, 990073003, 2, when="2025-02-04")
-    res = jlc_ledger.book(db, [990073002, 990073003], dry_run=False, company_id=world.s7.id)
-    assert [r["change_key_id"] for r in res["refused"]] == [990073002]
-    assert "in no lot" in res["refused"][0]["why"]
-    # the refused pick gave back what it reserved: the next one is covered
-    assert [w["change_key_id"] for w in res["written"]] == [990073003]
-
-
-def test_a_transfer_moves_the_sender_s_lots_oldest_first(db, world, lp, split):
-    res = TR.create(db, sender_id=world.s7.id, receiver_id=world.s9.id, day="2025-01-20",
-                    lines=[{"component_id": world.box.id, "qty": 15}], run_id=world.r9.id, dry_run=False)
-    x = res["lines"][0]
-    assert x["unit_cost_usd"] == pytest.approx(20 / 15)
-    assert "lots, oldest first" in x["price_source"]
-    sender = db.get(M.Draw, x["sender_draw_id"])
-    assert _bindings(db, sender) == [(f"L{world.a.id}", 10, 1.0), (f"L{world.b.id}", 5, 2.0)]
-    pos = db.get(M.RunCostLine, x["line_id"])
-    assert pos.unit_price == pytest.approx(20 / 15)
-    # the position is 9Sigma's lot now, at the cost the units left 7Sigma with
-    p9 = L.FifoPicker(db, world.s9.id).pick(world.box.id, PART, LCSC, 15, "2025-02-01")
-    assert [b["lot"] for b in p9["bindings"]] == [f"L{pos.id}"] and p9["uncovered"] == 0
-    assert L.check_lot_capacity(db, []) == []
-    reg = ra.invoice_register(db)
-    assert reg["summary"]["gap_usd"] == pytest.approx(0.0)
-
-
-def test_a_transfer_the_sender_s_lots_cannot_cover_is_refused(db, world, lp, split):
-    _starve(db, world, 18)
-    plan = TR.plan(db, sender_id=world.s7.id, receiver_id=world.s9.id, day="2025-01-25",
-                   lines=[{"component_id": world.box.id, "qty": 5}])
-    assert plan["shortages"] == []
-    assert plan["problems"][0]["uncovered"] == pytest.approx(3) and "in no lot" in plan["problems"][0]["problem"]
-    with pytest.raises(HTTPException) as e:
-        TR.create(db, sender_id=world.s7.id, receiver_id=world.s9.id, day="2025-01-25",
-                  lines=[{"component_id": world.box.id, "qty": 5}], dry_run=False)
-    assert e.value.status_code == 409
-
-
-def test_a_named_lot_is_taken_before_the_lines_that_name_none(db, world, lp):
-    plan = TR.plan(db, sender_id=world.s7.id, receiver_id=world.s9.id, day="2025-01-20",
-                   lines=[{"component_id": world.box.id, "qty": 5},
-                          {"component_id": world.box.id, "qty": 10, "lot_line_id": world.a.id}])
-    assert plan["problems"] == [] and plan["lot_capacity"] == []
-    free = plan["lines"][0]
-    assert [(b["lot"], b["qty"]) for b in free["bindings"]] == [(f"L{world.b.id}", 5)]
-    assert free["unit_cost_usd"] == pytest.approx(2.0)
-
-
-def test_a_draw_about_to_move_gives_its_lots_back_to_the_picker(db, world, lp):
-    d = _draw(db, world.r7, 10, "2025-01-15", unit=1.0, component_id=world.box.id)
-    L.bind(db, d, L.FifoPicker(db, world.s7.id).pick(world.box.id, PART, LCSC, 10, "2025-01-15"))
-    lines = [{"component_id": world.box.id, "qty": 15}]
-    held = TR.plan(db, sender_id=world.s7.id, receiver_id=world.s9.id, day="2025-01-20", lines=lines)
-    assert held["problems"] and held["problems"][0]["uncovered"] == pytest.approx(5)
-    moving = TR.plan(db, sender_id=world.s7.id, receiver_id=world.s9.id, day="2025-01-20", lines=lines,
-                     exclude_draw_ids=[d.id])
-    assert moving["problems"] == []
-    assert [(b["lot"], b["qty"]) for b in moving["lines"][0]["bindings"]] == \
-        [(f"L{world.a.id}", 10), (f"L{world.b.id}", 5)]
-
-
-def test_a_charge_still_moves_the_other_company_s_lot(db, world, lp, split):
+def test_a_charge_still_moves_the_other_company_s_lot(db, world, split):
     """A JLC order drew 7Sigma's lot for a 9Sigma batch: the charge writes the
     lot transfer as before, and the lot ledger counts the units once."""
     from app.services import jlc_apply
@@ -386,77 +202,10 @@ def test_a_charge_still_moves_the_other_company_s_lot(db, world, lp, split):
 
 # ------------------------------------------------------------------ the history
 
-def test_the_history_binds_in_date_order_and_refreezes_a_closed_batch(db, world, off):
-    late = _draw(db, world.r7, 10, "2025-03-01", component_id=world.box.id)   # written first
-    run, _stack = _process_run(db, world, qty=10)
-    early = _draw(db, run, 10, "2025-02-01", component_id=world.box.id, basis="measured")
-    cost, units = ra.close_snapshot(db, run)
-    run.closed_twin_share_usd = T.freeze_share(db, run)
-    run.closed_at, run.closed_by, run.closed_cost_usd, run.closed_units = M.utcnow(), "test", cost, units
-    db.flush()
-    share = run.closed_twin_share_usd
-    assert share is not None
-
-    dry = L.bind_history(db, dry_run=True)
-    mine = {b["run_id"]: b for b in dry["batches"] if b["run_id"] in (run.id, world.r7.id)}
-    assert mine[run.id]["change_usd"] == pytest.approx(-5.0) and mine[run.id]["closed"]
-    assert mine[run.id]["closed_cost_usd"] == pytest.approx(cost)
-    assert mine[world.r7.id]["change_usd"] == pytest.approx(5.0) and not mine[world.r7.id]["closed"]
-    assert _bindings(db, early) == [] and early.unit_cost_usd == pytest.approx(1.5)   # a dry run writes nothing
-
-    L.bind_history(db, dry_run=False)
-    assert _bindings(db, early) == [(f"L{world.a.id}", 10, 1.0)]    # the earlier draw takes the earlier lot
-    assert _bindings(db, late) == [(f"L{world.b.id}", 10, 2.0)]
-    assert (early.unit_cost_usd, late.unit_cost_usd) == (pytest.approx(1.0), pytest.approx(2.0))
-    db.refresh(run)
-    assert run.closed_twin_share_usd == pytest.approx(share - 0.5)   # $5 less over 10 twins
-    assert run.closed_cost_usd == pytest.approx(cost)                # the change reads as a variance
-
-
-def test_the_history_lists_a_draw_no_lot_covers_and_leaves_it(db, world, off):
-    big = _draw(db, world.r7, 25, "2025-02-01", component_id=world.box.id)
-    small = _draw(db, world.r7, 5, "2025-03-01", component_id=world.box.id)
-    stray = _draw(db, world.r7, 3, "2025-02-01", unit=0.5, mpn="LP-NO-LOT", lcsc="")
-    res = L.bind_history(db, dry_run=False)
-    left = {u["consumption_id"]: u for u in res["uncovered"]}
-    assert left[big.id]["uncovered"] == pytest.approx(5) and left[stray.id]["uncovered"] == pytest.approx(3)
-    assert _bindings(db, big) == [] and big.unit_cost_usd == pytest.approx(1.5)
-    assert _bindings(db, stray) == [] and stray.unit_cost_usd == pytest.approx(0.5)
-    # what the uncovered draw reserved went back: the later draw takes lot A
-    assert _bindings(db, small) == [(f"L{world.a.id}", 5, 1.0)]
-
-
-def test_the_switch_waits_until_every_draw_is_bound(db, world):
-    knob = appconfig.BY_KEY["lot_pricing"]
-    d = _draw(db, world.r7, 10, "2025-02-01", component_id=world.box.id)
-    with pytest.raises(ValueError):
-        appconfig.validate(knob, True, db)
-    appconfig.validate(knob, False, db)      # turning it off is always allowed
-    L.bind_history(db, dry_run=False)
-    assert d.id not in {c.id for c, _rest in L.untraced(db)}
-    # Draws of the dev database no lot covers are not this test's subject:
-    # void them in this transaction, which is rolled back.
-    for c, _rest in L.untraced(db):
-        c.voided_at = M.utcnow()
-    db.flush()
-    appconfig.validate(knob, True, db)
-
-
-def test_the_register_identities_hold_before_and_after_the_history(db, world, off):
-    _draw(db, world.r7, 10, "2025-02-01", component_id=world.box.id)
-    _draw(db, world.r7, 5, "2025-03-01", component_id=world.box.id)
-    before = ra.invoice_register(db)
-    assert before["summary"]["gap_usd"] == pytest.approx(0.0, abs=0.01)
-    assert before["pool"]["balanced"]
-    L.bind_history(db, dry_run=False)
-    after = ra.invoice_register(db)
-    assert after["summary"]["gap_usd"] == pytest.approx(0.0, abs=0.01)
-    assert after["pool"]["balanced"]
-
 
 # ------------------------------------------------------------------ switch off
 
-def test_with_the_switch_off_a_step_draw_takes_the_average(db, world, off):
+def test_a_step_draw_takes_the_average_and_holds_no_lot(db, world):
     run, stack = _process_run(db, world)
     plan = T.apply_step(db, run, step_key="pack", stack=stack, qty=15, made_at="2025-02-01", dry_run=False)
     c = db.query(M.Draw).filter_by(event_id=plan["step_run_id"]).one()
@@ -466,7 +215,7 @@ def test_with_the_switch_off_a_step_draw_takes_the_average(db, world, off):
 
 # ----------------------------------------- an undo or a redo takes stock too (0073)
 
-def test_a_redo_that_would_overdraw_a_lot_is_refused(db, world, lp, split):
+def test_a_redo_that_would_overdraw_a_lot_is_refused(db, world, split):
     """Loop-until-dry round 3: the first transfer is undone, a second one
     takes lot A, and the redo of the first would bind lot A again. The part's
     stock holds it (lot B is open), the lot does not."""
@@ -474,16 +223,18 @@ def test_a_redo_that_would_overdraw_a_lot_is_refused(db, world, lp, split):
 
     with J.batch(db, kind="transfer.create") as h:
         TR.create(db, sender_id=world.s7.id, receiver_id=world.s9.id, day="2025-01-20",
-                  lines=[{"component_id": world.box.id, "qty": 10}], run_id=world.r9.id, dry_run=False)
+                  lines=[{"component_id": world.box.id, "qty": 10, "lot_line_id": world.a.id}], run_id=world.r9.id,
+                  dry_run=False)
     undo = J.reverse(db, h["batch_id"], dry_run=False)
     TR.create(db, sender_id=world.s7.id, receiver_id=world.s9.id, day="2025-01-21",
-              lines=[{"component_id": world.box.id, "qty": 10}], run_id=world.r9.id, dry_run=False)
+              lines=[{"component_id": world.box.id, "qty": 10, "lot_line_id": world.a.id}], run_id=world.r9.id,
+              dry_run=False)
     redo = J.reverse(db, undo["reverse_batch_id"])
     assert redo["status"] == "refused"
     assert any(f"lot L{world.a.id}" in b and "overdrawn by 10" in b for b in redo["blockers"])
 
 
-def test_an_undo_that_makes_a_voided_draw_live_again_checks_the_stock(db, world, off):
+def test_an_undo_that_makes_a_voided_draw_live_again_checks_the_stock(db, world):
     from app.services import journal as J
 
     d0 = _draw(db, world.r7, 15, "2025-01-15", component_id=world.box.id)
@@ -496,7 +247,7 @@ def test_an_undo_that_makes_a_voided_draw_live_again_checks_the_stock(db, world,
     assert any("no longer holds" in b and "short 10" in b for b in res["blockers"])
 
 
-def test_a_redo_that_voids_what_it_replaces_is_not_refused(db, world, off):
+def test_a_redo_that_voids_what_it_replaces_is_not_refused(db, world):
     """The redo puts the new draw back AND voids the old one again: one net
     change, which the stock holds."""
     from app.services import journal as J
@@ -510,26 +261,26 @@ def test_a_redo_that_voids_what_it_replaces_is_not_refused(db, world, off):
     assert redo["status"] == "would_reverse", redo["blockers"]
 
 
-def test_an_undone_void_takes_back_its_lots_and_is_checked(db, world, lp):
+def test_an_undone_void_takes_back_its_lots_and_is_checked(db, world):
     """Loop-until-dry round 4: a void keeps the draw's bindings and frees its
     lots; a later draw takes lot A; the undo would bind lot A twice. The part
     holds it (lot B), the lot does not."""
     from app.services import journal as J
 
     d0 = _draw(db, world.r7, 10, "2025-01-15", component_id=world.box.id)
-    L.bind(db, d0, L.FifoPicker(db).pick(world.box.id, PART, LCSC, 10, "2025-01-15"))
+    bind(db, d0, pick(db, None, world.box.id, PART, LCSC, 10, "2025-01-15"))
     with J.batch(db, kind="test.void") as h:
         d0.voided_at = datetime.now(UTC)
         db.flush()
     d2 = _draw(db, world.r7, 10, "2025-01-16", component_id=world.box.id)
-    L.bind(db, d2, L.FifoPicker(db).pick(world.box.id, PART, LCSC, 10, "2025-01-16"))
+    bind(db, d2, pick(db, None, world.box.id, PART, LCSC, 10, "2025-01-16"))
     assert _bindings(db, d2) == [(f"L{world.a.id}", 10, 1.0)]
     res = J.reverse(db, h["batch_id"])
     assert res["status"] == "refused"
     assert any(f"lot L{world.a.id}" in b and "overdrawn by 10" in b for b in res["blockers"])
 
 
-def test_a_redo_that_collides_with_a_record_written_again_names_it(db, world, off):
+def test_a_redo_that_collides_with_a_record_written_again_names_it(db, world):
     """Loop-until-dry round 5: the import is undone and written again; the
     redo would put the first one back beside it."""
     from app.services import journal as J
@@ -543,10 +294,10 @@ def test_a_redo_that_collides_with_a_record_written_again_names_it(db, world, of
     assert any("collides with the present data" in b and "uq_material_draw_import" in b for b in redo["blockers"])
 
 
-def test_a_lot_priced_draw_that_shrinks_keeps_its_lots_price_with_the_switch_off(db, world, off):
+def test_a_lot_priced_draw_that_shrinks_keeps_its_lots_price(db, world):
     """Loop-until-dry round 6: the history job priced the draw at its lots;
     a smaller used quantity gives back the newer lot, and the draw takes the
-    price of the lot it still holds. The switch is not on yet."""
+    price of the lot it still holds."""
     from app.routers import run_costs as rc
 
     def used(q):
@@ -554,14 +305,15 @@ def test_a_lot_priced_draw_that_shrinks_keeps_its_lots_price_with_the_switch_off
                                                              consumed_at="2025-02-01"), db=db)
 
     c = db.get(M.Draw, used(15)["id"])
-    L.bind_history(db, dry_run=False)
-    assert c.unit_cost_usd == pytest.approx(20 / 15)
+    bind(db, c, pick(db, None, world.box.id, PART, LCSC, 15, "2025-02-01"))
+    c.unit_cost_usd = 20 / 15
+    db.flush()
     used(8)
     assert _bindings(db, c) == [(f"L{world.a.id}", 8, 1.0)]
     assert c.unit_cost_usd == pytest.approx(1.0)
 
 
-def test_an_undo_that_takes_a_lot_away_under_a_live_draw_is_refused(db, world, off):
+def test_an_undo_that_takes_a_lot_away_under_a_live_draw_is_refused(db, world):
     """Loop-until-dry round 6: the purchase is undone while a later draw is
     still bound to it; the other lots keep the part's stock above zero."""
     from app.services import journal as J
@@ -577,14 +329,14 @@ def test_an_undo_that_takes_a_lot_away_under_a_live_draw_is_refused(db, world, o
         db.add(lot_c)
         db.flush()
     d = _draw(db, world.r7, 15, "2025-01-20", component_id=world.box.id)
-    L.bind(db, d, {"bindings": [{"lot_line_id": lot_c.id, "lot_id": None, "qty": 15,
+    bind(db, d, {"bindings": [{"lot_line_id": lot_c.id, "lot_id": None, "qty": 15,
                                  "unit_cost_usd": 3.0}]})
     res = J.reverse(db, h["batch_id"])
     assert res["status"] == "refused"
     assert any(f"lot L{lot_c.id}" in b and f"#{d.id}" in b and "taken away" in b for b in res["blockers"])
 
 
-def test_a_transfer_is_reversed_on_its_document_not_on_the_write_log(db, world, lp, split):
+def test_a_transfer_is_reversed_on_its_document_not_on_the_write_log(db, world, split):
     from app.routers import ledger as lg
     from app.services import journal as J
 
@@ -598,27 +350,12 @@ def test_a_transfer_is_reversed_on_its_document_not_on_the_write_log(db, world, 
 
 # ------------------------------------------------ loop-until-dry round 7
 
-def test_a_lot_priced_draw_corrected_back_takes_its_lots_again_with_the_switch_off(db, world, off):
-    from app.routers import run_costs as rc
 
-    def used(q):
-        return rc.set_used_qty(world.r7.id, rc.ConsumptionIn(component_id=world.box.id, qty=q,
-                                                             consumed_at="2025-02-01"), db=db)
-
-    c = db.get(M.Draw, used(15)["id"])
-    L.bind_history(db, dry_run=False)
-    used(8)
-    used(15)
-    assert _bindings(db, c) == [(f"L{world.a.id}", 8, 1.0), (f"L{world.a.id}", 2, 1.0), (f"L{world.b.id}", 5, 2.0)]
-    assert c.unit_cost_usd * c.taken == pytest.approx(20.0)
-    assert L.untraced(db) == [] or all(x[0].id != c.id for x in L.untraced(db))
-
-
-def test_an_invoice_edit_that_takes_a_lot_from_its_draws_is_refused(db, world, off):
+def test_an_invoice_edit_that_takes_a_lot_from_its_draws_is_refused(db, world):
     from app.routers import run_costs as rc
 
     d = _draw(db, world.r7, 15, "2025-01-20", component_id=world.box.id)
-    L.bind(db, d, L.FifoPicker(db).pick(world.box.id, PART, LCSC, 15, "2025-01-20"))   # A 10, B 5
+    bind(db, d, pick(db, None, world.box.id, PART, LCSC, 15, "2025-01-20"))   # A 10, B 5
     doc = M.RunCostDocument(doc_type="invoice", supplier="TESTCO", doc_number="LP-C", doc_date="2025-01-05",
                             currency="USD", total_amount=150.0, company_id=world.s7.id)
     db.add(doc)
@@ -637,13 +374,13 @@ def test_an_invoice_edit_that_takes_a_lot_from_its_draws_is_refused(db, world, o
     assert db.get(M.RunCostLine, world.a.id).voided_at is None and db.get(M.RunCostLine, world.a.id).qty == 10
 
 
-def test_deleting_an_adjustment_its_draws_hold_is_refused(db, world, off):
+def test_deleting_an_adjustment_its_draws_hold_is_refused(db, world):
     from app.routers import run_costs as rc
 
     a = ledger.adjustment(db, component_id=world.box.id, mpn=PART, lcsc=LCSC, qty=20, unit_cost_usd=0.5,
                           reason="opening_balance", at="2025-01-02", company_id=world.s7.id)
     d = _draw(db, world.r7, 5, "2025-01-20", component_id=world.box.id)
-    L.bind(db, d, {"bindings": [{"lot_line_id": None, "lot_id": a.lot_id, "qty": 5, "unit_cost_usd": 0.5}]})
+    bind(db, d, {"bindings": [{"lot_line_id": None, "lot_id": a.lot_id, "qty": 5, "unit_cost_usd": 0.5}]})
     with pytest.raises(HTTPException) as e:
         rc.delete_adjustment(a.id, db=db)
     assert e.value.status_code == 409 and f"#{d.id}" in str(e.value.detail)
@@ -660,11 +397,11 @@ def test_deleting_an_adjustment_its_draws_hold_is_refused(db, world, off):
 
 def _bound_draw(db, world):
     d = _draw(db, world.r7, 15, "2025-02-05", component_id=world.box.id)
-    L.bind(db, d, L.FifoPicker(db).pick(world.box.id, PART, LCSC, 15, "2025-02-05"))   # A 10, B 5
+    bind(db, d, pick(db, None, world.box.id, PART, LCSC, 15, "2025-02-05"))   # A 10, B 5
     return d
 
 
-def test_an_edit_that_moves_a_lot_away_from_its_draws_is_refused_whatever_field_moves_it(db, world, off):
+def test_an_edit_that_moves_a_lot_away_from_its_draws_is_refused_whatever_field_moves_it(db, world):
     """A step that is no stock, a proforma, a later date: each takes lot A
     from the draw bound to it, and the edit is refused with nothing kept."""
     from app.routers import run_costs as rc
@@ -683,7 +420,7 @@ def test_an_edit_that_moves_a_lot_away_from_its_draws_is_refused_whatever_field_
         ("invoice", "2025-01-01", "parts:pool")
 
 
-def test_a_re_split_that_voids_a_bound_child_is_refused(db, world, off):
+def test_a_re_split_that_voids_a_bound_child_is_refused(db, world):
     from app.routers import run_costs as rc
 
     def child(label, q, cid=None):
@@ -693,7 +430,7 @@ def test_a_re_split_that_voids_a_bound_child_is_refused(db, world, off):
     rc.split_line_core(world.a.id, rc.SplitIn(allow_parts=True, children=[child("c1", 6), child("c2", 4)]), db)
     c1, c2 = (db.query(M.RunCostLine).filter_by(parent_line_id=world.a.id, label=x).one() for x in ("c1", "c2"))
     d = _draw(db, world.r7, 5, "2025-02-05", component_id=world.box.id)
-    L.bind(db, d, {"bindings": [{"lot_line_id": c1.id, "lot_id": None, "qty": 5, "unit_cost_usd": 1.0}]})
+    bind(db, d, {"bindings": [{"lot_line_id": c1.id, "lot_id": None, "qty": 5, "unit_cost_usd": 1.0}]})
     with pytest.raises(HTTPException) as e:
         rc.split_line_core(world.a.id, rc.SplitIn(allow_parts=True, replace=True,
                                                   children=[child("c2", 4, c2.id), child("c3", 6)]), db)
@@ -701,27 +438,27 @@ def test_a_re_split_that_voids_a_bound_child_is_refused(db, world, off):
     assert db.get(M.RunCostLine, c1.id).voided_at is None
 
 
-def test_a_new_buyer_cannot_take_a_lot_from_the_old_buyer_s_draws(db, world, off, split):
+def test_a_new_buyer_cannot_take_a_lot_from_the_old_buyer_s_draws(db, world, split):
     from app.routers import run_costs as rc
 
     d = _draw(db, world.r7, 5, "2025-02-05", component_id=world.box.id, company_id=world.s7.id)
-    L.bind(db, d, L.FifoPicker(db, world.s7.id).pick(world.box.id, PART, LCSC, 5, "2025-02-05"))
+    bind(db, d, pick(db, world.s7.id, world.box.id, PART, LCSC, 5, "2025-02-05"))
     with pytest.raises(HTTPException) as e:
         rc.update_document(world.a.document_id, rc.DocumentPatch(company_id=world.s9.id), db=db)
     assert e.value.status_code == 409 and "another company" in str(e.value.detail)
 
 
-def test_an_mpn_written_another_way_on_a_bound_lot_is_no_re_key(db, world, off):
+def test_an_mpn_written_another_way_on_a_bound_lot_is_no_re_key(db, world):
     """The MPN without its dash is the same pool key: the lot check lets it."""
     d = _draw(db, world.r7, 5, "2025-02-05", mpn=PART, lcsc=LCSC)
-    L.bind(db, d, L.FifoPicker(db).pick(None, PART, LCSC, 5, "2025-02-05"))
+    bind(db, d, pick(db, None, None, PART, LCSC, 5, "2025-02-05"))
     snap = L.bound_snapshot(db, [world.a.id])
     world.a.mpn = PART.replace("-", "")
     db.flush()
     assert L.bound_problems(db, snap) == []
 
 
-def test_a_jlc_refresh_ignores_the_lots_of_a_voided_draw(db, world, off):
+def test_a_jlc_refresh_ignores_the_lots_of_a_voided_draw(db, world):
     from app.services import jlc_apply as JA
 
     doc = M.RunCostDocument(doc_type="invoice", supplier=JA.SUPPLIER, doc_number="J8-1", external_id="POBTESTJ8",
@@ -734,7 +471,7 @@ def test_a_jlc_refresh_ignores_the_lots_of_a_voided_draw(db, world, off):
     db.add(lot)
     db.flush()
     d = _draw(db, world.r7, 5, "2025-02-05", component_id=world.box.id)
-    L.bind(db, d, {"bindings": [{"lot_line_id": lot.id, "lot_id": None, "qty": 5, "unit_cost_usd": 1.0}]})
+    bind(db, d, {"bindings": [{"lot_line_id": lot.id, "lot_id": None, "qty": 5, "unit_cost_usd": 1.0}]})
     d.voided_at = datetime.now(UTC)
     db.flush()
     base = {"lot_ref": "testj8-1", "plan_key": "parts:pool", "label": "J8 box", "unit_price": 1.0, "lcsc": LCSC,
@@ -746,7 +483,7 @@ def test_a_jlc_refresh_ignores_the_lots_of_a_voided_draw(db, world, off):
 
 # ------------------------------------------------ loop-until-dry round 9
 
-def test_a_credit_that_leaves_draws_without_stock_is_refused_wherever_it_is_entered(db, world, off):
+def test_a_credit_that_leaves_draws_without_stock_is_refused_wherever_it_is_entered(db, world):
     """A credit is a negative stock line (decision 0044). On a correction, a
     new credit note, a new position or a line re-keyed into the pool, it is
     checked like a cut of the purchase."""
@@ -778,7 +515,7 @@ def test_a_credit_that_leaves_draws_without_stock_is_refused_wherever_it_is_ente
 
 # ------------------------------------------------ loop-until-dry round 10
 
-def test_a_split_credit_and_a_re_keyed_share_are_checked_like_a_new_position(db, world, off):
+def test_a_split_credit_and_a_re_keyed_share_are_checked_like_a_new_position(db, world):
     from app.routers import run_costs as rc
 
     other = M.Component(name="test-lp-other", in_library=False)
@@ -809,7 +546,7 @@ def test_a_split_credit_and_a_re_keyed_share_are_checked_like_a_new_position(db,
     assert db.get(M.RunCostLine, kid.id).component_id == world.box.id
 
 
-def test_a_new_buyer_cannot_take_a_credit_it_cannot_cover(db, world, off, split):
+def test_a_new_buyer_cannot_take_a_credit_it_cannot_cover(db, world, split):
     from app.routers import run_costs as rc
 
     credit = rc.LineIn(plan_key="parts:pool", allocate="pooled", component_id=world.box.id, mpn=PART, lcsc=LCSC,
@@ -825,7 +562,7 @@ def test_a_new_buyer_cannot_take_a_credit_it_cannot_cover(db, world, off, split)
 
 # ------------------------------------------------ the final fixes (decision 0073)
 
-def test_a_credit_on_a_part_bought_under_two_names_is_checked_as_the_part(db, world, off):
+def test_a_credit_on_a_part_bought_under_two_names_is_checked_as_the_part(db, world):
     """The part was bought once by its MPN and once by its LCSC, and drawn by
     all its names: a credit or a cut the part covers passes. A second
     component that shares the LCSC is another part."""
@@ -860,7 +597,7 @@ def test_a_credit_on_a_part_bought_under_two_names_is_checked_as_the_part(db, wo
     assert e.value.status_code == 409 and str(e.value.detail).count("short") == 1, e.value.detail
 
 
-def test_a_jlc_refresh_that_cuts_a_lot_under_unbound_draws_is_refused(db, world, off):
+def test_a_jlc_refresh_that_cuts_a_lot_under_unbound_draws_is_refused(db, world):
     from app.services import jlc_apply as JA
 
     doc = M.RunCostDocument(doc_type="invoice", supplier=JA.SUPPLIER, doc_number="J9-1", external_id="POBTESTJ9",

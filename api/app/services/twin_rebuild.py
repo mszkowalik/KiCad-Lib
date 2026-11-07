@@ -1136,8 +1136,7 @@ class _Build:
 
     def _return(self, key: str, pk, draws: list[M.Draw], surplus: float) -> float:
         """Give the surplus back to the stock, newest draw first: a draw is made
-        smaller (its newest lot bindings go back, `lots.resize_bound`, whatever
-        the lot pricing switch says), or voided when all of it goes back.
+        smaller (its newest lot bindings go back, `lots.resize_bound`), or voided when all of it goes back.
         Returns the value that left the batch."""
         db, run = self.db, self.run
         left, value = surplus, 0.0
@@ -1186,9 +1185,7 @@ class _Build:
                 c.void_reason = RETURNED
                 after = 0.0
             else:
-                problems = L.resize_bound(db, c, new, as_of=c.at or run.run_date or "", company_id=scope)
-                if problems:   # only an increase can fail; this is a decrease
-                    raise HTTPException(409, f"{run.label}: returning the surplus failed: {problems[0]['problem']}")
+                L.resize_bound(db, c, new)
                 c.taken = new
                 after = new * (c.unit_cost_usd or 0.0)
             value += before - after

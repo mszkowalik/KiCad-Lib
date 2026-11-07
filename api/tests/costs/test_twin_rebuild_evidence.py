@@ -41,6 +41,7 @@ from app.config import settings
 from app.db import engine
 from app.services import bench_links
 from app.services import lots as L
+from tests.costs.lot_helpers import bind, pick
 from app.services import orders as osvc
 from app.services import process as P
 from app.services import run_actuals as ra
@@ -363,8 +364,7 @@ def test_draws_that_do_not_match_the_units_must_be_settled(db, w):
 def test_a_returned_surplus_gives_its_lots_back_and_the_undo_restores_it(db, w, monkeypatch):
     run, _devices = _old(db, w, ["2025-03-01"] * 3, enc=5)
     enc = ra.live_consumption(db, run_id=run.id).filter(M.Draw.component_id == w["enc"].id).one()
-    L.bind(db, enc, L.FifoPicker(db).pick(w["enc"].id, "", "", 5, "2025-03-01"))
-    monkeypatch.setattr(settings, "lot_pricing", True)
+    bind(db, enc, pick(db, None, w["enc"].id, "", "", 5, "2025-03-01"))
     before = _total(db, run)
     plan = R.rebuild(db, run, version_id=w["v"].id, dry_run=False,
                      settle=[{"step": "enclosure", "how": "return"}])
@@ -632,8 +632,7 @@ def test_the_undo_takes_back_a_disposal_from_the_device_page(db, w):
 def test_the_undo_refuses_while_the_returned_surplus_is_drawn_again(db, w, monkeypatch):
     run, _devices = _old(db, w, ["2025-03-01"] * 3, enc=5)
     enc = ra.live_consumption(db, run_id=run.id).filter(M.Draw.component_id == w["enc"].id).one()
-    L.bind(db, enc, L.FifoPicker(db).pick(w["enc"].id, "", "", 5, "2025-03-01"))
-    monkeypatch.setattr(settings, "lot_pricing", True)
+    bind(db, enc, pick(db, None, w["enc"].id, "", "", 5, "2025-03-01"))
     R.rebuild(db, run, version_id=w["v"].id, dry_run=False, settle=[{"step": "enclosure", "how": "return"}])
     other = M.ProductionRun(project_id=w["project"].id, label="TB-drain", run_date="2025-04-01",
                             status="completed", qty=1)
@@ -893,8 +892,8 @@ def test_the_undo_refuses_while_a_lot_it_gave_back_is_bound_again(db, w, monkeyp
     db.add(other)
     db.flush()
     first = _bom_draw(db, other, 95, "2025-02-01", component_id=w["enc"].id)
-    L.bind(db, first, L.FifoPicker(db).pick(w["enc"].id, "", "", 95, "2025-02-01"))
-    L.bind(db, enc, L.FifoPicker(db).pick(w["enc"].id, "", "", 5, "2025-03-01"))
+    bind(db, first, pick(db, None, w["enc"].id, "", "", 95, "2025-02-01"))
+    bind(db, enc, pick(db, None, w["enc"].id, "", "", 5, "2025-03-01"))
     doc = M.RunCostDocument(project_id=w["project"].id, doc_type="invoice", supplier="T", doc_number="LOT-2",
                             doc_date="2025-03-15", currency="USD", total_amount=150.0)
     db.add(doc)
@@ -902,14 +901,13 @@ def test_the_undo_refuses_while_a_lot_it_gave_back_is_bound_again(db, w, monkeyp
     db.add(M.RunCostLine(document_id=doc.id, plan_key="parts:pool", component_id=w["enc"].id, mpn="", lcsc="",
                          qty=50, unit_price=3.0, position=0))
     db.flush()
-    monkeypatch.setattr(settings, "lot_pricing", True)
     R.rebuild(db, run, version_id=w["v"].id, dry_run=False, settle=[{"step": "enclosure", "how": "return"}])
     later = M.ProductionRun(project_id=w["project"].id, label="TB-late", run_date="2025-04-01",
                             status="completed", qty=1)
     db.add(later)
     db.flush()
     late = _bom_draw(db, later, 10, "2025-04-01", component_id=w["enc"].id)
-    L.bind(db, late, L.FifoPicker(db).pick(w["enc"].id, "", "", 10, "2025-04-01"))
+    bind(db, late, pick(db, None, w["enc"].id, "", "", 10, "2025-04-01"))
     refused = R.undo(db, run)["refused"]
     assert len(refused) == 1 and "overdrawn by 2" in refused[0]
     with pytest.raises(HTTPException):
@@ -928,8 +926,8 @@ def test_a_lot_overdrawn_before_the_rebuild_does_not_stop_the_undo(db, w, monkey
     db.add(other)
     db.flush()
     first = _bom_draw(db, other, 95, "2025-02-01", component_id=w["enc"].id)
-    L.bind(db, first, L.FifoPicker(db).pick(w["enc"].id, "", "", 95, "2025-02-01"))
-    L.bind(db, enc, L.FifoPicker(db).pick(w["enc"].id, "", "", 5, "2025-03-01"))
+    bind(db, first, pick(db, None, w["enc"].id, "", "", 95, "2025-02-01"))
+    bind(db, enc, pick(db, None, w["enc"].id, "", "", 5, "2025-03-01"))
     doc = M.RunCostDocument(project_id=w["project"].id, doc_type="invoice", supplier="T", doc_number="LOT-3",
                             doc_date="2025-03-15", currency="USD", total_amount=150.0)
     db.add(doc)
@@ -940,7 +938,6 @@ def test_a_lot_overdrawn_before_the_rebuild_does_not_stop_the_undo(db, w, monkey
                                              M.RunCostLine.qty == 100).one()
     old_lot.qty = 98                                             # the lot holds 2 fewer than its draws
     db.flush()
-    monkeypatch.setattr(settings, "lot_pricing", True)
     R.rebuild(db, run, version_id=w["v"].id, dry_run=False, settle=[{"step": "enclosure", "how": "return"}])
     assert L.lot_state(db)["lots"][f"L{old_lot.id}"]["qty_remaining"] == pytest.approx(0)
     assert not R.undo(db, run)["refused"]
@@ -966,12 +963,11 @@ def test_a_lot_the_return_left_alone_keeps_the_undo_s_own_floor(db, w, monkeypat
     db.add(other)
     db.flush()
     first = _bom_draw(db, other, 96, "2025-02-01", component_id=w["enc"].id)
-    L.bind(db, first, L.FifoPicker(db).pick(w["enc"].id, "", "", 96, "2025-02-01"))
+    bind(db, first, pick(db, None, w["enc"].id, "", "", 96, "2025-02-01"))
     run, _devices = _old(db, w, ["2025-03-01", "2025-03-01", "2025-03-02"], ant=4, enc=6)
     for c in ra.live_consumption(db, run_id=run.id).all():
         if c.component_id in (w["ant"].id, w["enc"].id):
-            L.bind(db, c, L.FifoPicker(db).pick(c.component_id, "", "", c.taken, "2025-03-01"))
-    monkeypatch.setattr(settings, "lot_pricing", True)
+            bind(db, c, pick(db, None, c.component_id, "", "", c.taken, "2025-03-01"))
     plan = R.rebuild(db, run, version_id=w["v"].id, dry_run=False,
                      spares=[{"qty": 1, "done": ["antenna", "enclosure"]}],
                      settle=[{"step": "enclosure", "how": "return"}])
