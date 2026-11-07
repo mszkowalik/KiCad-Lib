@@ -615,6 +615,14 @@ one the click is judged by. A list reuses one stock replay per company.
   writes its own click and judges each device on its own, as `skip_refused` does. A
   dry run writes inside a savepoint it rolls back, because a later step's plan
   depends on the earlier one: Instruction leaflet needs Pack into carton.
+- **"Steps done in this batch" pages back from the newest 200 clicks** (`twins.click_page`,
+  `GET /runs/{id}/craft/clicks?before_id=&limit=`). The craft view holds the newest page and
+  `clicks_total`, and the fold says "newest N of M" until every click is loaded. Its filters stay
+  closed until then, because a filter on a part of the list would search only that part.
+  `writes` names every click of each write batch on a page, so "Undo…" names all the clicks it
+  takes back, also one on an older page. "Link to steps…" loads older clicks the same way. Before
+  2026-11-07 the list stopped at 200 and printed 200 as the count: Batch 8 read 200 steps from
+  2026-10-29 on.
 - **A bench link only pre-sets.** `/production/bench?project=&batch=&steps=&stack=`
   sets the bench once, and a change by hand drops the parameters. Firmware and
   parameters are not in it: the procedure version pins them.

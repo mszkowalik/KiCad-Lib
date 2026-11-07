@@ -32,6 +32,7 @@ import { ErrorBanner, Spinner } from "../Ui";
 import { benchHref } from "./benchLink";
 import { AssemblyCard, stackText, stepLabelOf, undoWrite, type CraftModal } from "./craftDialogs";
 import ScanGroup, { type ScanGroupState } from "./ScanGroup";
+import { useClicks } from "./useClicks";
 import type { Craft } from "./useCraft";
 
 export default function RunFloor({ run, craft, group, onModal, onMoney }: {
@@ -45,6 +46,7 @@ export default function RunFloor({ run, craft, group, onModal, onMoney }: {
   const dialog = useDialog();
   const { view, error, draft, draftError, reload } = craft;
   const [selected, setSelected] = useState<string | null>(null);
+  const steps = useClicks(run.id, view);
 
   // Start on the first field where something can go.
   const board = view?.board;
@@ -98,10 +100,11 @@ export default function RunFloor({ run, craft, group, onModal, onMoney }: {
   };
 
   // One write can hold several clicks (a group run, found units, a caught-up
-  // bench step): the undo takes them all, so the question names them all.
+  // bench step): the undo takes them all, so the question names them all. The
+  // server names them (`writes`), because some may not be on the loaded page.
   const undoClick = async (c: CraftClick) => {
     if (!c.batch_id) return;
-    const together = view.clicks.filter((x) => x.batch_id === c.batch_id);
+    const together = steps.writes[String(c.batch_id)] ?? [c];
     const named = together.map((x) => `“${x.label}” on ${x.qty} unit(s)`).join(", ");
     const undone = await undoWrite(dialog, c.batch_id, "Undo step", (would) =>
       `Undo ${named}, recorded ${c.made_at} by ${c.actor || "nobody named"}? `
@@ -129,6 +132,25 @@ export default function RunFloor({ run, craft, group, onModal, onMoney }: {
           <button type="button" className="btn btn-sm" onClick={() => onModal({ kind: "scrap", target: { kind: "stack", stack: s } })}>Scrap…</button>
         </div>
       ) },
+  ];
+
+  const partial = steps.clicks.length < steps.total;
+  const stepColumns: Column<CraftClick>[] = [
+    { key: "date", label: "Date", width: 10, className: "mono", get: (c) => c.made_at },
+    { key: "step", label: "Step", width: 18, get: (c) => c.label },
+    { key: "qty", label: "Units", width: 7, numeric: true, get: (c) => c.qty },
+    { key: "parts", label: "Parts", width: 13, numeric: true, get: (c) => c.parts_usd,
+      render: (c) => (c.parts_usd ? pln(c.parts_usd, view.pln_per_usd) : "—") },
+    { key: "costs", label: "Invoices", width: 13, numeric: true, get: (c) => c.costs_usd,
+      render: (c) => (c.costs_usd ? pln(c.costs_usd, view.pln_per_usd) : "—") },
+    { key: "how", label: "Chosen", width: 9, get: (c) => c.chosen },
+    { key: "by", label: "By", width: 11, get: (c) => c.actor },
+    { key: "note", label: "Note", width: 12, get: (c) => c.note },
+    { key: "undo", label: "", width: 7, interactive: false, get: () => "",
+      render: (c) => (c.batch_id
+        ? <button type="button" className="btn btn-sm" onClick={() => void undoClick(c)}
+            title="Reverse this click and everything it wrote">Undo…</button>
+        : null) },
   ];
 
   const short = view.board.flatMap((s) => s.inputs
@@ -219,29 +241,36 @@ export default function RunFloor({ run, craft, group, onModal, onMoney }: {
         </FoldSection>
       ) : null}
 
-      <FoldSection title="Steps done in this batch" count={view.clicks.length} foldKey={`run:${run.id}:clicks`}
-        chips={view.clicks.length ? <StatChip n={view.clicks[0].made_at}>last</StatChip> : undefined}>
+      <FoldSection title="Steps done in this batch" count={steps.total} foldKey={`run:${run.id}:clicks`}
+        chips={steps.clicks.length ? (
+          <>
+            <StatChip n={steps.clicks[0].made_at}>last</StatChip>
+            {partial ? <StatChip>newest {steps.clicks.length.toLocaleString()} of {steps.total.toLocaleString()}</StatChip> : null}
+          </>
+        ) : undefined}
+        actions={partial ? (
+          <>
+            <button type="button" className="btn btn-sm" disabled={steps.loading}
+              onClick={() => steps.more(200)}>Load 200 older</button>
+            <button type="button" className="btn btn-sm" disabled={steps.loading}
+              onClick={() => steps.all()}>Load all {steps.total.toLocaleString()}</button>
+          </>
+        ) : undefined}>
+        {partial ? (
+          <p className="muted dim">
+            The newest {steps.clicks.length.toLocaleString()} of {steps.total.toLocaleString()} steps are
+            loaded. The filters open when all are loaded: before that they would search only these.
+          </p>
+        ) : null}
+        {steps.error ? <ErrorBanner message={steps.error} /> : null}
         <DataTable
-          rows={view.clicks}
+          rows={steps.clicks}
           rowKey={(c) => c.id}
           empty="Nothing done yet."
-          columns={[
-            { key: "date", label: "Date", width: 10, className: "mono", get: (c) => c.made_at },
-            { key: "step", label: "Step", width: 18, get: (c) => c.label },
-            { key: "qty", label: "Units", width: 7, numeric: true, get: (c) => c.qty },
-            { key: "parts", label: "Parts", width: 13, numeric: true, get: (c) => c.parts_usd,
-              render: (c) => (c.parts_usd ? pln(c.parts_usd, view.pln_per_usd) : "—") },
-            { key: "costs", label: "Invoices", width: 13, numeric: true, get: (c) => c.costs_usd,
-              render: (c) => (c.costs_usd ? pln(c.costs_usd, view.pln_per_usd) : "—") },
-            { key: "how", label: "Chosen", width: 9, get: (c) => c.chosen },
-            { key: "by", label: "By", width: 11, get: (c) => c.actor },
-            { key: "note", label: "Note", width: 12, get: (c) => c.note },
-            { key: "undo", label: "", width: 7, interactive: false, get: () => "",
-              render: (c) => (c.batch_id
-                ? <button type="button" className="btn btn-sm" onClick={() => void undoClick(c)}
-                    title="Reverse this click and everything it wrote">Undo…</button>
-                : null) },
-          ]}
+          // A filter on a part of the list would say "no step matches" about steps it never saw.
+          columns={stepColumns.map((c) => (partial && c.interactive !== false
+            ? { ...c, interactive: false, sortable: true } : c))}
+          footer={steps.loading ? <Spinner label="Loading older steps…" /> : undefined}
         />
       </FoldSection>
     </>

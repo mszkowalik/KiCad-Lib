@@ -49,7 +49,6 @@ import {
   reverseWriteBatch,
   undoRebuildRun,
   type AssemblyDraft,
-  type CraftClick,
   type CraftStack,
   type CraftView,
   type ProcessVersionRow,
@@ -63,6 +62,7 @@ import {
 import { plural, pln, today } from "../../format";
 import { parseScanSheet } from "../../scanSheet";
 import { Link } from "react-router-dom";
+import { useClicks } from "./useClicks";
 import type { Craft } from "./useCraft";
 import AutoTextarea from "../AutoTextarea";
 import AssemblyDialog, { lineKind } from "./AssemblyDialog";
@@ -212,20 +212,23 @@ function StepDialog({ run, view, target, stepKey: initialStep, onClose }: {
  *  0061). One invoice can pay for several steps — the final assembler's covers
  *  programming, the enclosure, the laser mark and the label — and the units of
  *  all the clicks ticked share it. A scrap is no step a cost can pay for. */
-function LinkDialog({ run, clicks, graphSteps, lineIds, what, onClose }: {
-  run: RunInfo; clicks: CraftClick[]; graphSteps: CraftView["graph"]["steps"]; lineIds: number[]; what: string;
+function LinkDialog({ run, view, lineIds, what, onClose }: {
+  run: RunInfo; view: CraftView; lineIds: number[]; what: string;
   onClose: (c: boolean) => void;
 }) {
-  const options = clicks.filter((c) => c.qty > 0 && c.kind !== "scrap");
+  // The single clicks start with the newest page and load older ones on
+  // request, so a click of any age can be ticked.
+  const list = useClicks(run.id, view);
+  const options = list.clicks.filter((c) => c.qty > 0 && c.kind !== "scrap");
   const [ticked, setTicked] = useState<number[]>([]);
   const [wholeSteps, setWholeSteps] = useState<string[]>([]);
   const toggle = (id: number, on: boolean) =>
     setTicked((t) => (on ? [...t, id] : t.filter((x) => x !== id)));
   // A whole step goes to the server by its key, which resolves EVERY click of
-  // it — the list here holds only the newest 200, and programming is one
-  // click per device — and also covers the clicks recorded after the link
-  // (decision 0074), so a step with no click yet is offered too.
-  const steps: [string, string][] = graphSteps.map((s) => [s.key, s.label || s.key]);
+  // it — programming is one click per device — and also covers the clicks
+  // recorded after the link (decision 0074), so a step with no click yet is
+  // offered too.
+  const steps: [string, string][] = view.graph.steps.map((s) => [s.key, s.label || s.key]);
   const tickStep = (step: string, on: boolean) =>
     setWholeSteps((w) => (on ? [...new Set([...w, step])] : w.filter((x) => x !== step)));
   return (
@@ -249,13 +252,20 @@ function LinkDialog({ run, clicks, graphSteps, lineIds, what, onClose }: {
               ))}
             </div>
           </Field>
-          <Field group label="Or single clicks" wide>
+          <Field group label="Or single clicks" wide
+            hint={list.clicks.length < list.total
+              ? `the newest ${list.clicks.length} of ${list.total} clicks` : undefined}>
             <div>
               {options.map((c) => (
                 <CheckField key={c.id} checked={ticked.includes(c.id)} onChange={(v) => toggle(c.id, v)}>
                   {c.made_at} · {c.label} · {c.qty} unit(s)
                 </CheckField>
               ))}
+              {list.error ? <ErrorBanner message={list.error} /> : null}
+              {list.clicks.length < list.total ? (
+                <button type="button" className="btn btn-sm" disabled={list.loading}
+                  onClick={() => list.more(200)}>{list.loading ? "Loading…" : "Load 200 older clicks"}</button>
+              ) : null}
             </div>
           </Field>
         </>
@@ -948,7 +958,6 @@ export function CraftModals({ modal, run, craft, ids, chosen, onClose, onCloseKe
     case "relink":
       return <RelinkDialog run={run} view={view} id={ids[0]} onClose={onClose} />;
     case "link":
-      return <LinkDialog run={run} clicks={view.clicks} graphSteps={view.graph.steps} lineIds={modal.lineIds}
-        what={modal.label} onClose={onClose} />;
+      return <LinkDialog run={run} view={view} lineIds={modal.lineIds} what={modal.label} onClose={onClose} />;
   }
 }

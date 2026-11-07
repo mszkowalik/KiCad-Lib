@@ -2548,11 +2548,7 @@ def craft_view(db: Session, run: M.ProductionRun) -> dict:
     finished = (db.query(func.count(M.Unit.id))
                 .filter(M.Unit.run_id == run.id, M.Unit.status == "finished").scalar() or 0)
     share = origin_shares(db, [run.id]).get(run.id)
-    line_click = click_costs(line_shares(db, [run.id]))
-    draw_click, _ = _step_draw_values(db, [run.id])
-    recent = (db.query(M.Click).filter_by(run_id=run.id)
-              .order_by(M.Click.id.desc()).limit(200).all())
-    undo = click_batches(db, run, [sr.id for sr in recent])
+    page = click_page(db, run)
     return {
         "run_id": run.id, "process_version_id": v.id, "version_no": v.version_no,
         "pln_per_usd": fx.pln_per_usd(db, run_pricing_date(run)),
@@ -2563,15 +2559,55 @@ def craft_view(db: Session, run: M.ProductionRun) -> dict:
         "bench_stack": run.bench_stack or None, "bench_left": bench_stack_left(db, run),
         "bench_stacks": bench_stacks(db, run),
         "origin": {**(share or {}), "received": received, "finished": finished},
-        "clicks": [{"id": sr.id, "step": sr.step_key, "label": sr.step_label, "kind": sr.step_kind,
-                    "qty": sr.units, "chosen": sr.chosen, "made_at": sr.at, "actor": sr.actor,
-                    "note": sr.note, "costs_usd": round(line_click.get(sr.id, 0.0), 4),
-                    "parts_usd": round(draw_click.get(sr.id, 0.0), 4), "batch_id": undo.get(sr.id)}
-                   for sr in recent],
+        # The newest page of the clicks; `craft/clicks` pages back from it.
+        "clicks": page["clicks"], "clicks_total": page["total"], "writes": page["writes"],
         "board": board(db, run),
         "assembly": _assembly_view(db, run),
         "unlinked": unlinked(db, run),
         "linked": linked_positions(db, run),
+    }
+
+
+#: Clicks per page of "Steps done in this batch". Batch 8 holds thousands:
+#: programming and marking are one click per device.
+CLICK_PAGE = 200
+
+
+def click_page(db: Session, run: M.ProductionRun, *, before_id: int | None = None,
+               limit: int = CLICK_PAGE) -> dict:
+    """The batch's clicks, newest first: `limit` of them older than click
+    `before_id`, how many the batch holds (`total`), and whether older ones are
+    left (`has_more`).
+
+    `writes` names every click of each write batch on the page, by its batch
+    id, because one Undo takes back all of them and the question must name
+    them all, also a click not on this page. The list used to stop at the
+    newest 200 and print that as the count: Batch 8 read 200 steps from
+    2026-10-29 on, with its assembly, receipt and programming not on it."""
+    q = db.query(M.Click).filter(M.Click.run_id == run.id)
+    total = q.count()
+    if before_id is not None:
+        q = q.filter(M.Click.id < before_id)
+    rows = q.order_by(M.Click.id.desc()).limit(limit + 1).all()
+    has_more, rows = len(rows) > limit, rows[:limit]
+    line_click = click_costs(line_shares(db, [run.id]))
+    draw_click, _ = _step_draw_values(db, [run.id])
+    undo = click_batches(db, run, [sr.id for sr in rows])
+    writes: dict[int, list[dict]] = defaultdict(list)
+    if undo:
+        batch_of = dict(db.query(M.WriteBatchRow.row_id, M.WriteBatchRow.batch_id).filter(
+            M.WriteBatchRow.batch_id.in_(set(undo.values())), M.WriteBatchRow.table_name == "material_events",
+            M.WriteBatchRow.op == "insert").all())
+        for c in (db.query(M.Click).filter(M.Click.id.in_(list(batch_of) or [-1]), M.Click.run_id == run.id)
+                  .order_by(M.Click.id).all()):
+            writes[batch_of[c.id]].append({"id": c.id, "label": c.step_label, "qty": c.units})
+    return {
+        "clicks": [{"id": sr.id, "step": sr.step_key, "label": sr.step_label, "kind": sr.step_kind,
+                    "qty": sr.units, "chosen": sr.chosen, "made_at": sr.at, "actor": sr.actor,
+                    "note": sr.note, "costs_usd": round(line_click.get(sr.id, 0.0), 4),
+                    "parts_usd": round(draw_click.get(sr.id, 0.0), 4), "batch_id": undo.get(sr.id)}
+                   for sr in rows],
+        "writes": dict(writes), "total": total, "has_more": has_more,
     }
 
 

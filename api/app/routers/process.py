@@ -7,7 +7,7 @@ in `services/process.py`; this file only parses and shapes.
 """
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
@@ -372,6 +372,17 @@ def craft(run_id: int, db: Session = Depends(get_db)):
     """Everything the batch's crafting screen draws: stacks, devices, gaps,
     the bench stack, the origin cost share and the recent clicks."""
     return twins_svc.craft_view(db, _run(db, run_id))
+
+
+@router.get("/runs/{run_id}/craft/clicks")
+def craft_clicks(run_id: int, before_id: int | None = None,
+                 limit: int = Query(twins_svc.CLICK_PAGE, ge=1, le=10000), db: Session = Depends(get_db)):
+    """The batch's clicks older than click `before_id`, newest first, for
+    "Steps done in this batch" and "Link to steps…": the craft view holds only
+    the newest page. `before_id` is a cursor inside this batch."""
+    r = _run(db, run_id)
+    twins_svc.crafted_version(db, r)
+    return twins_svc.click_page(db, r, before_id=before_id, limit=limit)
 
 
 class ReceiveIn(BaseModel):

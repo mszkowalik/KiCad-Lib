@@ -21,6 +21,12 @@
   `docs/reference/processes.md`.
 - **The `find_device` agent tool reads a reopened device from its reopen, as the batch screen does.**
   It said "'Finished' is already done" for a reopened device that is active again.
+- **Batch → Floor → "Steps done in this batch" shows every step of the batch.** It showed the newest
+  200 steps and printed 200 as the count, so Batch 8's list started on 2026-10-29, with no assembly,
+  receipt, enclosure or programming on it. The count is now the batch's real count, the fold says
+  "newest 200 of N", and "Load 200 older" and "Load all" bring the rest. The filters open when all
+  steps are loaded. "Undo…" names every step of the write it takes back, also a step that is not
+  loaded. "Link to steps…" can load older steps, so a step of any age can be ticked.
 
 ## 2026-11-07 (the review and library figures match their lists)
 

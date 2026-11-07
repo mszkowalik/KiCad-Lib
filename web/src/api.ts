@@ -9348,11 +9348,18 @@ export interface CraftView {
     scrapped?: number;
     share_usd?: number | null;
     frozen?: boolean;
+    /** the batch's own boards in, wherever they are now (processes.md) */
     received: number;
+    /** the units finished in this batch */
     finished: number;
     step_costs_usd?: number;
   };
+  /** the newest page of the clicks; `getCraftClicks` pages back */
   clicks: CraftClick[];
+  /** how many clicks the batch holds */
+  clicks_total: number;
+  /** every click of each write batch on the page, so an Undo can name them all */
+  writes: CraftWrites;
   /** positions linked to this batch's steps, a split one by its header —
    *  the line an unlink takes (decision 0074) */
   linked: { line_id: number; label: string; usd: number; steps: string[]; whole_steps: string[] }[];
@@ -9398,6 +9405,21 @@ export interface BoardStep {
 
 export function getCraft(runId: number, signal?: AbortSignal): Promise<CraftView> {
   return request(`/api/runs/${runId}/craft`, { signal });
+}
+
+/** Write batch id → every click it wrote. */
+export type CraftWrites = Record<string, { id: number; label: string; qty: number }[]>;
+
+export interface CraftClickPage {
+  clicks: CraftClick[];
+  writes: CraftWrites;
+  total: number;
+  has_more: boolean;
+}
+
+/** The batch's clicks older than click `beforeId`, newest first. */
+export function getCraftClicks(runId: number, beforeId: number, limit = 200, signal?: AbortSignal): Promise<CraftClickPage> {
+  return request(`/api/runs/${runId}/craft/clicks?before_id=${beforeId}&limit=${limit}`, { signal });
 }
 
 /** Which units: a stack and a quantity before programming, devices after. */

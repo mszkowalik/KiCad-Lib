@@ -2622,6 +2622,33 @@ def test_one_undo_takes_back_a_group_run(db, world):
     assert [_carton_links(db, d) for d in (d1, d2)] == [0, 0]
 
 
+def test_the_steps_list_pages_back_and_names_every_click_of_a_write(db, world):
+    """Batch 8, 2026-11-07: "Steps done in this batch" read 200, its newest 200
+    clicks, with the assembly, the receipt and the programming not on it."""
+    from app.routers import process as pr
+
+    _leaflet_after_carton(db, world)
+    d1, d2 = _crafted_devices(db, world, 171, 2)
+    b1 = world["b1"]
+    res = pr.craft_steps(b1.id, pr.StepsIn(step_keys=["carton", "leaflet"], device_ids=[d1.id, d2.id],
+                                           chosen="scanned", dry_run=False), db=db)
+    every = [c.id for c in db.query(M.Click).filter_by(run_id=b1.id).order_by(M.Click.id.desc())]
+    first = T.click_page(db, b1, limit=1)
+    assert (first["total"], first["has_more"], [c["id"] for c in first["clicks"]]) == (len(every), True, every[:1])
+    # The newest click is the leaflet; its write also wrote the carton, one page back.
+    assert [w["label"] for w in first["writes"][res["batch_id"]]] == ["Carton", "Leaflet"]
+    seen, before = [], None
+    while True:
+        page = pr.craft_clicks(b1.id, before_id=before, limit=2, db=db)
+        seen += [c["id"] for c in page["clicks"]]
+        if not page["has_more"]:
+            break
+        before = page["clicks"][-1]["id"]
+    assert seen == every
+    view = T.craft_view(db, b1)
+    assert view["clicks_total"] == len(every) and len(view["clicks"]) == min(len(every), T.CLICK_PAGE)
+
+
 def test_the_batches_list_carries_a_board_for_a_batch_in_work(db, world):
     from app.routers import production_runs as pr
 
