@@ -1,5 +1,22 @@
 # Changelog
 
+## 2026-11-07 (the office organizers are loaded, and the skipped invoices are in stock)
+
+- **Stock → Organizers holds the sheet "Stany Magazynowe".** 196 boxes, 126 filled, 113 parts, 4091
+  pieces, counted on 2026-03-04. 1061 of those pieces have no purchase behind them and entered at zero
+  value.
+- **Stock no longer reads office pieces as a JLC difference.** WS2812E-1313 (-500), KH-IPEX-K501-29 (-100)
+  and AO3401A (-50) now read 0.
+- **30 skipped invoices are in the pool.** What left is written: 3133 pieces to R&D, 721 pieces to Vumo
+  orders (not on the platform), and 24 TME antennas as a loss of 7Sigma, dated 2026-07-07. No money is
+  unassigned, and the Mouser 91630040 document is assigned.
+- **LCSC WL2510010084 (9Sigma, 259.56 EUR) is entered.** Four parts are stock. Passives go to the
+  `equipment` overhead category, and storage boxes and Kapton tape go to `office`. KSBR's list now shows it.
+- **EMMA FS 21781/2024 is Dymo labels, in `office`.** It was excluded as a mattress.
+- **The 410 Aqua antennas are gone.** The assembly house fitted them on Dongle boards, so a correction
+  moves them to 146153-0050 and a credit line takes them off the placeholder, which now nets 825 pieces.
+- **The antenna, carton and Batch 2 assembly placeholders belong to 9Sigma** and stay off the books.
+
 ## 2026-11-07 (every function has a screen, and a route can be an agent tool)
 
 - **Every API route has a screen, or a written reason.** `scripts/check-ui-routes.py` fails the build
@@ -54,9 +71,9 @@
 
 - **A placeholder document raises no issue on the Overview any more.** Nobody will find those invoices.
   The note on each document still says why it exists.
-- **Stock compares one part under two library cards once.** C2837531 is both TS3625A and KH-6X6X5H-STM,
-  and each row took JLC's whole count. That showed differences of +3054 and +2250 that did not exist,
-  and counted the pieces twice in the totals.
+- **Stock compares one part under two library cards once, when both cards name the same JLC items.**
+  This does not change the +3054 and +2250 on `C2837531`. That part has old purchases on the wrong card
+  (`docs/todo.md`, row 56).
 - **`POST /api/organizers/research` takes `purpose=loss`.** Pieces in no box that nothing pays for become
   a scrap adjustment of the company that bought them.
 

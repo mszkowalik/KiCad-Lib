@@ -134,3 +134,28 @@ Four facts it encodes, each of which cost a failed run to learn:
 
 A run while somebody is using the platform will show a few tables one row
 apart. That is real — the dump has a timestamp — and `--check` says so.
+
+### Rehearsing a wide data load without touching the local database
+
+Run the load against a copy of the production dump, in a database of its own, when
+it writes through many routes. A script's dry run does not exercise its writes: on
+2026-11-07 a body with an unknown key answered 200 and wrote nothing, and a same-day
+loss raised a false negative-stock issue. Only a real write showed them.
+
+1. Copy the dump into the `db` container. Restore it with `pg_restore` into a new
+   database, `henry_rehearsal`.
+2. Start a second api on it, and keep the startup hook off:
+
+   ```
+   docker compose run --rm --no-deps -d --name henry-rehearsal -p 127.0.0.1:8037:8000 \
+     -e DATABASE_URL=postgresql+psycopg://kicadlib:kicadlib@db:5432/henry_rehearsal \
+     api uvicorn app.main:app --host 0.0.0.0 --port 8000 --lifespan off
+   ```
+
+3. Run the load against `http://127.0.0.1:8037` with your production token. The copy
+   holds that token.
+4. Stop the container and drop the database.
+
+**`--lifespan off` is required.** The startup hook runs the storage purges on the
+shared local MinIO, and it starts the broker monitor and the JLC keepalive from the
+copied rows.

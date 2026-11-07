@@ -33,9 +33,8 @@ The cut-over is deployed and the rundown is done. The result is in
    assembly orders that no batch claims (SMT025030460758, SMT025030460766,
    SMT025040962123, SMT025082862560, SMT025090262482, SMT026032562986,
    SMT026062262938) and 7 JLC warehouse picks. Which batches, if any?
-7. **No company on 6 JLC warehouse picks** (2024-09-27 to 2025-03-25) and on
-   2 placeholder documents (antennas and cartons, 2024, "no invoice found").
-   Whose stock were they?
+7. **No company on 6 JLC warehouse picks** (2024-09-27 to 2025-03-25). Whose
+   stock were they?
 8. **The next CE_Dongle_V3 batch stops at "Take enclosure"**. Process v6 and
    v7 (v7 is v6 with an LTE test) draw raw SIM6-12-3W, of which 0 are left;
    the 40 cut ones are part 577. Batch 2164, programmed today on v7, took its

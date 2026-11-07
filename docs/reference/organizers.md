@@ -16,7 +16,7 @@ they cost.
 | Count, fewer pieces | down | Adjustment `miscount`, no batch pays |
 | Move to another box | down and up | Nothing |
 | Use with no box (`POST /api/organizers/research`) | no box | Draw with no batch: `basis="research"`, or `basis="external"` for a project the platform does not track. For pieces used before Henry knew about them |
-| Loss with no box (same route, `purpose=loss`) | no box | Adjustment `scrap` of that company, at the average of the day. It names no batch and no project, so another company's records do not change |
+| Loss with no box (same route, `purpose=loss`) | no box | Adjustment `scrap` of that company, at the average of the day. It names no batch and no project, so another company's records do not change. Date it after the purchase: the replay puts an adjustment before a purchase of the same day, which reads as negative stock |
 
 **Free pieces** are `pool − JLC's count − all boxes`, floored at 0. They are pieces
 the pool holds and nobody has placed. A count that finds pieces uses these first, or
