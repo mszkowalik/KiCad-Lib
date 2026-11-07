@@ -100,6 +100,18 @@ def test_every_row_adds_up(db, world):
         assert total == pytest.approx(r["remaining_qty"], abs=0.01), r["key"]
 
 
+def test_every_cost_pool_row_adds_up(db, world):
+    """`GET /projects/{id}/cost-pool` gave bought, used and lost only."""
+    from app.routers.run_costs import get_pool
+
+    rows = {r["mpn"]: r for r in get_pool(world.project_id, None, db)["parts"]}
+    assert (rows[PART]["added"], rows[PART]["corrected"], rows[MADE]["made"]) == (7, 10, 20)
+    for r in rows.values():
+        total = (r["bought"] + r["added"] + r["made"] + r["corrected"]
+                 - r["used"] - r["lost"] - r["external"])
+        assert total == pytest.approx(r["on_hand"], abs=0.01), r["mpn"]
+
+
 def test_drawn_value_is_split_by_who_carries_it(db, world):
     t = RA.parts_stock(db)["totals"]
     by = t["drawn_by_usd"]

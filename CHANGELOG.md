@@ -40,6 +40,9 @@
   retail order WM2510010035 (LCSC WL2510010084), which went to the office. Only a JLCPCB parts order
   is now compared with JLC's ledger, and the value of a line that JLC did not receive is in USD. It was
   the document's own currency, so euros read as dollars.
+- **A project's cost pool (`GET /api/projects/{id}/cost-pool`) adds up.** It gave bought, used and
+  lost only. Each row now also gives added, made, corrected and external, the same figures as Stock →
+  Parts.
 - **The R&D figure on Stock → Organizers counts every row.** The page summed the rows it received, and
   the list stops at 500. With about 100 rows today the figure did not change, and past 500 it is no
   longer cut short. The list says when it shows only the newest rows.

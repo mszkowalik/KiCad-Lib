@@ -2302,7 +2302,11 @@ def nbp_rate(currency: str, date: str, db: Session = Depends(get_db)):
 
 @router.get("/projects/{project_id}/cost-pool")
 def get_pool(project_id: int, as_of: str | None = None, db: Session = Depends(get_db)):
-    """Per-part cost pool: bought / used / lost, moving average, value on hand.
+    """Per-part cost pool: what came in, what went out, moving average, value on hand.
+
+    A row adds up: bought + added + made + corrected - used - lost - external
+    = on_hand. It gave bought, used and lost only, so a part whose stock came
+    from a count, a correction or a make did not add up (2026-11-07).
 
     Quantities apportion money AND must agree with JLCPCB's consigned count —
     whatever went in either went out through a run, was written off, or is
@@ -2319,8 +2323,9 @@ def get_pool(project_id: int, as_of: str | None = None, db: Session = Depends(ge
     for key, p in sorted(pool.items(), key=lambda kv: -abs(kv[1]["value_usd"])):
         rows.append({
             "key": key, "component_id": p["component_id"], "mpn": p["mpn"], "lcsc": p["lcsc"],
-            "bought": round(p["bought"], 3), "used": round(p["used"], 3),
-            "lost": round(p["lost"], 3), "on_hand": round(p["qty"], 3),
+            "bought": round(p["bought"], 3), "added": round(p["added"], 3), "made": round(p["made"], 3),
+            "corrected": round(p["corrected"], 3), "used": round(p["used"], 3),
+            "lost": round(p["lost"], 3), "external": round(p["external"], 3), "on_hand": round(p["qty"], 3),
             "avg_unit_usd": round(p["avg_usd"], 6), "value_usd": round(p["value_usd"], 4),
             "unknown_rate": p["unknown_rate"],
         })
