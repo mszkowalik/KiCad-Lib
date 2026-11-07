@@ -1029,7 +1029,7 @@ function HealthTab({ health }: { health: ReviewHealth }) {
           title={'Left over from the retired "skipped" answer'}
           count={health.legacy_skipped_items.length}
           foldKey="reviews:health:legacy-skipped"
-          chips={<StatChip n={health.legacy_skipped_items.reduce((a, s) => a + s.count, 0).toLocaleString()} tone="warn">open answers</StatChip>}
+          chips={<StatChip n={health.legacy_skipped_total.toLocaleString()} tone="warn">open answers</StatChip>}
         >
           <p className="muted">
             These were answered "skipped" before 2026-09-13, which meant "applies, but I

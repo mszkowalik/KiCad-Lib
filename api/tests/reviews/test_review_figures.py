@@ -181,3 +181,27 @@ def test_a_finding_is_what_the_state_counts(db, symbol_with_findings):
     assert k["excused"] not in found, "an excused key is not a finding"
     counts = {f["key"]: f for f in reviews.review_health(db=db)["failing_keys"]["symbol"]}
     assert counts[k["warn"]]["warnings"] == 1
+
+
+# ------------------------------------------------------------ finding 8
+def test_the_retired_skip_total_counts_every_key(db):
+    """The chip summed the top 10 keys; twelve fresh keys push some past it."""
+    tag = uuid.uuid4().hex[:8]
+    sym = M.Symbol(name=f"TEST-SKIPPED-{tag}")
+    db.add(sym)
+    db.flush()
+    ver = M.SymbolVersion(symbol_id=sym.id, version_no=1, source_text="(symbol)")
+    db.add(ver)
+    db.flush()
+    sym.current_version_id = ver.id
+    keys = [f"test.{tag}.{i}" for i in range(12)]
+    db.add(M.ReviewRecord(subject_kind="symbol", subject_id=sym.id, subject_version_id=ver.id,
+                          actor_type="agent", created_by="test",
+                          items=[{"key": k, "result": "skipped", "actor_type": "agent"} for k in keys]))
+    db.commit()
+
+    out = reviews.review_health(db=db)
+
+    listed = {s["key"] for s in out["legacy_skipped_items"]}
+    assert set(keys) <= listed, "a key with open answers is missing from the list"
+    assert out["legacy_skipped_total"] == sum(s["count"] for s in out["legacy_skipped_items"])

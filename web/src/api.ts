@@ -6625,6 +6625,8 @@ export interface ReviewHealth {
   /** Retired 2026-09-13, still counted: items answered `skipped` on an older
    *  record, which now read as unanswered and are real open work. */
   legacy_skipped_items: { key: string; count: number }[];
+  /** Every such answer, over every key: the panel's "open answers" chip. */
+  legacy_skipped_total: number;
   /** Machine failures + flags grouped by checklist key — the work plan view:
    *  one systemic fix clears a whole row. `count` is the length of the list
    *  `getFailingSubjects` returns for the key (one function builds both), and

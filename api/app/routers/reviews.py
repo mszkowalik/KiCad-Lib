@@ -1585,7 +1585,9 @@ def review_health(db: Session = Depends(get_db)):
     fail_keys = {kind: review_svc.failing_by_key(db, kind)
                  for kind in ("component", "symbol", "footprint")}
     top_na = sorted(na_counts.items(), key=lambda kv: -kv[1])[:10]
-    top_legacy = sorted(legacy_skipped.items(), key=lambda kv: -kv[1])[:10]
+    # EVERY key, not the top 10. The panel sums this list into its "open
+    # answers" chip, and a top-10 cut made the sum stop at the tenth key.
+    all_legacy = sorted(legacy_skipped.items(), key=lambda kv: -kv[1])
 
     return {
         "components": {"total": len(comps), "review": review_counts,
@@ -1597,7 +1599,8 @@ def review_health(db: Session = Depends(get_db)):
                        for k, n in sorted(na_reasons.items(), key=lambda kv: -kv[1])],
         # Retired 2026-09-13; read as unanswered, still reported so the backlog
         # of items nobody has actually answered stays visible.
-        "legacy_skipped_items": [{"key": k, "count": n} for k, n in top_legacy],
+        "legacy_skipped_items": [{"key": k, "count": n} for k, n in all_legacy],
+        "legacy_skipped_total": sum(n for _, n in all_legacy),
         "failing_keys": {k: [{"key": key, "count": len(rows),
                               "warnings": sum(1 for r in rows.values()
                                               if r["severity"] == "warning")}

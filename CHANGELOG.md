@@ -28,6 +28,9 @@
   the three parts an agent flagged. `fp.courtyard_grid` read 64 and opened 63. Now one function builds
   both. A stored machine answer from before 2026-09-14 is history and does not count. A warning-level
   finding is in the count, and the row says how many are warnings.
+- **Reviews → Library health: "Left over from the retired skipped answer" lists every key.** It showed
+  the 10 keys with the most answers, and its "open answers" chip added up those 10 only (49). Now the
+  list and the chip cover every key.
 
 ## 2026-11-07 (a reopened device keeps its steps on the batch board)
 
