@@ -2417,6 +2417,29 @@ def test_a_choice_needs_only_one_of_its_options_on_the_board(db, world):
     assert (uv["waiting"], uv["still_to_do"]) == (0, 9)
 
 
+def test_a_reopen_takes_no_step_off_the_board(db, world):
+    """Batch 8, 2026-11-07: 175 devices reopened to record a leaflet and
+    finished again dropped out of every earlier step's `done` (624 of 799)."""
+    b1 = world["b1"]
+    d, _tw = _crafted_device(db, world, 141)
+    for k in ("laser", "label"):
+        T.apply_step(db, b1, step_key=k, device_ids=[d.id], chosen="list", stated="test", dry_run=False)
+    for k in ("uvprint", "carton"):
+        T.apply_step(db, b1, step_key=k, device_ids=[d.id], chosen="list", dry_run=False)
+    T.finish(db, b1, device_ids=[d.id], chosen="list", dry_run=False)
+    T.reopen(db, b1, device_ids=[d.id], chosen="list", reason="new label", dry_run=False)
+    before = ("assembly", "receive", "enclose", "program", "laser", "label", "uvprint", "carton")
+    rows = T.board(db, b1)
+    assert {k: _field(rows, k)["done"] for k in before} == {k: 1 for k in before}
+    # Active again: the steps it may redo still wait for it.
+    assert _field(rows, "label")["waiting_named"] == 1
+    T.apply_step(db, b1, step_key="label", device_ids=[d.id], chosen="list", stated="relabelled", dry_run=False)
+    T.finish(db, b1, device_ids=[d.id], chosen="list", dry_run=False)
+    rows = T.board(db, b1)
+    assert {k: _field(rows, k)["done"] for k in (*before, "finish")} == {k: 1 for k in (*before, "finish")}
+    assert all(_field(rows, k)["waiting_named"] == 0 for k in before)
+
+
 def test_check_codes_names_what_each_code_is(db, world):
     (d,) = _crafted_devices(db, world, 71, 1)
     gap = _device(db, world, 72)

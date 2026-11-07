@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-11-07 (a reopened device keeps its steps on the batch board)
+
+- **The batch board counts every step a device ever did.** A device that was reopened and finished
+  again counted only the steps after the reopen. Batch 8 showed 624 of 799 for every step from
+  "Board from JLC" to "Barcode label", while all 799 devices have these steps. The 175 missing devices
+  were reopened on 2026-10-08 and 2026-10-09 to record the instruction leaflet. Now the board shows
+  799. "Waiting" and "still to do" did not change: a reopened device can still take a step again.
+
 ## 2026-11-07 (one way to load a screen)
 
 - **A screen clears an old error when you change a filter, a tab or a row.** Before, some cards kept the

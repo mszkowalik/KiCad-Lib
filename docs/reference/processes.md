@@ -580,6 +580,9 @@ Decision [0103](../decisions/0103-a-job-is-a-section-and-a-batch-is-a-board.md).
 stock of an input the way `check_shortages` does, so the figure on a field is the
 one the click is judged by. A list reuses one stock replay per company.
 
+- **`done` reads the whole history, and `waiting` reads what the unit did since its latest reopen.**
+  A reopen lets a unit take a step again. It undoes no work. When `done` also read from the reopen
+  on, Batch 8 showed 624 of 799 programmed, with all 799 programmed.
 - **The board says how many, and the scan group says which.** Before programming
   a unit has no name, so a field takes N from a stack. After programming a field
   points at the scan group.

@@ -693,9 +693,16 @@ BATCH_OVER = ("completed", "done", "cancelled")
 
 def board(db: Session, run: M.ProductionRun, *, pool: dict | None = None) -> list[dict]:
     """The batch's process as figures, one row per step, route first (decision
-    0103). `done` units have the step, `waiting` active units meet its needs and
-    do not have it, `still_to_do` active units lack it plus the boards not
-    received yet, and `can_go` is `waiting` limited by the stock of its parts.
+    0103). `done` units have the step anywhere in their history, `waiting`
+    active units meet its needs and do not have it, `still_to_do` active units
+    lack it plus the boards not received yet, and `can_go` is `waiting` limited
+    by the stock of its parts.
+
+    A reopen lets a unit take a step again; it undoes no work. So `done` reads
+    the whole history, and only `waiting` and `still_to_do` read what the unit
+    did since its latest reopen. Counting `done` from the reopen on dropped 175
+    reopened-and-finished devices of Batch 8 from every step before the
+    leaflet: Program read 624 of 799 while all 799 were programmed.
 
     `state` is the field's colour: `done`, `blocked` (units wait and stock covers
     none), `short` (a required step whose stock does not cover what is still to
@@ -733,7 +740,7 @@ def board(db: Session, run: M.ProductionRun, *, pool: dict | None = None) -> lis
         n_done = waiting_named = waiting_unnamed = to_do = 0
         for (done, since, is_named, status), n in kinds.items():
             fresh = done if since is None else since
-            if key in fresh:
+            if key in done:
                 n_done += n
             if status != "active":
                 continue
