@@ -13,7 +13,7 @@ import {
   type FinishedStockRow,
 } from "../api";
 import DataTable, { type Column } from "../components/DataTable";
-import FinishedProductsCard from "../components/FinishedProductsCard";
+import FinishedProductsCard, { noBatchWords } from "../components/FinishedProductsCard";
 import FoldSection, { StatChip } from "../components/FoldSection";
 import { ErrorBanner, Spinner } from "../components/Ui";
 import { plnAmount } from "../format";
@@ -102,6 +102,7 @@ const shelfCols: Column<FinishedStockRow>[] = [
     width: 12,
     numeric: true,
     get: (r) => r.unit_cost_pln ?? "",
+    title: () => "the batch's average per-device cost",
     render: (r) =>
       r.unit_cost_pln == null ? <span className="muted">—</span> : <>{plnAmount(r.unit_cost_pln)}</>,
   },
@@ -111,6 +112,8 @@ const shelfCols: Column<FinishedStockRow>[] = [
     width: 12,
     numeric: true,
     get: (r) => r.stock_value_pln ?? "",
+    title: (r) => "each unit at what it cost: a unit with a twin at its twin's price, any other at the batch average"
+      + (r.stock_uncosted ? `. ${r.stock_uncosted} unit(s) are gaps of a crafted batch and have no price` : ""),
     render: (r) =>
       r.devices_in_stock ? <>{plnAmount(r.stock_value_pln, 0)}</> : <span className="muted">—</span>,
   },
@@ -152,9 +155,9 @@ function ShelfByBatchCard({ stock }: { stock: FinishedStock | null }) {
       </p>
       {stock?.totals.no_batch ? (
         <div className="banner-warn">
-          <b>{stock.totals.no_batch} device(s) on the shelf name no batch</b>, so no row
-          below holds them and this card&rsquo;s total is that many short of what we
-          actually have. The card above counts them.
+          <b>{stock.totals.no_batch} device(s) name no batch</b>
+          {" "}({noBatchWords(stock.totals.no_batch_states ?? {})}), so no row below holds them
+          and this card&rsquo;s figures are that many short. The card above counts them.
         </div>
       ) : null}
       {!stock ? (

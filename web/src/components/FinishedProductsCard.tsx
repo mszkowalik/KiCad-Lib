@@ -10,7 +10,10 @@
  *  them were on the real shelf when this was written — the platform reported 93
  *  devices while holding 106. Such a device is stock and is NOT costed, because
  *  per-device cost belongs to a batch, so it is counted in `no_batch` rather
- *  than quietly averaged in.
+ *  than quietly averaged in. `no_batch` counts every state, shipped and missing
+ *  too, so this card and the next one reconcile: 51 CE_Dongle_V2 devices named
+ *  no batch (2026-11-07), and this card read 40 more shipped and 11 more
+ *  missing than the next one with nothing to say why.
  *
  *  A row opens into its CONDITIONS, because "in stock" and "sellable" are not
  *  the same number and the difference is the point: a prototype is present,
@@ -39,6 +42,24 @@ export const CONDITION_WORD: Record<string, string> = {
   unidentified: "unidentified",
   incomplete: "incomplete",
 };
+
+const STATE_WORD: Record<string, string> = {
+  in_stock: "on the shelf",
+  allocated: "reserved",
+  shipped: "shipped",
+  missing: "missing",
+  returned: "returned",
+  disposed: "disposed",
+};
+
+/** "3 on the shelf, 40 shipped, 11 missing" — the devices that name no batch, by state. */
+export function noBatchWords(states: Record<string, number>): string {
+  return Object.entries(states)
+    .filter(([, n]) => n > 0)
+    .sort((a, b) => b[1] - a[1])
+    .map(([state, n]) => `${n.toLocaleString()} ${STATE_WORD[state] ?? (state || "with no state")}`)
+    .join(", ");
+}
 
 const CONDITION_WHY: Record<string, string> = {
   ok: "On the shelf and may ship. This is the only condition a shipment can draw.",
@@ -70,6 +91,10 @@ export default function FinishedProductsCard() {
     available: rows.reduce((n, r) => n + r.available, 0),
     value: rows.reduce((n, r) => n + (r.value_pln ?? 0), 0),
     no_batch: rows.reduce((n, r) => n + r.no_batch, 0),
+    no_batch_states: rows.reduce<Record<string, number>>((acc, r) => {
+      for (const [state, n] of Object.entries(r.no_batch_states ?? {})) acc[state] = (acc[state] ?? 0) + n;
+      return acc;
+    }, {}),
     missing: rows.reduce((n, r) => n + r.missing, 0),
   }), [rows]);
 
@@ -144,9 +169,10 @@ export default function FinishedProductsCard() {
       width: 12,
       numeric: true,
       get: (r) => r.value_pln ?? 0,
-      title: (r) => "what the shelf cost to make, at each batch's own per-device actual"
-        + (r.no_batch
-          ? `. ${r.no_batch} device(s) name no batch, so nothing values them`
+      title: (r) => "what the shelf cost to make: a unit with a twin at its twin's price, any other "
+        + "at its batch's own per-device actual"
+        + (r.uncosted
+          ? `. ${r.uncosted} device(s) on the shelf have no price: no batch, or a gap of a crafted batch`
           : ""),
       render: (r) => <>{plnAmount(r.value_pln ?? 0, 0)}</>,
     },
@@ -171,17 +197,18 @@ export default function FinishedProductsCard() {
       <p className="muted dim">
         Only condition <code>ok</code> may ship, so a faulty or prototype unit is counted
         and visible here and can never leave. Open a row to see why, and click a condition
-        to list those exact serials. The next card shows the same devices cut by batch.
+        to list those exact serials. The next card shows the same devices cut by batch, except
+        the devices that name no batch.
       </p>
       {totals.no_batch ? (
         // A device that names no batch is real stock and nothing values it —
         // and every per-batch figure in the platform is blind to it, which is
         // why it is said here rather than left to be discovered.
         <div className="banner-warn">
-          <b>{totals.no_batch} device(s) on the shelf name no batch.</b> They are counted
-          here and nothing values them, because per-device cost belongs to a batch. They are
-          also invisible to every per-batch figure, including the next card. Link each one to the
-          batch that made it from its own page.
+          <b>{totals.no_batch} device(s) name no batch</b>: {noBatchWords(totals.no_batch_states)}.
+          They are counted here and in no per-batch figure, so the next card is that many short.
+          Those on the shelf have no value, because per-device cost belongs to a batch. Link each
+          one to the batch that made it from its own page.
         </div>
       ) : null}
       {error ? <ErrorBanner message={error} /> : null}

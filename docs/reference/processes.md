@@ -299,7 +299,10 @@ found unit it later scrapped is carried by that batch's good units.
 (`twins.device_costs`), and a scrapped twin's device zero, because its money
 is already in the good units' shares. A gap of a crafted batch is uncosted:
 the batch average would count the batch twice. Every other device keeps its
-batch's average (decision 0043).
+batch's average (decision 0043). The shelf values a unit by the same rule
+(`orders.device_cost_usd`, `orders.shelf_values`). Until 2026-11-07 it valued
+every unit at the batch average, so Batch 8's shelf read 172 x 15.21 = 2,615.92
+USD where its 171 twins carry 2,572.92.
 
 **Origin cost that no twin carries** — a batch with no alive twin of its own,
 because its units came from another batch or all broke — is

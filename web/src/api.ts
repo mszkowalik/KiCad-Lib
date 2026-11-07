@@ -8260,10 +8260,14 @@ export interface FinishedStockRow {
   stock: number;
   /** `stock` minus the units held back */
   available: number;
+  /** the batch's average per-device cost */
   unit_cost_usd?: number | null;
+  /** each unit at what it cost: its twin's price, else the batch average; a gap adds nothing */
   stock_value_usd?: number | null;
   unit_cost_pln?: number | null;
   stock_value_pln?: number | null;
+  /** units on the shelf that nothing prices — a gap of a crafted batch */
+  stock_uncosted?: number;
   pln_per_usd?: number | null;
 }
 
@@ -8273,8 +8277,10 @@ export interface FinishedStock {
     stock: number;
     devices_in_stock: number;
     devices_missing: number;
-    /** devices on the shelf that name NO batch, so no row above holds them */
+    /** devices that name NO batch, in every state, so no row above holds them */
     no_batch: number;
+    no_batch_states: Record<string, number>;
+    stock_uncosted: number;
     stock_value_usd: number | null;
     stock_value_pln: number | null;
   };
@@ -8562,12 +8568,17 @@ export interface ProductStockRow {
   allocated: number;
   /** not found at a stock count (decision 0057): off the shelf, location unknown */
   missing: number;
-  /** at each batch's own per-device actual; an unbatched device adds nothing */
+  /** each shelf device at what it cost: its twin's price, else its batch's
+   *  per-device actual; a gap of a crafted batch and an unbatched device add nothing */
   value_usd: number | null;
   /** At each batch's own rate, so it is summed on the server (decision 0103). */
   value_pln: number | null;
-  /** on the shelf and naming no batch, so no per-batch figure can see them */
+  /** shelf devices nothing prices: no batch, a gap, or a batch with no unit cost */
+  uncosted: number;
+  /** devices naming no batch, in EVERY state, so no per-batch figure can see them */
   no_batch: number;
+  /** the same devices by state: {in_stock: 3, shipped: 40, missing: 11} */
+  no_batch_states: Record<string, number>;
   batches: number;
 }
 

@@ -254,7 +254,8 @@ code, and keep the redirects: saved links depend on them.
   the real shelf on 2026-09-21 — the platform reported 93 devices while
   holding 106. Such a device is stock and is NOT valued (per-device cost
   belongs to a batch), so it is counted in `no_batch` and the card says so in
-  a banner rather than averaging it in.
+  a banner rather than averaging it in. `no_batch` counts EVERY state, so the
+  two cards' shipped and missing figures reconcile too.
   A product row opens into its CONDITIONS, and each links to
   `/projects/:id?tab=Devices&state=in_stock&condition=…` — the exact devices
   the number counted, as serials.

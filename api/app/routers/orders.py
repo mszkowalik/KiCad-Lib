@@ -4,6 +4,8 @@ Decision record 0003. Thin handlers: every rule lives in `services/orders.py`.
 """
 from __future__ import annotations
 
+from collections import defaultdict
+
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.orm import Session
@@ -979,25 +981,48 @@ def finished_products(db: Session = Depends(get_db)):
 @router.get("/finished-stock", openapi_extra={"x-agent-tool": "get_finished_stock"})
 def finished_stock(project_id: int | None = None, db: Session = Depends(get_db)):
     """The shelf per BATCH: built, shipped, in stock and value at cost."""
+    from ..services import twins as _twins
+
     rows = svc.run_stock(db, project_id)
     unit_cost = svc.per_device_cost_usd(db)
+    twin_cost = _twins.device_costs(db)
+    # Each unit at what it cost: its twin's price, nothing for a gap, else the
+    # batch average (`svc.device_cost_usd`). The batch average alone counted a
+    # crafted batch's gap on top of its twins, which carry the whole batch.
+    by_run: dict[int | None, dict] = {}
+    for (_pid, rid), g in svc.shelf_values(db, unit_cost, twin_cost).items():
+        t = by_run.setdefault(rid, {"usd": 0.0, "pln": 0.0, "uncosted": 0, "n": 0})
+        for k in t:
+            t[k] += g[k]
     for r in rows:
-        r["unit_cost_usd"] = svc._round(unit_cost.get(r["run_id"]))
-        r["stock_value_usd"] = svc._round(r["stock"] * unit_cost[r["run_id"]]) if r["run_id"] in unit_cost else None
+        g = by_run.get(r["run_id"]) or {"usd": 0.0, "pln": 0.0, "uncosted": 0, "n": 0}
         rate = svc.batch_pln_rate(db, r["run_id"])
         r["pln_per_usd"] = rate
+        # The batch's average, for the column. The value prices unit by unit.
+        r["unit_cost_usd"] = svc._round(unit_cost.get(r["run_id"]))
         r["unit_cost_pln"] = svc._round(unit_cost[r["run_id"]] * rate) if rate and r["run_id"] in unit_cost else None
-        r["stock_value_pln"] = svc._round(r["stock_value_usd"] * rate) if rate and r["stock_value_usd"] is not None else None
+        # An empty shelf is worth 0 on a priced batch; a shelf nothing prices is None.
+        priced = g["n"] > g["uncosted"] or (g["n"] == 0 and r["run_id"] in unit_cost)
+        r["stock_uncosted"] = g["uncosted"]
+        r["stock_value_usd"] = svc._round(g["usd"]) if priced else None
+        r["stock_value_pln"] = svc._round(g["pln"]) if priced and rate else None
     # `no_batch` is what this endpoint CANNOT see: it counts per batch, so a
     # device naming none is invisible to every row above. Reporting the number
     # here stops the two shelf cards printing different totals with nothing to
-    # explain the difference (93 against 106 on 2026-09-21).
-    no_batch = sum(p["no_batch"] for p in svc.product_stock(db)
-                   if project_id is None or p["project_id"] == project_id)
+    # explain the difference (93 against 106 on 2026-09-21). It counts EVERY
+    # state, so the shipped and the missing reconcile too (51 CE_Dongle_V2
+    # devices, 2026-11-07).
+    no_batch_states: dict[str, int] = defaultdict(int)
+    for p in svc.product_stock(db, unit_cost, twin_cost):
+        if project_id is None or p["project_id"] == project_id:
+            for state, n in p["no_batch_states"].items():
+                no_batch_states[state] += n
     return {"runs": rows,
             "totals": {"stock": sum(r["stock"] for r in rows),
                        "devices_in_stock": sum(r["devices_in_stock"] for r in rows),
                        "devices_missing": sum(r["devices_missing"] for r in rows),
-                       "no_batch": no_batch,
+                       "no_batch": sum(no_batch_states.values()),
+                       "no_batch_states": dict(no_batch_states),
+                       "stock_uncosted": sum(r["stock_uncosted"] for r in rows),
                        "stock_value_usd": svc._round(sum(r["stock_value_usd"] or 0 for r in rows)),
                        "stock_value_pln": svc._round(sum(r["stock_value_pln"] or 0 for r in rows))}}

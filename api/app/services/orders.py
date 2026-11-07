@@ -314,7 +314,63 @@ def batch_pln_rate(db: Session, run_id: int | None) -> float | None:
     return fx.pln_per_usd(db, run_pricing_date(run)) if run is not None else None
 
 
-def product_stock(db: Session) -> list[dict]:
+def crafted_runs(db: Session) -> set[int]:
+    """The batches made through a process (decision 0060): their units carry
+    twins, and a unit with no twin is a gap."""
+    return {rid for (rid,) in db.query(M.ProductionRun.id)
+            .filter(M.ProductionRun.process_version_id.isnot(None)).all()}
+
+
+def device_cost_usd(device_id: int, run_id: int | None, unit_cost: dict[int, float],
+                    twin_cost: dict[int, float], crafted: set[int]) -> float | None:
+    """What ONE device cost, or None when nothing prices it. A device with a
+    twin costs its twin's price (decisions 0059 and 0060). A gap of a crafted
+    batch is uncosted, because its twins already carry the whole batch (0074).
+    Any other device costs its batch's average (0043). A device with no batch,
+    or of a batch with no unit cost, is uncosted. Orders and the shelf both
+    price a device here, so a unit is worth the same on both."""
+    if device_id in twin_cost:
+        return twin_cost[device_id]
+    if run_id is None or run_id in crafted:
+        return None
+    return unit_cost.get(run_id)
+
+
+def shelf_values(db: Session, unit_cost: dict[int, float] | None = None,
+                 twin_cost: dict[int, float] | None = None) -> dict[tuple[int | None, int | None], dict]:
+    """The devices on the shelf (`in_stock`, any condition) at cost, by
+    (project, batch): `{n, usd, pln, uncosted}`. Each device is priced by
+    `device_cost_usd`, in PLN at its own batch's rate (decision 0103).
+
+    The shelf used to value every unit at its batch's AVERAGE. On a crafted
+    batch the twins carry the batch total, so the average counted the batch
+    twice over its gap: Batch 8 read 172 x 15.21 = 2,615.92 USD where its 171
+    twins carry 2,572.92 and the gap carries nothing, and the shipped twins
+    plus the shelf came to more than the batch cost."""
+    from . import twins as _twins
+
+    unit_cost = unit_cost if unit_cost is not None else per_device_cost_usd(db)
+    twin_cost = twin_cost if twin_cost is not None else _twins.device_costs(db)
+    crafted = crafted_runs(db)
+    rates: dict[int | None, float] = {}
+    out: dict[tuple[int | None, int | None], dict] = {}
+    for did, pid, rid in (db.query(M.DeviceUnit.id, M.DeviceUnit.project_id, M.DeviceUnit.production_run_id)
+                          .filter(M.DeviceUnit.state == "in_stock").all()):
+        g = out.setdefault((pid, rid), {"n": 0, "usd": 0.0, "pln": 0.0, "uncosted": 0})
+        g["n"] += 1
+        cost = device_cost_usd(did, rid, unit_cost, twin_cost, crafted)
+        if cost is None:
+            g["uncosted"] += 1
+            continue
+        if rid not in rates:
+            rates[rid] = batch_pln_rate(db, rid) or 0.0
+        g["usd"] += cost
+        g["pln"] += cost * rates[rid]
+    return out
+
+
+def product_stock(db: Session, unit_cost: dict[int, float] | None = None,
+                  twin_cost: dict[int, float] | None = None) -> list[dict]:
     """The shelf per PRODUCT, counted from the DEVICE RECORDS.
 
     `run_stock` counts per BATCH, which means it can only see a device that
@@ -326,13 +382,18 @@ def product_stock(db: Session) -> list[dict]:
 
     A device on the shelf is stock whether or not anybody recorded which batch
     made it. What it is NOT is costed: per-device cost belongs to a batch, so an
-    unbatched unit contributes nothing to `value_usd` and is counted in
-    `no_batch` instead of being quietly averaged in.
+    unbatched unit contributes nothing to `value_usd`.
+
+    `no_batch` counts the devices that name no batch in EVERY state, with
+    `no_batch_states` saying which. It counted the shelf only, so 51 CE_Dongle_V2
+    devices with no batch (40 shipped, 11 missing) made this card read 5,130
+    shipped and 15 missing against 5,090 and 4 on the per-batch card, and both
+    said "no batch: 0". `uncosted` counts the shelf devices nothing prices.
     """
     from sqlalchemy import func
 
     projects = {p.id: p.name for p in db.query(M.Project).all()}
-    unit_cost = per_device_cost_usd(db)
+    values = shelf_values(db, unit_cost, twin_cost)
 
     rows = (db.query(M.DeviceUnit.project_id, M.DeviceUnit.state,
                      M.DeviceUnit.condition, M.DeviceUnit.production_run_id,
@@ -347,22 +408,21 @@ def product_stock(db: Session) -> list[dict]:
         p = out.setdefault(pid, {
             "project_id": pid, "project": projects.get(pid, "?"),
             "in_stock": 0, "available": 0, "held": {}, "shipped": 0,
-            "allocated": 0, "missing": 0, "value_usd": 0.0, "value_pln": 0.0, "no_batch": 0, "batches": set(),
+            "allocated": 0, "missing": 0, "value_usd": 0.0, "value_pln": 0.0, "uncosted": 0,
+            "no_batch": 0, "no_batch_states": {}, "batches": set(),
         })
         cond = cond or "ok"
         if run_id is not None:
             p["batches"].add(run_id)
+        else:
+            p["no_batch"] += n
+            p["no_batch_states"][state or ""] = p["no_batch_states"].get(state or "", 0) + n
         if state == "in_stock":
             p["in_stock"] += n
             if cond == "ok":
                 p["available"] += n
             else:
                 p["held"][cond] = p["held"].get(cond, 0) + n
-            if run_id is None:
-                p["no_batch"] += n
-            elif run_id in unit_cost:
-                p["value_usd"] += n * unit_cost[run_id]
-                p["value_pln"] += n * unit_cost[run_id] * (batch_pln_rate(db, run_id) or 0.0)
         elif state == "shipped":
             p["shipped"] += n
         elif state == "allocated":
@@ -375,6 +435,11 @@ def product_stock(db: Session) -> list[dict]:
         if pid in out:
             out[pid]["available"] -= n
             out[pid]["held"][why] = out[pid]["held"].get(why, 0) + n
+    for (pid, _rid), g in values.items():
+        if pid in out:
+            out[pid]["value_usd"] += g["usd"]
+            out[pid]["value_pln"] += g["pln"]
+            out[pid]["uncosted"] += g["uncosted"]
     result = []
     for p in out.values():
         p["batches"] = len(p["batches"])
@@ -393,8 +458,7 @@ def _twin_holds(db: Session, rids: list[int] | None = None) -> list[tuple[int, i
     """(project, run, reason, n) for in-stock `ok` units held by their twin."""
     from sqlalchemy import func
 
-    crafted = {rid for (rid,) in db.query(M.ProductionRun.id)
-               .filter(M.ProductionRun.process_version_id.isnot(None)).all()}
+    crafted = crafted_runs(db)
     q = (db.query(M.DeviceUnit.project_id, M.DeviceUnit.production_run_id, M.Unit.status,
                   func.count(M.DeviceUnit.id))
          .outerjoin(M.Unit, M.Unit.device_unit_id == M.DeviceUnit.id)
@@ -1199,24 +1263,18 @@ def order_economics(db: Session, order: M.SalesOrder, unit_cost: dict[int, float
     evs = [(e, units[e.device_id]) for e in live if e.device_id in units]
     # A gap of a crafted batch has no price of its own, and the batch average
     # would count the batch twice: its twins carry the whole total (0074).
-    crafted = {rid for (rid,) in db.query(M.ProductionRun.id).filter(
-        M.ProductionRun.id.in_({d.production_run_id for _e, d in evs if d.production_run_id} or {-1}),
-        M.ProductionRun.process_version_id.isnot(None)).all()}
+    crafted = crafted_runs(db)
     for ev, d in evs:
         shipped_devices += 1
         if ev.replaces_device_id is not None:
             replacements += 1
+        cost = device_cost_usd(d.id, d.production_run_id, unit_cost, twin_cost or {}, crafted)
+        if cost is None:
+            uncosted += 1
+            continue
         rate = batch_pln_rate(db, d.production_run_id) or 0.0
-        if twin_cost and d.id in twin_cost:
-            devices_cost += twin_cost[d.id]
-            devices_cost_pln += twin_cost[d.id] * rate
-        elif d.production_run_id in crafted:
-            uncosted += 1
-        elif d.production_run_id in unit_cost:
-            devices_cost += unit_cost[d.production_run_id]
-            devices_cost_pln += unit_cost[d.production_run_id] * rate
-        else:
-            uncosted += 1
+        devices_cost += cost
+        devices_cost_pln += cost * rate
     repair_usd = 0.0
     repair_pln = 0.0
     repair_ids = [e.device_id for e, _ in evs]

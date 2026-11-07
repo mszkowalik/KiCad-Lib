@@ -7,6 +7,14 @@
   250 units against the cost of the 120 shipped. The 120 earn 26,400 PLN, so the margin is 73.6 %. Orders
   1573 and 18 read 100 % with nothing shipped. They now show no margin. The card also shows the order's
   whole revenue and what is still to ship.
+- **The shelf values a unit as an order does.** A unit with a twin is worth its twin's price, and a gap
+  of a crafted batch is worth nothing. Every unit was at its batch's average, so Batch 8's shelf read
+  172 x 15.21 = 2,615.92 USD. Its 171 twins carry 2,572.92, and with the shipped twins that is the batch
+  cost, 12,167.05.
+- **Both shelf cards count the devices that name no batch in every state.** Only the ones on the shelf
+  were counted. 51 CE_Dongle_V2 devices name no batch: 40 shipped and 11 missing. The product card read
+  5,130 shipped and 15 missing, the per-batch card 5,090 and 4, and both said "no batch: 0". Both cards
+  now say 51 and by state.
 
 ## 2026-11-07 (figures on the production screens)
 
