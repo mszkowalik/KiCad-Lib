@@ -1,7 +1,7 @@
 # Add Component — platform procedure
 
-How to add a new component to the 7Sigma library (web UI or Jaravis). Written for the
-platform: no shell, no scripts — everything happens through the web app and Jaravis tools.
+How to add a new component to the 7Sigma library (web UI or an agent over MCP). Written for
+the platform: no shell, no scripts — everything happens through the web app and the agent tools.
 
 ## Inputs
 Preferred: an LCSC part number (Cxxxxx). Otherwise: manufacturer part number + datasheet.
