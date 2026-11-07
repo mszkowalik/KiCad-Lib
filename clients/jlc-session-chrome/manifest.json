@@ -1,0 +1,18 @@
+{
+  "manifest_version": 3,
+  "name": "Henry JLCPCB session",
+  "version": "1.0.0",
+  "description": "Sends the JLCPCB login of this browser to Henry, and asks for a login when Henry's session dies.",
+  "permissions": ["alarms", "cookies", "notifications", "storage"],
+  "host_permissions": [
+    "https://jlcpcb.com/*",
+    "https://*.jlcpcb.com/*",
+    "https://henry.disfunction.cc/*",
+    "http://localhost/*",
+    "http://127.0.0.1/*"
+  ],
+  "background": { "service_worker": "background.js" },
+  "action": { "default_title": "Henry JLCPCB session" },
+  "options_ui": { "page": "options.html", "open_in_tab": true },
+  "icons": { "128": "icon.png" }
+}

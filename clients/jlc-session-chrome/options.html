@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="color-scheme" content="light dark">
+  <title>Henry JLCPCB session</title>
+  <style>
+    body { font: 14px system-ui, sans-serif; max-width: 520px; margin: 32px auto; padding: 0 16px; }
+    label { display: block; margin: 12px 0 4px; }
+    input { width: 100%; box-sizing: border-box; padding: 6px 8px; font: inherit; }
+    button { margin: 16px 8px 0 0; padding: 6px 12px; font: inherit; }
+    #status { margin-top: 20px; white-space: pre-wrap; }
+  </style>
+</head>
+<body>
+  <h1>Henry JLCPCB session</h1>
+  <label for="henryUrl">Henry address</label>
+  <input id="henryUrl" type="url" placeholder="https://henry.disfunction.cc">
+  <label for="token">Your Henry API token (Account page)</label>
+  <input id="token" type="password" autocomplete="off">
+  <button id="save">Save</button>
+  <button id="sync">Sync now</button>
+  <div id="status"></div>
+  <script src="options.js"></script>
+</body>
+</html>
