@@ -700,7 +700,8 @@ def board(db: Session, run: M.ProductionRun, *, pool: dict | None = None) -> lis
 
     A reopen lets a unit take a step again; it undoes no work. So `done` reads
     the whole history, and only `waiting` and `still_to_do` read what the unit
-    did since its latest reopen. Counting `done` from the reopen on dropped 175
+    did since its latest reopen. Finish is the exception: it is a state, and a
+    reopened unit is not finished, so Finish's `done` reads since the reopen. Counting `done` from the reopen on dropped 175
     reopened-and-finished devices of Batch 8 from every step before the
     leaflet: Program read 624 of 799 while all 799 were programmed.
 
@@ -740,7 +741,9 @@ def board(db: Session, run: M.ProductionRun, *, pool: dict | None = None) -> lis
         n_done = waiting_named = waiting_unnamed = to_do = 0
         for (done, since, is_named, status), n in kinds.items():
             fresh = done if since is None else since
-            if key in done:
+            # Finish is a state, not work: a reopened unit is not finished
+            # again until it takes Finish again.
+            if key in (fresh if kind == "finish" else done):
                 n_done += n
             if status != "active":
                 continue

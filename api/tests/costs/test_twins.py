@@ -2431,8 +2431,10 @@ def test_a_reopen_takes_no_step_off_the_board(db, world):
     before = ("assembly", "receive", "enclose", "program", "laser", "label", "uvprint", "carton")
     rows = T.board(db, b1)
     assert {k: _field(rows, k)["done"] for k in before} == {k: 1 for k in before}
-    # Active again: the steps it may redo still wait for it.
+    # Active again: the steps it may redo still wait for it, and it is not finished.
     assert _field(rows, "label")["waiting_named"] == 1
+    fin = _field(rows, "finish")
+    assert (fin["done"], fin["waiting_named"]) == (0, 1)
     T.apply_step(db, b1, step_key="label", device_ids=[d.id], chosen="list", stated="relabelled", dry_run=False)
     T.finish(db, b1, device_ids=[d.id], chosen="list", dry_run=False)
     rows = T.board(db, b1)

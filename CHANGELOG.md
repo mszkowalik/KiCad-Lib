@@ -7,6 +7,7 @@
   "Board from JLC" to "Barcode label", while all 799 devices have these steps. The 175 missing devices
   were reopened on 2026-10-08 and 2026-10-09 to record the instruction leaflet. Now the board shows
   799. "Waiting" and "still to do" did not change: a reopened device can still take a step again.
+  "Finished" still counts a reopened device only after it is finished again.
 
 ## 2026-11-07 (one way to load a screen)
 
