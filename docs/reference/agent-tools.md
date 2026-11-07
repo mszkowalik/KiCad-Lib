@@ -5,11 +5,17 @@ The capability policy that governs what an agent may do is in
 platform runs no agent of its own (decision 0062): every agent reaches these
 tools over MCP.
 
-- **Every route without a tool is reached through `api_routes` and
-  `api_request`**, two local tools in the MCP server (decision 0088). They
-  are not in `TOOLS` and are not counted by `GET /api/agent/tools`. A route
-  that agents call often deserves a tool here instead: typed arguments and a
-  description that states its rules cost less context than the raw API.
+- **A route that agents call often gets a tag, not a tool** (decision
+  [0106](../decisions/0106-a-tagged-route-is-an-agent-tool.md)):
+  `openapi_extra={"x-agent-tool": "get_parts_stock"}`. `services/agent_routes.py`
+  takes the name, the docstring and the arguments from the OpenAPI document, and
+  `routers/agent.py` calls the route through the whole app with the caller's
+  credentials. The docstring is the tool's description, so write it for an agent.
+  Write a tool here only when the answer must be shaped, or the part is named by
+  something the route does not take.
+- **Every other route is reached through `api_routes` and `api_request`**, two local
+  tools in the MCP server (decision 0088). They are not in `TOOLS` and are not
+  counted by `GET /api/agent/tools`.
 - **Production tools** (decision 0088): `get_batch`, `batch_step`,
   `batch_units`, `set_bench_stack`, `get_process`, `edit_process`,
   `move_batch_process`, `list_shipments`, `get_shipment`, `shipment_devices`,

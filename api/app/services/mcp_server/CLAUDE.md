@@ -47,7 +47,7 @@ reaches an agent only after the prompt downloads it again.
   stock, projects, snapshots, BOMs, production runs, notes, audit log. When a
   new table/service lands, add a matching read tool; withholding data
   from it is a bug, not a safety feature. An agent reads as its token's user:
-  the audit log needs an admin's token, as Admin → Activity does (decisions
+  the audit log needs an admin's token, as History → Everyone does (decisions
   0050, 0065).
 - **An agent may view AND edit symbols, footprints and components — and its
   writes AUTO-PUBLISH** (user design 2026-08-23, superseding the draft gate).
@@ -77,8 +77,8 @@ reaches an agent only after the prompt downloads it again.
 
 ## The HTTP surface and the MCP server
 
-One tool set (`services/agent_tools.py::TOOLS`; `GET /api/agent/tools` is the
-live count), reached one way: `routers/agent.py` exposes it over HTTP and the
+One tool set (`services/agent_tools.py::TOOLS` and the routes tagged `x-agent-tool`,
+decision 0106; `GET /api/agent/tools` is the live count), reached one way: `routers/agent.py` exposes it over HTTP and the
 MCP server drives it under the agent's own subscription. Do not bring back an
 in-platform agent loop — decision 0062 records why.
 
@@ -128,7 +128,7 @@ converted to MCP image content; every other tool returns a JSON string as text.
   token this server holds, so the platform's own gate decides what an agent may
   do. Do not add a permission check here — a second permission model would
   drift from the gate. A DELETE needs `confirm`. When agents use one route
-  often, give it a dedicated catalog tool; the general pair is the fallback.
+  often, tag it (`docs/reference/agent-tools.md`); the general pair is the fallback.
 
 **Configuration:** the Account page's prompt registers the downloaded copy at
 user scope with the PUBLIC `KICAD_API_URL`, so the server works away from the

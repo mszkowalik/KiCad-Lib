@@ -1,7 +1,8 @@
 """Agent tool surface — the HTTP entry point the external MCP server (Claude
 Code) drives.
 
-Every capability an agent has is a callable in ``services/agent_tools.py::TOOLS``.
+Every capability an agent has is a callable in ``services/agent_tools.py::TOOLS``
+or a route tagged ``x-agent-tool`` (``services/agent_routes.py``, decision 0106).
 The platform runs no agent of its own (decision 0062). This router does NOT
 reimplement any of them — it dispatches by name:
 
@@ -20,12 +21,13 @@ the legacy shared ``mcp_token`` and the auth-disabled dev posture.
 import json
 from pathlib import Path
 
+import httpx
 from fastapi import APIRouter, Header, HTTPException, Request
 from fastapi.responses import Response
 from starlette.concurrency import run_in_threadpool
 
 from ..config import settings
-from ..services import agent_tools
+from ..services import agent_routes, agent_tools
 from .util import content_disposition
 
 router = APIRouter(prefix="/api/agent")
@@ -33,6 +35,48 @@ router = APIRouter(prefix="/api/agent")
 # name -> BetaFunctionTool. The object is callable and also carries
 # .name / .description / .input_schema / .to_dict() / .func (the raw function).
 _TOOLS = {t.name: t for t in agent_tools.TOOLS}
+
+
+def _route_tools(request: Request) -> dict[str, agent_routes.RouteTool]:
+    """The tagged routes as tools. `app.openapi()` caches the document, and this
+    caches what it reads from it. A name that collides with a written tool is a
+    bug, and `tests/auth/test_agent_route_tools.py` fails on it before a deploy."""
+    app = request.app
+    tools = getattr(app.state, "agent_route_tools", None)
+    if tools is None:
+        tools = agent_routes.build(app.openapi())
+        app.state.agent_route_tools = tools
+    return tools
+
+
+async def _call_route_tool(request: Request, tool: agent_routes.RouteTool, args: dict) -> dict:
+    """Call the route through the whole app with the caller's own credentials and
+    client header. The real gate runs, with the real path, so nothing about
+    identity, role or company has to be reproduced here."""
+    try:
+        url, query, body, limit = agent_routes.split(tool, args)
+    except (TypeError, ValueError) as e:
+        raise HTTPException(status_code=400, detail=f"bad arguments for {tool.name!r}: {e}") from e
+    headers = {k: v for k, v in request.headers.items()
+               if k in ("authorization", "cookie") or k.startswith("x-")}
+    transport = httpx.ASGITransport(app=request.app, raise_app_exceptions=False)
+    async with httpx.AsyncClient(transport=transport, base_url="http://agent-tool", timeout=300.0) as client:
+        r = await client.request(tool.method, url, params=query or None, json=body, headers=headers)
+    if r.status_code >= 400:
+        try:
+            detail = r.json().get("detail", r.text)
+        except (ValueError, AttributeError):
+            detail = r.text
+        return {"result": json.dumps({"error": detail, "status": r.status_code}), "is_error": True}
+    ctype = r.headers.get("content-type", "")
+    if "json" not in ctype and not ctype.startswith("text/") and r.content:
+        return {"result": json.dumps({"error": f"{ctype}, {len(r.content)} bytes. Use api_request with save_to."}),
+                "is_error": True}
+    text = r.text
+    if len(text) > limit:
+        text = (f"{text[:limit]}\n… cut at {limit} of {len(text)} characters. Narrow the request "
+                "with an argument, or raise max_chars.")
+    return {"result": text}
 
 
 def _require_auth(request: Request, authorization: str | None) -> None:
@@ -74,7 +118,7 @@ def list_tools(request: Request, authorization: str | None = Header(default=None
     """Catalog of every library tool: {name, description, input_schema}. The MCP
     server calls this once to generate its own tool list."""
     _require_auth(request, authorization)
-    return [t.to_dict() for t in agent_tools.TOOLS]
+    return [t.to_dict() for t in agent_tools.TOOLS] + [t.to_dict() for t in _route_tools(request).values()]
 
 
 @router.post("/tools/{name}")
@@ -91,7 +135,8 @@ async def call_tool(
     normally sees tool failures."""
     _require_auth(request, authorization)
     tool = _TOOLS.get(name)
-    if tool is None:
+    route_tool = None if tool is not None else _route_tools(request).get(name)
+    if tool is None and route_tool is None:
         raise HTTPException(status_code=404, detail=f"unknown tool {name!r}")
 
     raw = await request.body()
@@ -108,6 +153,8 @@ async def call_tool(
             raise HTTPException(status_code=400, detail=f"body must be JSON: {e}") from e
     if not isinstance(args, dict):
         raise HTTPException(status_code=400, detail="body must be a JSON object of arguments")
+    if tool is None:
+        return await _call_route_tool(request, route_tool, args)
 
     try:
         # Tools are synchronous and block on the DB / network — run them off the
