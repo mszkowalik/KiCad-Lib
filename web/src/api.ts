@@ -6626,8 +6626,10 @@ export interface ReviewHealth {
    *  record, which now read as unanswered and are real open work. */
   legacy_skipped_items: { key: string; count: number }[];
   /** Machine failures + flags grouped by checklist key — the work plan view:
-   *  one systemic fix clears a whole row. */
-  failing_keys: Record<ReviewKind, { key: string; count: number }[]>;
+   *  one systemic fix clears a whole row. `count` is the length of the list
+   *  `getFailingSubjects` returns for the key (one function builds both), and
+   *  `warnings` is how many of them are warning-level only. */
+  failing_keys: Record<ReviewKind, { key: string; count: number; warnings: number }[]>;
   /** The second-pass worklist: every flagged item on a current version. */
   flagged: {
     kind: ReviewKind;

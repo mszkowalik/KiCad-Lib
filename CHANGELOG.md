@@ -23,6 +23,11 @@
   three count the parts whose review is not complete, 320 today, and the filter is called "waits for a
   review". The chip "used, not signed" now opens exactly the parts it counts, whatever their review
   state.
+- **Reviews → Library health: a failing count is the length of the list it opens.** The count and the
+  list used two different rules. `cmp.required_props` read 13 and opened 10, because the list left out
+  the three parts an agent flagged. `fp.courtyard_grid` read 64 and opened 63. Now one function builds
+  both. A stored machine answer from before 2026-09-14 is history and does not count. A warning-level
+  finding is in the count, and the row says how many are warnings.
 
 ## 2026-11-07 (a reopened device keeps its steps on the batch board)
 

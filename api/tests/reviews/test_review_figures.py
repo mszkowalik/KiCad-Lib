@@ -129,3 +129,55 @@ def test_the_agent_lists_leave_out_a_component_with_no_version(db, versionless):
     assert versionless.name not in {i["component"] for i in reviews_out["items"]}
     assert sum(reviews_out["counts"].values()) == published
     assert sum(signoffs_out["counts"].values()) == published
+
+
+# ------------------------------------------------------------ finding 6
+@pytest.fixture
+def symbol_with_findings(db):
+    """One symbol with a finding in every place the rules have to decide on."""
+    tag = uuid.uuid4().hex[:8]
+    sym = M.Symbol(name=f"TEST-FINDINGS-{tag}")
+    db.add(sym)
+    db.flush()
+    ver = M.SymbolVersion(symbol_id=sym.id, version_no=1, source_text="(symbol)")
+    db.add(ver)
+    db.flush()
+    sym.current_version_id = ver.id
+    k = {n: f"test.{tag}.{n}" for n in ("machine", "warn", "history", "flag", "both", "excused")}
+    db.add(M.Conformance(subject_kind="symbol", subject_version_id=ver.id, digest="test", items=[
+        {"key": k["machine"], "result": "failed", "severity": "error"},
+        {"key": k["warn"], "result": "failed", "severity": "warning"},
+        {"key": k["both"], "result": "failed", "severity": "error"},
+    ], excused=[{"key": k["excused"], "reason": "waived"}]))
+    db.add(M.ReviewRecord(subject_kind="symbol", subject_id=sym.id, subject_version_id=ver.id,
+                          actor_type="agent", created_by="test", items=[
+        # a machine answer stored before decision 0017: history, not a finding
+        {"key": k["history"], "result": "failed", "actor_type": "machine"},
+        {"key": k["flag"], "result": "flagged", "actor_type": "agent", "note": "wrong"},
+        {"key": k["both"], "result": "flagged", "actor_type": "agent", "note": "also"},
+        {"key": k["excused"], "result": "flagged", "actor_type": "agent", "note": "waived"},
+    ]))
+    db.commit()
+    return sym, k
+
+
+def test_each_failing_count_is_the_length_of_the_list_it_opens(db, symbol_with_findings):
+    sym, k = symbol_with_findings
+    counts = {f["key"]: f["count"] for f in reviews.review_health(db=db)["failing_keys"]["symbol"]}
+
+    for key in k.values():
+        listed = reviews.failing_subjects("symbol", key, db=db)["subjects"]
+        assert counts.get(key, 0) == len(listed), key
+        assert len([s for s in listed if s["id"] == sym.id]) <= 1, f"{key}: a subject is listed twice"
+
+
+def test_a_finding_is_what_the_state_counts(db, symbol_with_findings):
+    sym, k = symbol_with_findings
+    found = {key for key, rows in reviews.review_svc.failing_by_key(db, "symbol").items()
+             if sym.id in rows}
+
+    assert found == {k["machine"], k["warn"], k["flag"], k["both"]}
+    assert k["history"] not in found, "a stored machine answer is history (decision 0017)"
+    assert k["excused"] not in found, "an excused key is not a finding"
+    counts = {f["key"]: f for f in reviews.review_health(db=db)["failing_keys"]["symbol"]}
+    assert counts[k["warn"]]["warnings"] == 1

@@ -538,6 +538,74 @@ def states_for_components(db: Session, comps: list[M.Component],
     return out
 
 
+_FINDING_PARENT = {"component": M.Component, "symbol": M.Symbol, "footprint": M.Footprint}
+
+
+def failing_by_key(db: Session, kind: str) -> dict[str, dict[int, dict]]:
+    """Every finding on a CURRENT version of one subject kind, by checklist key.
+
+    Returns `{key: {subject_id: row}}`, one row per subject, with `severity`.
+    The health panel's per-key count is the length of a key's dict, and
+    `GET /reviews/failing/{kind}/{key}` lists that same dict, so the number
+    and the list it opens cannot disagree. Until 2026-11-07 they were two
+    loops with two rules, and on production `cmp.required_props` read 13
+    against a list of 10.
+
+    The rules are the ones `state_from_record` applies:
+
+    - a machine finding is a `failed` item in the conformance cache, at any
+      severity. A warning-level one is still a broken rule, so it is listed
+      and the row says `severity: warning`;
+    - a judgment finding is a `failed` or `flagged` answer on the effective
+      record, written by an agent or a person. A MACHINE answer stored in a
+      record is history (decision 0017): counting it reported failures the
+      code no longer finds;
+    - a key a standing exception excuses on that version is not a finding.
+
+    Read from the cache, never re-evaluated: a cold row is simply absent.
+    """
+    model = _FINDING_PARENT[kind]
+    parents = {p.current_version_id: p for p in
+               db.query(model).filter(model.current_version_id.isnot(None))}
+    out: dict[str, dict[int, dict]] = {}
+    if not parents:
+        return out
+
+    def _add(key: str, parent, item: dict, severity: str) -> None:
+        out.setdefault(key, {}).setdefault(parent.id, {
+            "id": parent.id, "name": getattr(parent, "name", ""), "kind": kind,
+            "note": item.get("note"), "severity": severity,
+            "text": item.get("text", key), "variant": item.get("variant"),
+        })
+
+    excused: dict[int, set[str]] = {}
+    for row in db.query(M.Conformance).filter(
+            M.Conformance.subject_kind == kind,
+            M.Conformance.subject_version_id.in_(parents)):
+        parent = parents[row.subject_version_id]
+        excused[row.subject_version_id] = {i.get("key") for i in row.excused or []}
+        for item in row.items or []:
+            if item.get("result") == "failed":
+                _add(item.get("key", "?"), parent, item, item.get("severity", "error"))
+
+    by_parent: dict[int, list[M.ReviewRecord]] = {}
+    for r in (db.query(M.ReviewRecord)
+              .filter(M.ReviewRecord.subject_kind == kind,
+                      M.ReviewRecord.subject_id.in_([p.id for p in parents.values()]))
+              .order_by(M.ReviewRecord.id)):
+        by_parent.setdefault(r.subject_id, []).append(r)
+    for vid, parent in parents.items():
+        rec = effective_record(by_parent.get(parent.id, []), vid)
+        for item in (rec.items if rec is not None else None) or []:
+            key = item.get("key", "?")
+            if (item.get("actor_type") == "machine"
+                    or item.get("result") not in ("failed", "flagged")
+                    or key in excused.get(vid, set())):
+                continue
+            _add(key, parent, item, item.get("severity", "error"))
+    return out
+
+
 # ----------------------------------------------------------------- writing
 def _category_of(db: Session, kind: str, parent) -> int | None:
     if kind != "component":

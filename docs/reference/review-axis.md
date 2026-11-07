@@ -124,6 +124,15 @@ review axis records who verified each version against its documentation.
     `failing_keys` (machine failures + flags grouped by checklist key — the
     work-plan view), `na_reasons` and `legacy_skipped_items`, all counted over
     EFFECTIVE records only, so the numbers cannot drift from the queue.
+    **A failing count and the list it opens are one function,
+    `review.failing_by_key`** (2026-11-07). They were two loops with two rules:
+    the count took conformance errors and every stored record answer, the list
+    took conformance at any severity and read records only when conformance had
+    nothing, so `cmp.required_props` read 13 and opened 10. The rule now is the
+    one `state_from_record` uses: a conformance `failed` at any severity
+    (`warnings` says how many are warning-level), plus a `failed` or `flagged`
+    answer by an agent or a person, minus an excused key. A machine answer
+    stored in a record is history and never counts.
   - **A one-click confirmation stores `items=None`, and the card must not read
     its answers off it.** That sentinel is what makes `state_from_record`
     return a full check without measuring completeness, so it cannot be

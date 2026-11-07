@@ -884,10 +884,13 @@ function FailingKey({
   kind,
   itemKey,
   count,
+  warnings,
 }: {
   kind: ReviewKind;
   itemKey: string;
+  /** The length of the list this key opens: the server builds both from one function. */
   count: number;
+  warnings: number;
 }) {
   const [open, setOpen] = useState(false);
   const { data: rows, error } = useLoad(
@@ -908,7 +911,10 @@ function FailingKey({
           {open ? "▾" : "▸"} {itemKey}
         </button>
       </dt>
-      <dd className="num">{count}</dd>
+      <dd className="num" title={warnings ? `${warnings} of them warning only` : undefined}>
+        {count}
+        {warnings ? <span className="muted"> ({warnings} warning)</span> : null}
+      </dd>
       {open ? (
         <dd className="kv-span">
           {error ? <ErrorBanner message={error} /> : null}
@@ -964,7 +970,7 @@ function HealthTab({ health }: { health: ReviewHealth }) {
             </p>
             <dl className="kv">
               {health.failing_keys[kind].map((f) => (
-                <FailingKey key={f.key} kind={kind} itemKey={f.key} count={f.count} />
+                <FailingKey key={f.key} kind={kind} itemKey={f.key} count={f.count} warnings={f.warnings ?? 0} />
               ))}
             </dl>
           </FoldSection>

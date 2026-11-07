@@ -274,44 +274,15 @@ def failing_subjects(kind: str, key: str, db: Session = Depends(get_db)):
     number opens.
 
     Read from the conformance CACHE, never re-evaluated: 212 footprints at 20 ms
-    each is four seconds for a list. A cold row is simply absent, which is the
-    same thing the health count does.
+    each is four seconds for a list. A cold row is simply absent.
+
+    **The health count is the length of this list.** Both read
+    `review.failing_by_key`, which holds the one rule for what a finding is.
     """
     if kind not in _PARENT:
         raise HTTPException(422, "kind must be component, symbol or footprint")
-    model = _PARENT[kind]
-    parents = {p.current_version_id: p for p in
-               db.query(model).filter(model.current_version_id.isnot(None))}
-    rows = (db.query(M.Conformance)
-            .filter(M.Conformance.subject_kind == kind,
-                    M.Conformance.subject_version_id.in_(parents))
-            if parents else [])
-    out = []
-    for row in rows:
-        parent = parents.get(row.subject_version_id)
-        if parent is None:
-            continue
-        for item in row.items or []:
-            if item.get("key") != key or item.get("result") != "failed":
-                continue
-            out.append({"id": parent.id, "name": getattr(parent, "name", ""),
-                        "kind": kind, "note": item.get("note"),
-                        "severity": item.get("severity", "error"),
-                        "text": item.get("text", key),
-                        "variant": item.get("variant")})
-    # Flagged JUDGMENT answers live in records, not in conformance, so a
-    # judgment key would otherwise report nothing at all.
-    if not out:
-        for parent in parents.values():
-            rec = review_svc.effective_record(
-                review_svc.records_for(db, kind, parent.id), parent.current_version_id)
-            for item in (rec.items if rec is not None else None) or []:
-                if item.get("key") == key and item.get("result") in ("failed", "flagged"):
-                    out.append({"id": parent.id, "name": getattr(parent, "name", ""),
-                                "kind": kind, "note": item.get("note"),
-                                "severity": item.get("severity", "error"),
-                                "text": item.get("text", key), "variant": None})
-    out.sort(key=lambda r: r["name"])
+    out = sorted(review_svc.failing_by_key(db, kind).get(key, {}).values(),
+                 key=lambda r: r["name"])
     return {"kind": kind, "key": key, "subjects": out}
 
 
@@ -1561,17 +1532,6 @@ def review_health(db: Session = Depends(get_db)):
     na_counts: dict[str, int] = {}
     na_reasons: dict[str, int] = {}
     legacy_skipped: dict[str, int] = {}
-    # SUBJECT IDS per key, not a running count. One subject can carry the same
-    # finding twice — an agent's `flagged` in its record AND the machine's
-    # `failed` in conformance — and adding the two reported `cmp.datasheet_text`
-    # on 47 components when 27 actually carry it (measured 2026-09-14). A set
-    # cannot double-count, and the number is the size of the work.
-    fail_ids: dict[str, dict[str, set[int]]] = {"component": {}, "symbol": {},
-                                                "footprint": {}}
-
-    def _failing(kind: str, key: str, subject_id: int) -> None:
-        fail_ids[kind].setdefault(key, set()).add(subject_id)
-
     version_owner: dict[str, dict[int, int]] = {}
     for kind, model in (("component", M.Component), ("symbol", M.Symbol),
                         ("footprint", M.Footprint)):
@@ -1598,25 +1558,14 @@ def review_health(db: Session = Depends(get_db)):
                     na_reasons[reason] = na_reasons.get(reason, 0) + 1
                 elif res == "skipped":
                     legacy_skipped[key] = legacy_skipped.get(key, 0) + 1
-                elif res in ("failed", "flagged"):
-                    _failing(kind, key, pid)
 
-    # Machine failures come from CONFORMANCE, not from records. They stopped
-    # being written on 2026-09-14 (decision 0017), so counting records alone
-    # would report the failures of a library that no longer exists and miss
-    # every one found since. The cache is read as-is: this is a dashboard, and
-    # a warm row is a better number than a nine-second page.
-    #
     # `version_owner` keeps this to CURRENT versions. `Conformance` holds a row
-    # for every version it has ever evaluated, so an unfiltered sweep counts a
-    # defect once per historical version too.
+    # for every version it has ever evaluated, so an unfiltered sweep counts an
+    # exception once per historical version too.
     for row in db.query(M.Conformance):
         owner = version_owner.get(row.subject_kind, {}).get(row.subject_version_id)
         if owner is None:
             continue
-        for item in row.items or []:
-            if item.get("result") == "failed" and item.get("severity", "error") != "warning":
-                _failing(row.subject_kind, item.get("key", "?"), owner)
         # A standing exception is where "does not apply" lives now, so it is
         # where the na numbers have to be read from. An `na` in a record is a
         # row written before the change.
@@ -1625,8 +1574,16 @@ def review_health(db: Session = Depends(get_db)):
             na_counts[k] = na_counts.get(k, 0) + 1
             r = item.get("reason") or "unstated"
             na_reasons[r] = na_reasons.get(r, 0) + 1
-    fail_keys = {kind: {k: len(v) for k, v in keys.items()}
-                 for kind, keys in fail_ids.items()}
+    # Failures by KEY, from the function the list behind each number reads
+    # (`review.failing_by_key`). It used to be a second loop here with its own
+    # rule — conformance errors only, plus every record answer — so
+    # `cmp.required_props` read 13 while its list held 10. One row per SUBJECT,
+    # so a part that carries a finding in conformance and in its record counts
+    # once: adding the two reported `cmp.datasheet_text` on 47 components when
+    # 27 carried it (2026-09-14). A warning-level finding is in the count, and
+    # `warnings` says how many of them are.
+    fail_keys = {kind: review_svc.failing_by_key(db, kind)
+                 for kind in ("component", "symbol", "footprint")}
     top_na = sorted(na_counts.items(), key=lambda kv: -kv[1])[:10]
     top_legacy = sorted(legacy_skipped.items(), key=lambda kv: -kv[1])[:10]
 
@@ -1641,8 +1598,10 @@ def review_health(db: Session = Depends(get_db)):
         # Retired 2026-09-13; read as unanswered, still reported so the backlog
         # of items nobody has actually answered stays visible.
         "legacy_skipped_items": [{"key": k, "count": n} for k, n in top_legacy],
-        "failing_keys": {k: [{"key": key, "count": n}
-                             for key, n in sorted(v.items(), key=lambda kv: -kv[1])]
+        "failing_keys": {k: [{"key": key, "count": len(rows),
+                              "warnings": sum(1 for r in rows.values()
+                                              if r["severity"] == "warning")}
+                             for key, rows in sorted(v.items(), key=lambda kv: -len(kv[1]))]
                          for k, v in fail_keys.items()},
         "flagged": flagged_worklist(db),
     }
