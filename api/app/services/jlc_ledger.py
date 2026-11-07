@@ -45,6 +45,11 @@ BT_SMT_ORDER = 4
 BT_PARTS_ORDER = 5
 BT_WAREHOUSE = 10
 
+# A JLCPCB parts order is a document of this supplier whose `external_id` is the
+# parts order's number (`jlc_apply.SUPPLIER`, `plan_parts_document`).
+JLC_SUPPLIER = "JLCPCB"
+PARTS_ORDER_PREFIX = "POB"
+
 # `changeStatus` 3 is a movement that DID NOT TAKE EFFECT — a ship-out request
 # JLC cancelled. It still states a quantity and a before/after pair, so a naive
 # replay of the newest row's `realOccupyCount` reports the wrong balance for
@@ -178,6 +183,12 @@ def _local_index(db: Session) -> tuple[dict, dict]:
     received" the moment a supplier-parts position was itemised (2026-09-19).
     Same test as `run_actuals.pooled_part_lines`; an `excluded` line is not a
     purchase either, it is money recorded so a document reconciles.
+
+    And only a JLCPCB PARTS ORDER puts stock into that warehouse: a document of
+    supplier JLCPCB whose `external_id` is the POB number, which is the code the
+    ledger names on a receipt. Any other supplier's pooled line was read as a
+    JLC purchase, so the LCSC retail order WM2510010035, delivered to the office,
+    read "70 pieces we booked as bought that JLC never received" (2026-11-07).
     """
     draws: dict[tuple[str, str], list] = {}
     for c in db.query(M.Draw).filter(M.Draw.import_ref.like("jlc:%")).all():
@@ -185,16 +196,16 @@ def _local_index(db: Session) -> tuple[dict, dict]:
         if len(bits) >= 3:
             draws.setdefault(((c.lcsc or "").upper(), bits[2]), []).append(c)
     purchases: dict[tuple[str, str], list] = {}
-    rows = (db.query(M.RunCostLine, M.RunCostDocument.external_id)
+    rows = (db.query(M.RunCostLine, M.RunCostDocument)
               .join(M.RunCostDocument, M.RunCostLine.document_id == M.RunCostDocument.id)
               .filter(run_actuals.IS_STOCK,
                       M.RunCostLine.voided_at.is_(None),
                       M.RunCostLine.run_id.is_(None),
-                      M.RunCostLine.allocate != "excluded").all())
-    for line, external_id in rows:
-        ref = external_id or ""
-        if ref:
-            purchases.setdefault(((line.lcsc or "").upper(), ref), []).append(line)
+                      M.RunCostLine.allocate != "excluded",
+                      M.RunCostDocument.supplier == JLC_SUPPLIER,
+                      M.RunCostDocument.external_id.like(f"{PARTS_ORDER_PREFIX}%")).all())
+    for line, doc in rows:
+        purchases.setdefault(((line.lcsc or "").upper(), doc.external_id), []).append((line, doc))
     return draws, purchases
 
 
@@ -263,7 +274,9 @@ def unexplained(db: Session, lcsc: str = "") -> dict:
 
     ours: list[dict] = []
     seen_parts = {r.lcsc.upper() for r in rows}
-    for (code_lcsc, ref), lines in sorted(purchases.items()):
+    rate_cache: dict = {}
+    for (code_lcsc, ref), held in sorted(purchases.items(), key=lambda kv: kv[0]):
+        lines = [line for line, _doc in held]
         if code_lcsc not in seen_parts:
             continue  # not a JLC-held part; its ledger says nothing about it
         if lcsc and code_lcsc != lcsc.upper():
@@ -277,8 +290,11 @@ def unexplained(db: Session, lcsc: str = "") -> dict:
             "line_ids": [line.id for line in lines],
             "booked_qty": booked, "ledger_receipt_qty": got,
             "missing_qty": booked - got,
-            "usd": round(sum(float(line.qty or 0) * float(line.unit_price or 0)
-                             for line in lines), 4),
+            # In USD, at the document's own rate: `qty x unit_price` is in the
+            # document's currency, and it read EUR as dollars.
+            "usd": round(sum(run_actuals.doc_usd(db, float(line.qty or 0) * float(line.unit_price or 0),
+                                                 doc, rate_cache)
+                             for line, doc in held), 4),
         })
 
     return {

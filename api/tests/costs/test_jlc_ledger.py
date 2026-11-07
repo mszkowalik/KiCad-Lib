@@ -134,6 +134,35 @@ def test_a_purchase_the_ledger_never_received_is_reported(db, part):
     assert out[0]["missing_qty"] == 1000
 
 
+def test_a_part_bought_from_another_supplier_is_no_claim_on_jlc(db, part):
+    """LCSC retail order WM2510010035 was delivered to the office. Its pooled
+    lines read as "70 pieces we booked as bought that JLC never received",
+    because any supplier's pooled line counted as a JLC purchase (2026-11-07)."""
+    _row(db, qty=1000, code="POBTEST0001", bt=L.BT_PARTS_ORDER, when="2026-02-01", key=900120)
+    retail = M.RunCostDocument(doc_type="invoice", supplier="LCSC Electronics Technology (HK) Limited",
+                               external_id="WMTEST0001", doc_number="WLTEST0001", doc_date="2026-02-05",
+                               currency="EUR", fx_rate_usd=1.17, total_amount=5.0)
+    db.add(retail)
+    db.flush()
+    db.add(M.RunCostLine(document_id=retail.id, plan_key="parts:pool", label="retail", lcsc="CLEDGER01",
+                         mpn="LEDGER-PART-1", qty=50, unit_price=0.1, currency="EUR", allocate="pooled"))
+    db.flush()
+    assert L.unexplained(db)["our_lines_jlc_never_received"] == []
+
+
+def test_an_unconfirmed_line_is_priced_in_dollars(db, part):
+    """`usd` summed `qty x unit_price` in the document's currency, so a euro
+    line read as dollars."""
+    part["doc"].currency = "EUR"
+    part["doc"].fx_rate_usd = 1.2
+    part["line"].currency = "EUR"
+    db.flush()
+    _row(db, qty=-40, code="SMT0009", bt=L.BT_SMT_ORDER, key=900121)
+    out = L.unexplained(db)["our_lines_jlc_never_received"]
+    assert len(out) == 1
+    assert out[0]["usd"] == pytest.approx(1000 * 0.1 * 1.2)
+
+
 def test_a_receipt_the_ledger_confirms_is_not_reported(db, part):
     _row(db, qty=1000, code="POBTEST0001", bt=L.BT_PARTS_ORDER, when="2026-02-01",
          key=900107)

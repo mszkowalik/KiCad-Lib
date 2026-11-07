@@ -36,6 +36,10 @@
   = 127.97 USD. Its 13,676 + 387 pieces are worth 73.27, and "market / unit" is their average. The
   parts-stock total of what JLC holds (`jlc_held_value_usd`) read 35,974.86 USD and now agrees with the
   JLC stock page, 35,920.16.
+- **Stock no longer says "70 pieces we booked as bought that JLC never received".** They are the LCSC
+  retail order WM2510010035 (LCSC WL2510010084), which went to the office. Only a JLCPCB parts order
+  is now compared with JLC's ledger, and the value of a line that JLC did not receive is in USD. It was
+  the document's own currency, so euros read as dollars.
 
 ## 2026-11-07 (figures on the production screens)
 
