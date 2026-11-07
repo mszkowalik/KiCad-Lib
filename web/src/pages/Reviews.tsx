@@ -35,6 +35,7 @@ import {
   Spinner,
   stateFacts,
   StatusPill,
+  waitsForReview,
 } from "../components/Ui";
 import { localWhen } from "../format";
 import { useLoad } from "../components/useLoad";
@@ -182,7 +183,7 @@ export default function Reviews() {
             <>
               {TAB_LABEL[t]}
               {queue && (t === "components" || t === "symbols" || t === "footprints") ? (
-                <span className="badge">{needsAttention(queue, t)}</span>
+                <span className="badge">{waitingForReview(queue, t)}</span>
               ) : health && t === "flagged" ? (
                 <span className="badge">{health.flagged.length}</span>
               ) : null}
@@ -224,13 +225,14 @@ export default function Reviews() {
   );
 }
 
-function needsAttention(queue: ReviewQueue, tab: Tab): number {
-  if (tab === "components")
-    return queue.components.filter((r) => r.review_state !== "checked").length;
-  const rows = tab === "symbols" ? queue.symbols : queue.footprints;
-  return rows.filter((r) => r.review_state !== "checked").length;
+/** The tab badge: what waits for a review, by the one test Home and the
+ *  default filter use too. */
+function waitingForReview(queue: ReviewQueue, tab: Tab): number {
+  const rows = tab === "components" ? queue.components : tab === "symbols" ? queue.symbols : queue.footprints;
+  return rows.filter((r) => waitsForReview(r.review_state)).length;
 }
 
+/** `attention` is the default: every subject that waits for a review. */
 const STATE_FILTERS: (ReviewState | "all" | "attention")[] = [
   "attention",
   "all",
@@ -239,6 +241,19 @@ const STATE_FILTERS: (ReviewState | "all" | "attention")[] = [
   "partial",
   "checked",
 ];
+
+/** The component tab has one more: the parts a board uses that nobody signed.
+ *  Sign-off is not review work, so it is its own filter and never part of
+ *  `attention`. */
+type ComponentFilter = ReviewState | "all" | "attention" | "used_unsigned";
+const COMPONENT_FILTERS: ComponentFilter[] = [...STATE_FILTERS, "used_unsigned"];
+
+const FILTER_LABEL: Record<string, string> = {
+  attention: "waits for a review",
+  used_unsigned: "used, not signed",
+};
+
+const usedUnsigned = (r: ReviewQueueComponent) => r.used_in.length > 0 && r.signoff_state !== "signed";
 
 /** Queue rows for the agent: a small "→ agent" per row plus "queue shown". */
 function useAgentQueue(onChanged: () => void) {
@@ -271,7 +286,7 @@ function ComponentsTab({
   rows: ReviewQueueComponent[];
   onChanged: () => void;
 }) {
-  const [state, setState] = useState<(typeof STATE_FILTERS)[number]>("attention");
+  const [state, setState] = useState<ComponentFilter>("attention");
   const [usedOnly, setUsedOnly] = useState(false);
   const [q, setQ] = useState("");
   const [openId, setOpenId] = useState<number | null>(null);
@@ -289,8 +304,10 @@ function ComponentsTab({
           state === "all"
             ? true
             : state === "attention"
-              ? r.review_state !== "checked" || r.signoff_state !== "signed"
-              : r.review_state === state,
+              ? waitsForReview(r.review_state)
+              : state === "used_unsigned"
+                ? usedUnsigned(r)
+                : r.review_state === state,
         )
         .filter((r) => (usedOnly ? r.used_in.length > 0 : true))
         .filter((r) => (q.trim() ? r.name.toLowerCase().includes(q.trim().toLowerCase()) : true)),
@@ -366,16 +383,16 @@ function ComponentsTab({
     <div className="card pad">
       <div className="stat-row">
         <NarrowChip n={rows.filter((r) => r.review_state === "failed").length} tone="err" value="failed" current={state} onNarrow={setState} off="attention">failed</NarrowChip>
-        <NarrowChip n={rows.filter((r) => r.review_state !== "checked" || r.signoff_state !== "signed").length} tone="warn" value="attention" current={state} onNarrow={setState} off="attention">need attention</NarrowChip>
-        <StatChip n={rows.filter((r) => r.used_in.length > 0 && r.signoff_state !== "signed").length} tone="warn" on={usedOnly}
-          onClick={() => setUsedOnly(!usedOnly)} title="Used in a project and not signed. A click shows only the parts used in a project.">used, not signed</StatChip>
+        <NarrowChip n={rows.filter((r) => waitsForReview(r.review_state)).length} tone="warn" value="attention" current={state} onNarrow={setState} off="attention">wait for a review</NarrowChip>
+        <NarrowChip n={rows.filter(usedUnsigned).length} tone="warn" value="used_unsigned" current={state} onNarrow={setState} off="attention"
+          title="Used in a project and not signed off for production, whatever the review state. Sign-off is a separate act from the review.">used, not signed</NarrowChip>
         <NarrowChip n={rows.filter((r) => r.review_state === "checked").length} tone="ok" value="checked" current={state} onNarrow={setState} off="attention">checked</NarrowChip>
       </div>
       <div className="toolbar">
         <select className="text" value={state} onChange={(e) => setState(e.target.value as never)}>
-          {STATE_FILTERS.map((s) => (
+          {COMPONENT_FILTERS.map((s) => (
             <option key={s} value={s}>
-              {s === "attention" ? "needs attention" : s}
+              {FILTER_LABEL[s] ?? s}
             </option>
           ))}
         </select>
@@ -451,7 +468,7 @@ function TemplatesTab({
           state === "all"
             ? true
             : state === "attention"
-              ? r.review_state !== "checked"
+              ? waitsForReview(r.review_state)
               : r.review_state === state,
         )
         .filter((r) => (q.trim() ? r.name.toLowerCase().includes(q.trim().toLowerCase()) : true)),
@@ -528,7 +545,7 @@ function TemplatesTab({
         <select className="text" value={state} onChange={(e) => setState(e.target.value as never)}>
           {STATE_FILTERS.map((s) => (
             <option key={s} value={s}>
-              {s === "attention" ? "needs attention" : s}
+              {FILTER_LABEL[s] ?? s}
             </option>
           ))}
         </select>

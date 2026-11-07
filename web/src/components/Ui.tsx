@@ -271,6 +271,16 @@ export function reviewWord(state: string | null | undefined): string {
 /** Worst first: sorting a review column means "what still needs looking at". */
 export const REVIEW_RANK: Record<string, number> = { failed: 0, unreviewed: 1, partial: 2, checked: 3 };
 
+/** What "waits for a review" means, on every screen that says it: the
+ *  verification is not complete. Home, the queue's tab badges and the queue's
+ *  default filter all use this one test, so the three show one number.
+ *  Production sign-off is a different act (docs/reference/review-axis.md) and
+ *  is never part of it: the default filter once added the unsigned parts, and
+ *  Home said 325 while the link it gave opened 397. */
+export function waitsForReview(state: string | null | undefined): boolean {
+  return state !== "checked";
+}
+
 /** Who answered, as one glyph: ⚙ the validator on publish, 🤖 an agent run.
  *
  *  A human answer carries no mark — it is the default and the strongest claim.

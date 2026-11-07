@@ -70,6 +70,12 @@ code, and keep the redirects: saved links depend on them.
   tabs sort by `used_by` (leverage) before name; keep that ordering, it is
   the point of the column. "Queue shown → agent" files review requests;
   "Confirm agent checks" is the bulk human confirmation.
+  **"Waits for a review" is ONE test, `waitsForReview` in `components/Ui.tsx`:
+  the review state is not `checked`.** Home's line, the tab badges and the
+  queue's default filter all call it. Sign-off is not part of it, because it is
+  a different act (review-axis.md). The default filter once added the unsigned
+  parts, so Home said 325 and its link opened 397 (2026-11-07). The unsigned
+  parts a board uses have their own filter, "used, not signed".
 - **`pages/Checklists.tsx` is ONE `DataTable` of every check in the platform**,
   one row per (scope, check), with a filter on every column. It took three
   attempts to get there and the first two are the lesson: one sidebar entry per

@@ -17,6 +17,12 @@
   unreviewed and unsigned work: "Review states (508 components)" against 503 on the Library page. Now
   both read 503. The agent tools `list_reviews` and `list_signoffs` leave them out too. Nothing was
   deleted.
+- **Home, the Components badge and the review queue's default list show one number.** Home said "325
+  components wait for a review", and its link opened a list of 397, because the default filter also
+  took the checked parts that nobody signed off. Sign-off is a different act from the review. Now all
+  three count the parts whose review is not complete, 320 today, and the filter is called "waits for a
+  review". The chip "used, not signed" now opens exactly the parts it counts, whatever their review
+  state.
 
 ## 2026-11-07 (a reopened device keeps its steps on the batch board)
 

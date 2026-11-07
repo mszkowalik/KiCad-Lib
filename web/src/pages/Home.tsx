@@ -20,7 +20,7 @@ import {
 import { useAuth } from "../auth";
 import { StatChip, type ChipTone } from "../components/FoldSection";
 import { MiniBoard, nextUp } from "../components/process/ProcessBoard";
-import { Spinner } from "../components/Ui";
+import { Spinner, waitsForReview } from "../components/Ui";
 import { pln } from "../format";
 import { useTodayRate } from "../useTodayRate";
 import { useLoad } from "../components/useLoad";
@@ -32,8 +32,6 @@ interface Waiting {
   text: string;
   to: string;
 }
-
-const NEEDS_REVIEW = (state: string) => state !== "checked";
 
 export default function Home() {
   const rate = useTodayRate();
@@ -48,7 +46,9 @@ export default function Home() {
   const inWork: RunInfo[] = (runs ?? []).filter((r) => r.process_board);
   const waiting: Waiting[] = [];
   if (reviews) {
-    const n = reviews.components.filter((c) => NEEDS_REVIEW(c.review_state)).length;
+    // The same test as the queue's badge and its default filter, so the link
+    // opens a list of exactly this many rows.
+    const n = reviews.components.filter((c) => waitsForReview(c.review_state)).length;
     if (n) waiting.push({ n, tone: "warn", text: "components wait for a review", to: "/reviews" });
   }
   if (shipments?.length) waiting.push({ n: shipments.length, text: "shipments are open, not sent", to: "/sales/shipments" });
