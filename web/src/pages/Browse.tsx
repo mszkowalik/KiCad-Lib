@@ -119,7 +119,7 @@ export default function Browse() {
   const total = data?.total ?? 0;
   // The state chips. They count what the browser holds, so they stay away while
   // the server has more rows than one fetch returns: part of a list is not a count.
-  const [narrow, setNarrow] = useState<"" | "failed" | "unsigned" | "stale" | "signed">("");
+  const [narrow, setNarrow] = useState<"" | "failed" | "unsigned" | "stale" | "revoked" | "signed">("");
   const narrowOf = (c: ComponentListItem, n: typeof narrow) => (n === "failed" ? c.review === "failed" : c.signoff === n);
   const chipCount = (n: typeof narrow) => (data?.items ?? []).filter((c) => narrowOf(c, n)).length;
   const complete = !!data && data.items.length >= data.total;
@@ -353,6 +353,12 @@ export default function Browse() {
             <NarrowChip n={chipCount("failed")} tone="err" value="failed" current={narrow} onNarrow={setNarrow}>review failed</NarrowChip>
             <NarrowChip n={chipCount("unsigned")} tone="warn" value="unsigned" current={narrow} onNarrow={setNarrow}>not signed</NarrowChip>
             <NarrowChip n={chipCount("stale")} tone="warn" value="stale" current={narrow} onNarrow={setNarrow}>re-check</NarrowChip>
+            {/* A sign-off somebody took back is a stronger statement than "nobody
+                looked yet" (review-axis.md), so it has its own chip. It draws
+                only when a part carries one. */}
+            {chipCount("revoked") || narrow === "revoked" ? (
+              <NarrowChip n={chipCount("revoked")} tone="err" value="revoked" current={narrow} onNarrow={setNarrow}>sign-off revoked</NarrowChip>
+            ) : null}
             <NarrowChip n={chipCount("signed")} tone="ok" value="signed" current={narrow} onNarrow={setNarrow}>signed</NarrowChip>
           </div>
         ) : null}

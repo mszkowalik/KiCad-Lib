@@ -43,6 +43,10 @@
 - **The agent tool `search_components` counts every match.** An empty query answered `count: 50` while
   503 components matched, and nothing said that the list was cut. Now `count` is every match, and a
   list cut at 50 ends with a `_truncated` entry.
+- **Library → Components: a part whose sign-off was revoked has its own chip.** No chip counted it
+  before. The chip shows only when such a part exists (none today).
+- **History → My changes: the "undone" chip says when it counts the loaded pages only.** While more
+  pages exist, it reads "undone, of those shown".
 
 ## 2026-11-07 (a reopened device keeps its steps on the batch board)
 

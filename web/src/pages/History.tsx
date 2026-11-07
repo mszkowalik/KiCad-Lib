@@ -131,7 +131,9 @@ export default function History() {
           <>
             <div className="stat-row">
               <StatChip n={rows.length}>{more ? "shown" : "changes"}</StatChip>
-              {undone ? <StatChip n={undone}>undone</StatChip> : null}
+              {/* Counted over the loaded pages only. While more pages exist the
+                  label says so, beside the "shown" chip it qualifies. */}
+              {undone ? <StatChip n={undone}>{more ? "undone, of those shown" : "undone"}</StatChip> : null}
             </div>
             <DataTable
               rows={rows}
