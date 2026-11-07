@@ -252,8 +252,10 @@ guard reads one company's stock is in [companies.md](companies.md).
   LCSC codes — `XL-1005SURC` exists as both C25503345 unlinked and C965790 linked to
   component 218; first-write-wins costed 16,800 LEDs at zero while their money sat
   unconsumed), and a part bought under two MPNs is one part only if the library says
-  so — a substitution (`KH-6X6X5H-STM` -> `TS3625A`) reads as a shortage of the
-  second plus dead stock of the first until both map to one component.
+  so. Map two MPNs to one component only when they are the same part: the 6 x 6 mm
+  `KH-6X6X5H-STM` (CE_Aqua_V2) and the 6.1 x 3.65 mm `TS3625A` (CE_Dongle_V2) are
+  two parts. Their purchases once shared card 7, so a later KH purchase on its own
+  card made Stock show a difference with JLC that did not exist.
 - **The pool's moving average has its OWN clamped basis** (`_avg_qty` / `_avg_value`
   in `pool_state`), separate from the reported `qty` / `value_usd`. The reported
   pair are pure algebraic sums and MUST be able to go negative — the register's

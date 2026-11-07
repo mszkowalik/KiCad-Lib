@@ -19,7 +19,10 @@
   and AO3401A (-50) now read 0.
 - **30 skipped invoices are in the pool.** What left is written: 3133 pieces to R&D, 721 pieces to Vumo
   orders (not on the platform), and 24 TME antennas as a loss of 7Sigma, dated 2026-07-07. No money is
-  unassigned, and the Mouser 91630040 document is assigned.
+  unassigned. Mouser 91630040 belongs to 7Sigma, and its 6 positions went to a Vumo order.
+- **Stock shows the 6 x 6 mm button `C2837531` once, with no difference.** Its 4 old purchases and the
+  CE_Aqua_V2 draws sat on card TS3625A (`C398053`), so two rows each compared with JLC's 5304 pieces and
+  showed +3054 and +2250. They are on card KH-6X6X5H-STM now. The costs of every batch are unchanged.
 - **LCSC WL2510010084 (9Sigma, 259.56 EUR) is entered.** Four parts are stock. Passives go to the
   `equipment` overhead category, and storage boxes and Kapton tape go to `office`. KSBR's list now shows it.
 - **EMMA FS 21781/2024 is Dymo labels, in `office`.** It was excluded as a mattress.
@@ -82,8 +85,6 @@
 - **A placeholder document raises no issue on the Overview any more.** Nobody will find those invoices.
   The note on each document still says why it exists.
 - **Stock compares one part under two library cards once, when both cards name the same JLC items.**
-  This does not change the +3054 and +2250 on `C2837531`. That part has old purchases on the wrong card
-  (`docs/todo.md`, row 56).
 - **`POST /api/organizers/research` takes `purpose=loss`.** Pieces in no box that nothing pays for become
   a scrap adjustment of the company that bought them.
 
