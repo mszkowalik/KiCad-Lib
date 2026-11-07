@@ -6,6 +6,12 @@
   did another option of the step's choice, or a step that this step must come before. Batch 2164 read
   "still to do 60" for the optional UV print. 51 of its 60 units have lightpipes, and a UV print must
   come before the lightpipes, so it now reads 9.
+- **The batch header and the board count received and finished the same way.** "Received" is the
+  batch's own boards in, wherever they are now: a found unit is no longer counted, and the Receive
+  field now counts a broken board too, as the header did. Batch 8 reads 800 received on both (the
+  board read 799). "Finished" is the units finished in this batch, in the header too: a board that
+  another batch's bench took counts as finished in that batch. The rules are in
+  `docs/reference/processes.md`.
 
 ## 2026-11-07 (the review and library figures match their lists)
 

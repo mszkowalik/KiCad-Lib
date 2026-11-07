@@ -160,6 +160,19 @@ def since_reopen(db: Session, twin_ids: list[int]) -> dict[int, set[str]]:
     return out
 
 
+def received_counts(db: Session, run_ids: list[int]) -> dict[int, int]:
+    """The boards each batch received: units whose origin is the batch and
+    that are not found, in every status, wherever they are now. A found unit
+    came from no batch's order, and a board another batch's bench took was
+    still received here. `qty` less this is what has not arrived yet."""
+    if not run_ids:
+        return {}
+    return {rid: n for rid, n in (
+        db.query(M.Unit.origin_run_id, func.count(M.Unit.id))
+        .filter(M.Unit.origin_run_id.in_(run_ids), M.Unit.found.is_(False))
+        .group_by(M.Unit.origin_run_id).all())}
+
+
 def g_label(keys: list[str], label: dict) -> str:
     return " / ".join(repr(label.get(k, k)) for k in keys)
 
@@ -341,8 +354,7 @@ def receive(db: Session, run: M.ProductionRun, *, qty: int, made_at: str = "", n
     if qty <= 0:
         raise HTTPException(422, "receive at least one board")
     _refuse_closed(run)
-    have = (db.query(func.count(M.Unit.id)).filter(M.Unit.origin_run_id == run.id,
-                                                   M.Unit.found.is_(False)).scalar() or 0)
+    have = received_counts(db, [run.id]).get(run.id, 0)
     plan = {"dry_run": dry_run, "step": step["key"], "qty": qty, "received_before": have,
             "ordered": run.qty, "over_order": have + qty > (run.qty or 0),
             "assembly_orders": assembly_orders(db, run)}
@@ -698,6 +710,10 @@ def board(db: Session, run: M.ProductionRun, *, pool: dict | None = None) -> lis
     lack it plus the boards not received yet, and `can_go` is `waiting` limited
     by the stock of its parts.
 
+    The units are those in this batch now. Receive is the exception: it counts
+    the batch's own boards (`received_counts`), as the batch header does, out of
+    those received and those not here yet.
+
     A unit that can never take the step is not still to do: it did another
     option of the step's choice, or a step that this step must come before
     (`needs_not`). Batch 2164's optional UV print read "still to do 60" while
@@ -728,8 +744,7 @@ def board(db: Session, run: M.ProductionRun, *, pool: dict | None = None) -> lis
         done = frozenset(done_by[u.id]) if is_named else frozenset(done_of_key(u.stack_key))
         since = again.get(u.id) if is_named else None
         kinds[(done, frozenset(since) if since is not None else None, is_named, u.status)] += 1
-    received = (db.query(func.count(M.Unit.id)).filter(M.Unit.origin_run_id == run.id,
-                                                       M.Unit.found.is_(False)).scalar() or 0)
+    received = received_counts(db, [run.id]).get(run.id, 0)
     unreceived = max((run.qty or 0) - received, 0)
     total = len(units) + unreceived
     stock = P.input_stock(db, graph, run_actuals.run_scope(db, run), pool=pool)
@@ -762,8 +777,13 @@ def board(db: Session, run: M.ProductionRun, *, pool: dict | None = None) -> lis
                     waiting_named += n
                 else:
                     waiting_unnamed += n
+        field_total = total
         if kind == "receive":
-            # Every unit was received: what waits is the boards not here yet.
+            # The batch's own boards, as the header counts them: a found unit
+            # is no board of this batch, and a board another batch took or
+            # that broke was still received here. What waits is the boards
+            # not here yet.
+            n_done, field_total = received, received + unreceived
             waiting_named, waiting_unnamed, to_do = 0, unreceived, unreceived
         else:
             to_do += unreceived
@@ -778,7 +798,7 @@ def board(db: Session, run: M.ProductionRun, *, pool: dict | None = None) -> lis
         cover = min(covers) if covers else None
         can_go = waiting if cover is None else min(waiting, cover)
         required = bool(step.get("required")) or kind == "finish"
-        if total and not to_do:
+        if field_total and not to_do:
             state = "done"
         elif waiting and not can_go:
             state = "blocked"
@@ -790,8 +810,9 @@ def board(db: Session, run: M.ProductionRun, *, pool: dict | None = None) -> lis
             state = "idle"
         dep = deployments.get(step.get("deployment_id"))
         out.append({"key": key, "label": step.get("label") or key, "kind": kind, "required": required,
-                    "on_route": key in route, "needs": step.get("needs") or [], "total": total, "done": n_done,
-                    "waiting": waiting, "waiting_named": waiting_named, "waiting_unnamed": waiting_unnamed,
+                    "on_route": key in route, "needs": step.get("needs") or [], "total": field_total,
+                    "done": n_done, "waiting": waiting, "waiting_named": waiting_named,
+                    "waiting_unnamed": waiting_unnamed,
                     "still_to_do": to_do, "can_go": can_go, "state": state, "inputs": inputs,
                     "procedure": {"id": dep["id"], "name": dep["name"], "version_no": dep["current_version_no"]}
                     if dep else None})
@@ -2519,9 +2540,13 @@ def craft_view(db: Session, run: M.ProductionRun) -> dict:
                         "missing": needs_met(graph, P.step_of_kind(graph, "finish") or {}, done[tw.id], again.get(tw.id))
                         if tw.status == "active" else [],
                         "price_usd": pr.get(tw.id, {}).get("total_usd")})
-    counts = defaultdict(int)
-    for tw in db.query(M.Unit).filter(M.Unit.origin_run_id == run.id).all():
-        counts[tw.status] += 1
+    # The header's figures read as the board's (processes.md, "The board and
+    # the scan group"): received is the batch's own boards in, wherever they
+    # are now, and finished is the units finished in this batch. It counted
+    # found units as received, and finished by the batch the board came from.
+    received = received_counts(db, [run.id]).get(run.id, 0)
+    finished = (db.query(func.count(M.Unit.id))
+                .filter(M.Unit.run_id == run.id, M.Unit.status == "finished").scalar() or 0)
     share = origin_shares(db, [run.id]).get(run.id)
     line_click = click_costs(line_shares(db, [run.id]))
     draw_click, _ = _step_draw_values(db, [run.id])
@@ -2537,8 +2562,7 @@ def craft_view(db: Session, run: M.ProductionRun) -> dict:
         "gaps": [{"device_id": d.id, "serial": d.serial, "mac": d.mac} for d in gaps(db, run)],
         "bench_stack": run.bench_stack or None, "bench_left": bench_stack_left(db, run),
         "bench_stacks": bench_stacks(db, run),
-        "origin": {**(share or {}), "received": counts["active"] + counts["finished"] + counts["scrapped"],
-                   "finished": counts["finished"]},
+        "origin": {**(share or {}), "received": received, "finished": finished},
         "clicks": [{"id": sr.id, "step": sr.step_key, "label": sr.step_label, "kind": sr.step_kind,
                     "qty": sr.units, "chosen": sr.chosen, "made_at": sr.at, "actor": sr.actor,
                     "note": sr.note, "costs_usd": round(line_click.get(sr.id, 0.0), 4),

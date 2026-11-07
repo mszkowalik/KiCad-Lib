@@ -584,6 +584,20 @@ one the click is judged by. A list reuses one stock replay per company.
   A reopen lets a unit take a step again. It undoes no work. When `done` also read from the reopen
   on, Batch 8 showed 624 of 799 programmed, with all 799 programmed. Finish is the exception: a
   reopened unit is not finished, so Finish's `done` reads from the reopen on.
+- **Each figure has one definition, and the batch header uses the board's.** A field counts the
+  units in this batch now: a unit another batch's bench took counts in that batch.
+  - **Received** is the batch's own boards in (`twins.received_counts`): units whose origin is
+    the batch and that are not found, in every status, wherever they are now. The header chip
+    "N received of qty", the Receive field (done of received + not received) and the receive
+    dialog's "received before" all read it. `qty` less this is the boards not here yet. A found
+    unit is no board of any batch's order, so it is in no batch's received.
+  - **Finished** is the units in this batch whose status is `finished`: the header chip and the
+    Finish field. A board of this batch that another batch finished is finished in that batch.
+  - **Scrapped** in the header is by origin: the boards of this batch that broke, whose cost the
+    other units carry (`origin_shares`).
+
+  Before this, the header counted found units as received and counted finished by origin, so a
+  batch with found units or with boards programmed elsewhere showed two different figures.
 - **A unit that can never take a step is not still to do, and it does not wait.** That is a unit
   that did another option of the step's choice, or a step that the step must come before
   (`needs_not`). Before this, Batch 2164's optional UV print read "still to do 60". 51 of its 60

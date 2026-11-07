@@ -2417,6 +2417,32 @@ def test_a_choice_needs_only_one_of_its_options_on_the_board(db, world):
     assert (uv["waiting"], uv["still_to_do"]) == (0, 9)
 
 
+def test_the_header_and_the_board_count_received_and_finished_the_same_way(db, world):
+    """Received is the batch's own boards in, wherever they went; finished is the
+    units in this batch. A found unit is neither batch's received board, and a
+    unit another batch's bench took is finished in that batch."""
+    b1, b2 = world["b1"], world["b2"]
+    stack = _received(db, world, 4)
+    T.apply_step(db, b1, step_key="enclose", stack=stack, qty=4, dry_run=False)
+    T.enter_found(db, b1, qty=2, done=["enclose"], origin_run_id=b2.id, note="stock count", dry_run=False)
+    T.set_bench_stack(db, b2, _stack(db, world, b1, {"assembly", "receive", "enclose"}))
+    d, tw = _program(db, world, b2, 151)
+    assert (tw.origin_run_id, tw.run_id) == (b1.id, b2.id)
+    T.record_marking(db, d, laser=True, label=True)
+    for step in ("uvprint", "carton"):
+        T.apply_step(db, b2, step_key=step, device_ids=[d.id], chosen="list", dry_run=False)
+    T.finish(db, b2, device_ids=[d.id], chosen="list", dry_run=False)
+    seen = {}
+    for b in (b1, b2):
+        view = T.craft_view(db, b)
+        rec, fin = _field(view["board"], "receive"), _field(view["board"], "finish")
+        assert (view["origin"]["received"], view["origin"]["finished"]) == (rec["done"], fin["done"])
+        seen[b.label] = (rec["done"], rec["total"], fin["done"])
+    # B1 received 4 of its 10 boards, one of them now in B2; B2 received none of
+    # its own and finished B1's board.
+    assert seen == {"TB1": (4, 10, 0), "TB2": (0, 10, 1)}
+
+
 def test_a_step_that_must_come_before_one_already_done_is_not_still_to_do(db, world):
     """Batch 2164, 2026-11-07: UV print read "still to do 60" while 51 units had
     their lightpipes, and a UV print must come before the lightpipes."""
