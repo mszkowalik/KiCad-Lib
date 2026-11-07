@@ -15,6 +15,15 @@
   were counted. 51 CE_Dongle_V2 devices name no batch: 40 shipped and 11 missing. The product card read
   5,130 shipped and 15 missing, the per-batch card 5,090 and 4, and both said "no batch: 0". Both cards
   now say 51 and by state.
+- **Finance → Cost overview in one company's view shows that company's batches at their whole cost.**
+  It took the company's invoices and every company's draws, so the 7Sigma view showed 9Sigma's Batch 8 at
+  7,558.29 USD (9.45 USD a device), its draws only. Batch 8 cost 12,167.05 (15.21 a device), and it shows
+  in the 9Sigma view only.
+- **The Cost overview tiles add up.** "Boards ordered" summed the devices that passed and read 7,147. It
+  now sums the quantities typed on the batches, 7,086, and the batch table's "Units" column is "Ordered".
+  "Avg cost / device produced" divided every batch's cost by the devices produced, so Batch 2 of
+  CE_Dongle_V3, with no device yet, took it from 60.62 to 66.72 PLN. It now divides the cost of the
+  batches that produced devices.
 
 ## 2026-11-07 (figures on the production screens)
 

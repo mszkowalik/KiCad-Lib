@@ -47,7 +47,7 @@ export default function ProductionOverview() {
               rid: Number(rid),
               label: info.label,
               project: reg.projects[String(info.project_id)] ?? "?",
-              qty: info.qty,
+              ordered: info.qty_ordered ?? info.qty,
               // PLN per USD at this batch's own date (decision 0103).
               rate: info.pln_per_usd ?? null,
               cost: m.total_usd ?? 0,
@@ -69,9 +69,13 @@ export default function ProductionOverview() {
   const totals = useMemo(() => {
     // Batches at their own rates, so this sum can be taken only in PLN.
     const cost = rows.reduce((s, r) => s + r.cost * (r.rate ?? 0), 0);
-    const devices = rows.reduce((s, r) => s + r.qty, 0);
+    const ordered = rows.reduce((s, r) => s + r.ordered, 0);
     const produced = rows.reduce((s, r) => s + r.produced, 0);
-    return { cost, devices, produced };
+    // The average divides only what the producing batches cost. A batch with no
+    // device yet added its cost and no devices: run 10755 took the figure from
+    // 60.62 to 66.72 PLN (2026-11-07).
+    const producedCost = rows.reduce((s, r) => s + (r.produced > 0 ? r.cost * (r.rate ?? 0) : 0), 0);
+    return { cost, ordered, produced, producedCost };
   }, [rows]);
 
   // The single home for "what is still missing before these numbers are
@@ -148,7 +152,14 @@ export default function ProductionOverview() {
   // table now sorts by it, newest first, so the column has to be VISIBLE — a
   // default order nothing on screen explains reads as no order at all.
   { key: "date", label: "Date", width: 12, className: "mono", get: (r) => r.date || "—" },
-  { key: "qty", label: "Units", width: 8, numeric: true, get: (r) => r.qty },
+  {
+    key: "ordered",
+    label: "Ordered",
+    width: 8,
+    numeric: true,
+    get: (r) => r.ordered,
+    title: () => "boards ordered: the quantity typed on the batch",
+  },
   {
     key: "cost",
     label: "Cost",
@@ -201,9 +212,12 @@ export default function ProductionOverview() {
               the ORDER, and a device carries its batch's unit cost there
               (decision 0043). */}
           <CountTile value={plnAmount(totals.cost, 0)} label="production cost" />
-          <CountTile value={totals.devices.toLocaleString()} label="boards ordered" />
+          <CountTile value={totals.ordered.toLocaleString()} label="boards ordered"
+                     title="the quantities typed on the batches" />
           <CountTile value={totals.produced.toLocaleString()} label="devices produced" />
-          <CountTile value={totals.produced ? plnAmount(totals.cost / totals.produced) : "—"} label="avg cost / device produced" />
+          <CountTile value={totals.produced ? plnAmount(totals.producedCost / totals.produced) : "—"}
+                     label="avg cost / device produced"
+                     title="the cost of the batches that produced devices, over those devices" />
         </div>
 
         {issues.length ? (

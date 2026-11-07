@@ -106,6 +106,31 @@ def live_consumption(db: Session, **filters):
     return q.filter_by(**filters) if filters else q
 
 
+#: Where a draw's value went, in the words of the register's `pool` block.
+DRAW_DESTINATIONS = ("batch", "into_prepared", "transferred_out", "research", "uncharged")
+
+
+def make_event_ids(db: Session) -> set[int]:
+    """The ids of the process transformations (`make` events, decision 0058)."""
+    return {eid for (eid,) in db.query(M.MaterialEvent.id).filter(M.MaterialEvent.kind == "make").all()}
+
+
+def draw_destination(c: M.Draw, make_ids: set[int]) -> str:
+    """Who carries a draw's value: a `batch`, or with no batch the output of a
+    transformation (`into_prepared`), the other company (`transferred_out`), R&D
+    (`research`), or nobody yet (`uncharged`). The register and the Stock page
+    split the drawn value by this, so the two agree on every figure."""
+    if c.run_id is not None:
+        return "batch"
+    if c.event_id in make_ids:
+        return "into_prepared"
+    if c.transfer_line_id is not None:
+        return "transferred_out"
+    if c.basis == "research":
+        return "research"
+    return "uncharged"
+
+
 def stock_scope(db: Session, company_id: int | None) -> int | None:
     """The company a replay or a stock guard is scoped to (decision 0064).
 
@@ -2207,6 +2232,7 @@ def _invoice_register(db: Session, company_ids: list[int] | None, accountant: bo
                        .filter(M.RunAttachment.document_id.isnot(None))
                        .group_by(M.RunAttachment.document_id).all())
     all_headers: set[int] | None = None
+    all_docs = docs
     if company_ids is not None:
         # One company's documents (decision 0063): those it was billed for, the
         # transfers it sent, and the ones no company is named on yet. The
@@ -2225,6 +2251,11 @@ def _invoice_register(db: Session, company_ids: list[int] | None, accountant: bo
     runs = {
         r.id: {"label": r.label or f"run {r.id}", "project_id": r.project_id,
                "run_date": r.run_date or "", "qty": good_units(db, r, _counts),
+               # The boards ORDERED (decision 0035). `qty` is what passed, with
+               # the typed quantity as its fallback, so the Cost overview's
+               # "boards ordered" tile summed the wrong one: 7,147 where the
+               # batches were ordered at 7,086 (2026-11-07).
+               "qty_ordered": planned_units(r),
                # What this batch's USD figures read in PLN (decision 0103).
                "pln_per_usd": fx.pln_per_usd(db, run_pricing_date(r)),
                # sale side, so income sits beside cost in the register
@@ -2311,6 +2342,28 @@ def _invoice_register(db: Session, company_ids: list[int] | None, accountant: bo
         for pid, amount in a["by_project"].items():
             by_project[int(pid)] += to_usd(amount or 0.0, doc)
 
+    # ONE COMPANY'S VIEW SHOWS ITS OWN BATCHES, EACH AT ITS WHOLE COST. A batch's
+    # cost is one figure, and its devices carry it onto every order (decision
+    # 0043); the batch list follows the scope by the batch's company (decision
+    # 0065 §4). The view took the scoped documents' money and every company's
+    # draws instead, so in the 7Sigma view 9Sigma's Batch 8 read 7,558.29 USD,
+    # its draws without its own invoices, where it cost 12,167.05 (2026-11-07).
+    # The documents of another company that charge a batch in view count for
+    # that batch's figure only: they stay out of the list and the totals.
+    scope_runs: set[int] | None = None
+    if company_ids is not None:
+        scope_runs = {r.id for r in _all_runs if r.company_id is None or r.company_id in company_ids}
+        in_view = {d.id for d in docs}
+        for doc in all_docs:
+            if doc.id in in_view or (doc.doc_type or "invoice") in ("proforma", "transfer"):
+                continue
+            if doc.run_id not in scope_runs and not any(li.run_id in scope_runs for li in doc.lines):
+                continue
+            a = document_json(doc, with_lines=False, db=db, closed=closed_by_id, accountant=False,
+                              attachment_counts=attachments)["assignment"]
+            for rid, amount in a["by_run"].items():
+                by_run[int(rid)] += to_usd(amount or 0.0, doc)
+
     # Components reach a run through the pool, so add the drawn value to each
     # run's figure — otherwise a batch whose only cost is components looks unpaid.
     priced_runs = {r.id for r in db.query(M.ProductionRun)
@@ -2335,19 +2388,25 @@ def _invoice_register(db: Session, company_ids: list[int] | None, accountant: bo
     # Taken from an organizer for R&D (decision 0104): a cost no batch will ever
     # pay, so it must not read as waiting for one.
     research_usd = 0.0
-    kinds = dict(db.query(M.MaterialEvent.id, M.MaterialEvent.kind).all())
+    make_ids = make_event_ids(db)
+    # A batch's figure takes all its draws. The pool's own figures follow the
+    # pool: one company's when each keeps its own stock and the view is scoped.
+    pool_companies = set(company_ids) if company_ids is not None and settings.stock_per_company else None
     for c in live_consumption(db).all():
         value = c.taken * (c.unit_cost_usd or 0)
-        if c.run_id is None and kinds.get(c.event_id) == "make":
-            into_prepared_usd += value
-        elif c.run_id is None and c.transfer_line_id is not None:
-            transferred_out_usd += value
-        elif c.run_id is None and c.basis == "research":
-            research_usd += value
-        elif c.run_id is None:
-            uncharged_usd += value
-        else:
+        dest = draw_destination(c, make_ids)
+        if dest == "batch":
             drawn_by_run[c.run_id] += value
+        elif pool_companies is not None and c.company_id not in pool_companies:
+            continue
+        elif dest == "into_prepared":
+            into_prepared_usd += value
+        elif dest == "transferred_out":
+            transferred_out_usd += value
+        elif dest == "research":
+            research_usd += value
+        else:
+            uncharged_usd += value
     purchased = sum(p["value_bought"] for p in pool.values())
     used = sum(p["value_used"] for p in pool.values())
     adjusted = sum(p["value_adj"] for p in pool.values())
@@ -2471,6 +2530,7 @@ def _invoice_register(db: Session, company_ids: list[int] | None, accountant: bo
             str(rid): _run_money(db, rid, by_run.get(rid, 0.0), drawn_by_run.get(rid, 0.0),
                                  rate_cache, db.get(M.ProductionRun, rid))
             for rid in sorted(set(by_run) | set(drawn_by_run) | set(priced_runs))
+            if scope_runs is None or rid in scope_runs
         },
         "pool": {
             "purchased_usd": _round(purchased),

@@ -2991,7 +2991,10 @@ export interface InvoiceRegister {
   documents: RunCostDocumentRow[];
   projects: Record<string, string>;
   runs: Record<string, {
+    /** `qty` is the devices that passed, the typed quantity when none is recorded */
     label: string; project_id: number; run_date: string; qty: number;
+    /** the boards ordered: the typed quantity (decision 0035) */
+    qty_ordered: number;
     qty_sold: number | null; sale_unit_price: number | null; sale_currency: string;
     customer: string; order_ref: string; order_date: string;
     /** set = this batch's books are closed (decision 0044) */

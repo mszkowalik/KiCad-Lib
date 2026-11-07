@@ -47,6 +47,13 @@ project's Settings tab. No route edits or deletes a period.
   `/api/invoices` (the documents billed to the company, the transfers it sent,
   and the ones naming no company). `companies.narrows` skips the filter when
   the scope holds every company.
+* **The register's batch costs (`by_run_usd`) list the scope's batches, each at
+  its WHOLE cost**: every document and every draw that charges it, whoever was
+  billed. A batch's cost is one figure, which its devices carry onto orders
+  (decision 0043). The register took the scoped documents and every company's
+  draws, so the 7Sigma view showed 9Sigma's Batch 8 at 7,558.29 USD, its draws
+  only, where it cost 12,167.05 (fixed 2026-11-07). The document list and the
+  totals stay the scoped company's documents.
 * The scope filters a LIST. Opening ONE record is gated separately, below.
 * **The production benches ignore the switcher.** The flashing and marking
   benches list projects and batches with `X-Company: all` (`ListScope` in
