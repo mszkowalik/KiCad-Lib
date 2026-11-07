@@ -4832,8 +4832,7 @@ export function reverseWriteBatch(
 
 export interface JlcSessionState {
   /** Cookies are STORED. Says nothing about whether they still work — JLC
-   *  expires a browser session in about 30 minutes of the token's life and
-   *  answers HTTP 460 once it is dead. Use `checkJlcSession` for liveness. */
+   *  answers 460 once the session is dead. Use `checkJlcSession` for liveness. */
   configured: boolean;
   label?: string;
   updated_at?: string | null;
@@ -4854,18 +4853,20 @@ export function getJlcSession(signal?: AbortSignal): Promise<JlcSessionState> {
   return request("/api/jlc/web/session", { signal });
 }
 
-/** Paste the whole `Cookie:` request header from a logged-in jlcpcb.com tab.
- *  It has to be the raw header, not `document.cookie`: `JLCPCB_SESSION_ID` is
- *  httpOnly and therefore invisible to page script. Stored Fernet-encrypted and
- *  never returned by any endpoint. */
+/** Send what a person copied from DevTools in a logged-in jlcpcb.com tab: a
+ *  "Copy as cURL" command, a `Cookie:` header or the value of `JLCPCB_SESSION_ID`.
+ *  `document.cookie` cannot help: that cookie is httpOnly and therefore invisible
+ *  to page script. The server tests it against JLC and answers 409, with the stored
+ *  session kept, if JLC refuses it. Stored Fernet-encrypted and never returned by
+ *  any endpoint. */
 export function putJlcSession(
-  cookieHeader: string,
+  copied: string,
   label = "",
 ): Promise<JlcSessionState & { cookie_names?: string[] }> {
   return request("/api/jlc/web/session", {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ cookies: cookieHeader, label }),
+    body: JSON.stringify({ cookies: copied, label }),
   });
 }
 
@@ -4876,7 +4877,7 @@ export function clearJlcSession(): Promise<JlcSessionState> {
 export function checkJlcSession(): Promise<{
   ok: boolean;
   expired?: boolean;
-  detail?: string;
+  error?: string;
 }> {
   return request("/api/jlc/web/session/check", { method: "POST" });
 }

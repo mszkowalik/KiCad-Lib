@@ -113,7 +113,7 @@ def sync_ledger(only: str = "", db: Session = Depends(get_db)):
     try:
         report = jlc_ledger.sync(db, [c.strip() for c in only.split(",") if c.strip()])
     except jlc_web.JlcSessionExpired as e:
-        raise HTTPException(401, str(e)) from e
+        raise HTTPException(409, str(e)) from e
     except jlc_web.JlcWebError as e:
         raise HTTPException(502, str(e)) from e
     audit(db, "jlc.stock.ledger.sync", "jlc_stock", None, report)

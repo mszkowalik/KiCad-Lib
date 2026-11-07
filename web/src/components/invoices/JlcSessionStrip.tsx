@@ -8,7 +8,13 @@ import {
   putJlcSession,
   type JlcSessionState,
 } from "../../api";
+import AutoTextarea from "../AutoTextarea";
+import Field from "../Field";
 import { ErrorBanner } from "../Ui";
+
+/** An account page: logged out, the site sends the tab to its login page. A page
+ *  of ours cannot read the cookies it sets, so a person copies them back. */
+const JLC_LOGIN_URL = "https://jlcpcb.com/user-center/orders/";
 
 /**
  * The JLCPCB browser session — the one thing only a human can supply.
@@ -19,8 +25,8 @@ import { ErrorBanner } from "../Ui";
  * paste them.
  *
  * Presence and liveness are shown as SEPARATE facts. Stored cookies are not
- * working cookies — JLC answers HTTP 460 once the session dies, and it dies on
- * its own schedule — so "configured" is never rendered as "ok" on its own.
+ * working cookies — JLC answers 460 once the session dies, and it dies on its
+ * own schedule — so "configured" is never rendered as "ok" on its own.
  */
 export default function JlcSessionStrip({ onChange }: { onChange?: () => void }) {
   const [state, setState] = useState<JlcSessionState | null>(null);
@@ -54,7 +60,7 @@ export default function JlcSessionStrip({ onChange }: { onChange?: () => void })
     try {
       const r = await checkJlcSession();
       setLive(r.ok ? "ok" : "dead");
-      setDetail(r.ok ? "" : r.detail || "JLC rejected the session");
+      setDetail(r.ok ? "" : r.error || "JLC rejected the session");
       load();
     } catch (err) {
       setLive("dead");
@@ -146,6 +152,15 @@ export default function JlcSessionStrip({ onChange }: { onChange?: () => void })
         <button className="btn btn-sm" disabled={!configured || busy === "check"} onClick={check}>
           {busy === "check" ? "checking…" : "Check"}
         </button>
+        <a
+          className="btn btn-sm"
+          href={JLC_LOGIN_URL}
+          target="_blank"
+          rel="noopener noreferrer"
+          onClick={() => setPaste(true)}
+        >
+          Log in at JLCPCB
+        </a>
         <button className="btn btn-sm" onClick={() => setPaste((v) => !v)}>
           {configured ? "Re-paste cookies" : "Paste cookies"}
         </button>
@@ -171,34 +186,43 @@ export default function JlcSessionStrip({ onChange }: { onChange?: () => void })
                 3_600_000
               ).toFixed(1)}h`
             : ""}
-          . JLC cannot be re-authenticated from here — the cookie set contains no refresh
-          token, only opaque server-side handles. Log in at jlcpcb.com and paste fresh
-          cookies below.
+          . Henry cannot log in to JLC by itself. Press Log in at JLCPCB to start a new session.
         </div>
       )}
 
       {paste && (
         <div className="edit-card">
-          <p className="muted">
-            In a logged-in jlcpcb.com tab, open DevTools → Network, click any request, and copy
-            the whole <code>Cookie:</code> request header. It must be the raw header —{" "}
-            <code>document.cookie</code> cannot see <code>JLCPCB_SESSION_ID</code>, which is
-            httpOnly, and a blob without it is rejected. Stored encrypted; no endpoint ever
-            returns it.
+          <ol className="muted">
+            <li>Log in at JLCPCB in the other tab.</li>
+            <li>In that tab, open DevTools (⌥⌘I), then Network, and reload the page.</li>
+            <li>
+              Right-click the first request (<code>orders/</code>), then Copy → Copy as cURL.
+            </li>
+            <li>Paste it here.</li>
+          </ol>
+          <p className="muted dim">
+            Henry also reads a <code>Cookie:</code> header, or the value of{" "}
+            <code>JLCPCB_SESSION_ID</code> from Application → Cookies. It takes only the cookies
+            and tests them against JLCPCB. If JLCPCB refuses them, the stored session stays. They
+            are stored encrypted, and no endpoint returns them.
           </p>
-          <textarea
-            className="note-textarea"
-            placeholder="XSRF-TOKEN=…; JLCPCB_SESSION_ID=…; …"
-            value={cookies}
-            onChange={(e) => setCookies(e.target.value)}
-          />
+          <Field label="What you copied">
+            <AutoTextarea
+              className="text mono"
+              rows={3}
+              maxRows={8}
+              placeholder="curl 'https://jlcpcb.com/user-center/orders/' …"
+              value={cookies}
+              onChange={(e) => setCookies(e.target.value)}
+            />
+          </Field>
           <div className="btn-row">
             <button
               className="btn btn-primary btn-sm"
               disabled={!cookies.trim() || busy === "save"}
               onClick={save}
             >
-              {busy === "save" ? "storing…" : "Store session"}
+              {busy === "save" ? "testing…" : "Test and store"}
             </button>
             <button className="btn btn-sm" onClick={() => setPaste(false)}>
               Cancel

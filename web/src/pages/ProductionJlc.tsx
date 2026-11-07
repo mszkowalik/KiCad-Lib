@@ -1,8 +1,8 @@
 /** JLC — the import pipeline, laid out in execution order.
  *
  *  1. Session: the one input only a human can supply. A dead session is the
- *     most common reason a sync fails, and the fix (paste fresh cookies) is
- *     only possible here — so it sits first, and pasting new cookies
+ *     most common reason a sync fails, and the fix (log in, paste fresh cookies)
+ *     is only possible here — so it sits first, and pasting new cookies
  *     refreshes the panels below (the onChange wire that the old mega-page
  *     never connected).
  *  2. Decision queue: each assembly order linked to a run or marked external,

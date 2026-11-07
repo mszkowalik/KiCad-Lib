@@ -34,10 +34,11 @@ from the BOM.
   3. `secretkey`: minted from `/api/overseas-core-platform/secret/update` with
      a random uuid4 hex `keyId`, **30-minute TTL**.
 
-Failure modes are distinct and must not be conflated: HTTP **460** = the
-session cookies are dead (a human must log in again); `success:false` with
-code 401/403 = only the secret key went stale, so re-mint and retry once. The
-retry is automatic; the re-login is not, and is surfaced to the user.
+Failure modes are distinct and must not be conflated: **460**, as an HTTP status
+or as `code` in a 200 body = the session cookies are dead (a human must log in
+again); `success:false` with code 401/403 = only the secret key went stale, so
+re-mint and retry once. The retry is automatic; the re-login is not, and is
+surfaced to the user.
 
 This is an UNDOCUMENTED, UNVERSIONED API that can change without notice — treat
 every response as untrusted shape and keep the raw payload. The endpoint map
@@ -49,6 +50,8 @@ from __future__ import annotations
 import base64
 import json
 import logging
+import re
+import shlex
 import threading
 import time
 import urllib.parse
@@ -114,14 +117,25 @@ class _StaleSecretKey(JlcWebError):
 
 
 # --------------------------------------------------------------- credentials
-def _parse_cookie_blob(blob: str) -> dict[str, str]:
-    """Accept either a raw `Cookie:` header string or a Playwright/DevTools
-    cookie-JSON array, so the user can paste whatever their browser gives them.
+def _cookies_in_curl(command: str) -> str:
+    """The cookie string of a DevTools "Copy as cURL": `-b`, or a `cookie:` header."""
+    try:
+        words = shlex.split(command)
+    except ValueError as e:
+        raise JlcWebError(f"could not read the cURL command: {e}") from e
+    for flag, value in zip(words, words[1:]):
+        if flag in ("-b", "--cookie"):
+            # Chrome writes $'...' when a value needs escapes.
+            return value.removeprefix("$")
+        if flag in ("-H", "--header") and value.removeprefix("$").lower().startswith("cookie:"):
+            return value.split(":", 1)[1]
+    return ""
 
-    A cURL copy yields `a=1; b=2`; a cookie-export extension yields
-    `[{"name": "a", "value": "1"}, ...]`. Both are common; neither is
-    obviously "the" format, so support both rather than making the user
-    convert by hand.
+
+def _parse_cookie_blob(blob: str) -> dict[str, str]:
+    """Read whatever a person can copy out of DevTools, so nobody converts by hand:
+    a "Copy as cURL" command, a `Cookie:` header alone or among other headers, a
+    cookie-JSON array, or the bare value of `JLCPCB_SESSION_ID`.
     """
     blob = (blob or "").strip()
     if not blob:
@@ -137,17 +151,23 @@ def _parse_cookie_blob(blob: str) -> dict[str, str]:
             if name:
                 out[name] = str(row.get("value") or "")
         return out
-    # Raw header form. Strip a leading "Cookie:" if the user pasted the header
-    # line verbatim.
-    if blob.lower().startswith("cookie:"):
-        blob = blob.split(":", 1)[1].strip()
+    if blob.lower().startswith("curl "):
+        blob = _cookies_in_curl(blob)
+    else:
+        header = re.search(r"^\s*cookie:(.*)$", blob, re.IGNORECASE | re.MULTILINE)
+        if header:
+            blob = header.group(1)
+    blob = blob.strip()
+    if re.fullmatch(r"[^\s=;]+", blob):
+        return {"JLCPCB_SESSION_ID": blob}
     out = {}
     for part in blob.split(";"):
         if "=" not in part:
             continue
         k, v = part.split("=", 1)
         k = k.strip()
-        if k:
+        # A name with a space in it is the rest of something else that was copied.
+        if k and not re.search(r"\s", k):
             out[k] = v.strip()
     return out
 
@@ -160,9 +180,8 @@ def get_session_cookies(db: Session) -> dict[str, str]:
     return _parse_cookie_blob(decrypt_token(row.cookies_enc))
 
 
-def set_session_cookies(db: Session, blob: str, label: str = "") -> dict:
-    """Store (encrypted) a pasted cookie blob. Returns a summary that NEVER
-    contains cookie values — the caller shapes an HTTP response from it."""
+def session_jar(blob: str) -> dict[str, str]:
+    """Parse a cookie blob and insist on the one cookie that is required."""
     jar = _parse_cookie_blob(blob)
     # Only the session cookie is genuinely required. XSRF-TOKEN carries
     # Max-Age=1800, so a copied session very often arrives without one — the
@@ -173,14 +192,38 @@ def set_session_cookies(db: Session, blob: str, label: str = "") -> dict:
             "authenticated jlcpcb.com request (DevTools > Network > Copy as cURL); "
             "it is httpOnly so document.cookie will not include it"
         )
+    return jar
+
+
+def verify_cookies(blob: str) -> None:
+    """Raise unless these cookies can read the account. Stores nothing.
+
+    A browser can hold the session cookie while it is logged out, so a paste has
+    to prove itself before it replaces a session that may still work.
+    """
+    WebClient(session_jar(blob)).post(ORDER_BATCH_LIST_PATH, _order_batches_payload(page_size=1))
+
+
+def set_session_cookies(db: Session, blob: str, label: str = "") -> dict:
+    """Store (encrypted) the cookies of a blob that `verify_cookies` has just passed.
+    Returns a summary that NEVER contains cookie values — the caller shapes an HTTP
+    response from it.
+
+    Only the cookies are kept, not the rest of a cURL command. Everything the status
+    reports about the OLD session is cleared: a new session has not died, and its
+    lifetime is measured from here."""
+    jar = session_jar(blob)
     row = db.get(M.JlcWebSession, 1)
     if row is None:
         row = M.JlcWebSession(id=1)
         db.add(row)
-    row.cookies_enc = encrypt_token(blob)
+    row.cookies_enc = encrypt_token("; ".join(f"{k}={v}" for k, v in jar.items()))
     row.label = label[:200]
     row.updated_at = M.utcnow()
-    row.last_ok_at = None
+    row.last_ok_at = row.updated_at
+    row.died_at = None
+    row.last_error = ""
+    row.keepalive_count = 0
     db.commit()
     _invalidate_client()
     return {"cookie_names": sorted(jar.keys()), "updated_at": row.updated_at.isoformat()}
@@ -418,9 +461,16 @@ class WebClient:
         if resp.status_code != 200:
             raise JlcWebError(f"JLC web HTTP {resp.status_code}: {resp.text[:300]}")
         try:
-            return resp.json()
+            body = resp.json()
         except ValueError as e:
             raise JlcWebError(f"JLC web returned non-JSON: {resp.text[:200]}") from e
+        # JLC also says it inside an HTTP 200 ("For security reasons, you were
+        # automatically logged out", seen 2026-11-07). Checked here so a key mint,
+        # which reads no `success` flag, recognises it too.
+        if isinstance(body, dict) and body.get("code") in (460, "460"):
+            msg = body.get("message") or body.get("msg") or "logged out"
+            raise JlcSessionExpired(f"JLCPCB session expired (code 460: {msg}) — re-paste browser cookies")
+        return body
 
     def _check_stale(self, result: dict) -> None:
         if not result.get("success") and result.get("code") in (401, 403, "401", "403"):
@@ -499,12 +549,9 @@ def _mark_ok(db: Session) -> None:
 
 
 # ---------------------------------------------------------------- endpoints
-def list_order_batches(db: Session, *, page: int = 1, page_size: int = 25,
-                       status: str = "", search: str = "") -> dict:
-    """Order batches (W...) from the order centre. `status` is JLC's own
-    vocabulary: shipped | inProduction | cancelled | waitPay | waitReview."""
-    client = _get_client(db)
-    payload = {
+def _order_batches_payload(*, page: int = 1, page_size: int = 25,
+                           status: str = "", search: str = "") -> dict:
+    return {
         "businessType": None,
         "orderStatisticsType": None,
         "searchKey": search or None,
@@ -515,6 +562,14 @@ def list_order_batches(db: Session, *, page: int = 1, page_size: int = 25,
         "currentPage": page,
         "pageRows": page_size,
     }
+
+
+def list_order_batches(db: Session, *, page: int = 1, page_size: int = 25,
+                       status: str = "", search: str = "") -> dict:
+    """Order batches (W...) from the order centre. `status` is JLC's own
+    vocabulary: shipped | inProduction | cancelled | waitPay | waitReview."""
+    client = _get_client(db)
+    payload = _order_batches_payload(page=page, page_size=page_size, status=status, search=search)
     data = client.post(ORDER_BATCH_LIST_PATH, payload).get("data") or {}
     _mark_ok(db)
     return data

@@ -38,11 +38,14 @@ def _guard(db: Session) -> None:
 
 def _run(fn, *args, **kwargs):
     """Map the service's two failure modes onto distinct HTTP codes: an expired
-    session is the user's to fix (401), anything else is upstream (502)."""
+    session is the user's to fix (409), anything else is upstream (502).
+
+    Never 401 for JLC's session: the web client reads any 401 as "your HENRY
+    session is gone" and drops the user back to the sign-in form."""
     try:
         return fn(*args, **kwargs)
     except jlc_web.JlcSessionExpired as e:
-        raise HTTPException(401, str(e)) from e
+        raise HTTPException(409, str(e)) from e
     except jlc_web.JlcWebError as e:
         raise HTTPException(502, str(e)) from e
 
@@ -55,10 +58,23 @@ def get_session(db: Session = Depends(get_db)):
 
 @router.put("/session")
 def put_session(body: SessionBody, db: Session = Depends(get_db)):
+    """Test a paste against JLC, then store it. A refused paste leaves the stored
+    session alone, because it may still work."""
     try:
-        summary = jlc_web.set_session_cookies(db, body.cookies, body.label)
+        jlc_web.session_jar(body.cookies)
     except jlc_web.JlcWebError as e:
         raise HTTPException(400, str(e)) from e
+    try:
+        jlc_web.verify_cookies(body.cookies)
+    except jlc_web.JlcSessionExpired as e:
+        raise HTTPException(
+            409,
+            "JLCPCB does not accept these cookies, so the stored session was kept. "
+            "Log in at jlcpcb.com, then copy them again.",
+        ) from e
+    except jlc_web.JlcWebError as e:
+        raise HTTPException(502, f"could not test the cookies against JLCPCB: {e}") from e
+    summary = jlc_web.set_session_cookies(db, body.cookies, body.label)
     # Never audit the cookie values — only that a session was replaced.
     audit(db, "jlc.web.session.set", "jlc_web_session", 1,
           {"cookie_names": summary["cookie_names"], "label": body.label})
@@ -132,7 +148,7 @@ def invoice_pdfs(body: InvoicePdfBody, db: Session = Depends(get_db)):
 
     A document that already has a PDF is skipped unless `force`. Each document
     commits on its own, so one refusal does not undo the others; an expired
-    session stops the run with 401 and keeps what was attached before it."""
+    session stops the run with 409 and keeps what was attached before it."""
     _guard(db)
     actor = acting_name()
     results = []
@@ -148,7 +164,7 @@ def invoice_pdfs(body: InvoicePdfBody, db: Session = Depends(get_db)):
             db.commit()
         except jlc_web.JlcSessionExpired as e:
             db.rollback()
-            raise HTTPException(401, {"error": str(e), "results": results}) from e
+            raise HTTPException(409, {"error": str(e), "results": results}) from e
         except (jlc_web.JlcWebError, jlc_invoice_pdf.InvoicePdfError) as e:
             db.rollback()
             results.append({"document_id": doc_id, "status": "error", "error": str(e)})

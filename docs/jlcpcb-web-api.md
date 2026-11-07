@@ -39,7 +39,7 @@ Three legs, **all required on every call**:
 
 | Leg | Value |
 |---|---|
-| Cookies | From a real browser login. `JLCPCB_SESSION_ID` is **httpOnly**, so `document.cookie` cannot produce it — take the whole `Cookie` header from DevTools → Network → Copy as cURL. |
+| Cookies | From a real browser login. `JLCPCB_SESSION_ID` is **httpOnly**, so `document.cookie` cannot produce it. A person copies the request from DevTools → Network → Copy as cURL and pastes it on the JLC page. Henry tests it before it stores it ([0102](decisions/0102-a-pasted-jlcpcb-session-is-tested-before-it-is-stored.md)). |
 | `x-xsrf-token` | The **URL-decoded** value of the `XSRF-TOKEN` cookie. |
 | `secretkey` | See below. |
 
@@ -61,7 +61,7 @@ form 2 explains why a stale key is a soft failure rather than a hard one.
 
 | Signal | Meaning | Action |
 |---|---|---|
-| HTTP **460** | Session cookies are dead. | A human must log in again. Surface it. |
+| HTTP **460**, or HTTP 200 with `code: 460` | Session cookies are dead. A made-up session gets the same "For security reasons" text. | A human must log in again. Henry answers **409**, never 401: the web client reads 401 as a lost Henry session. |
 | `success:false`, `code` 401/403 | Only the secret key aged out. | Re-mint and retry once (automatic). |
 | `code: 500`, "System error" | Usually wrong/missing parameters. | Not a session problem. |
 

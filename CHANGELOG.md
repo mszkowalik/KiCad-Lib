@@ -1,5 +1,23 @@
 # Changelog
 
+## 2026-11-07 (a logged-out JLCPCB session reads as dead)
+
+- **The JLCPCB session strip now reports a dead session when JLCPCB logs the account out.**
+  JLCPCB can answer HTTP 200 with `code: 460`. Henry read this as a network error, so the status
+  stayed `alive` and the time of death stayed empty. An import now gets the "session expired"
+  answer in place of an upstream error.
+- **A dead JLCPCB session no longer sends you to Henry's sign-in form.** Those routes answered 401,
+  which the web client reads as a lost Henry session. They now answer 409.
+- **A new JLCPCB session starts clean.** The strip no longer calls a new session dead because the
+  old one died, and it shows the message that JLCPCB sent when a check fails.
+- **New: Log in at JLCPCB on the JLC page** opens the login in a new tab, and the steps to copy the
+  session back appear beside it.
+- **A paste now accepts what DevTools gives you:** a Copy as cURL command, a `Cookie:` header, or
+  the value of `JLCPCB_SESSION_ID`. Henry keeps only the cookies.
+- **Henry tests a paste against JLCPCB before it stores it.** If JLCPCB refuses it, you see why, and
+  the stored session stays. Decision
+  [0102](docs/decisions/0102-a-pasted-jlcpcb-session-is-tested-before-it-is-stored.md).
+
 ## 2026-11-01 (the sync plugin ships no internal notes, and a skill body is checked)
 
 - **The sync plugin zip no longer carries the folder's `CLAUDE.md`.** It reached every user's

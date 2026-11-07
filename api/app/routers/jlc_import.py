@@ -47,7 +47,7 @@ def sync(limit_pages: int = 4, db: Session = Depends(get_db)):
     try:
         report = jlc_import.sync_stage(db, limit_pages=limit_pages)
     except jlc_web.JlcSessionExpired as e:
-        raise HTTPException(401, str(e)) from e
+        raise HTTPException(409, str(e)) from e
     except jlc_web.JlcWebError as e:
         raise HTTPException(502, str(e)) from e
     if report.get("error"):
@@ -331,7 +331,7 @@ def list_parts_orders(db: Session = Depends(get_db)):
     try:
         index = jlc_import.index_parts_orders(jlc_web.list_parts_orders(db))
     except jlc_web.JlcSessionExpired as e:
-        raise HTTPException(401, str(e)) from e
+        raise HTTPException(409, str(e)) from e
     except jlc_web.JlcWebError as e:
         raise HTTPException(502, str(e)) from e
 
@@ -402,7 +402,7 @@ def _parts_plan(db: Session, pob: str) -> dict:
                 404, f"{pob} is not among your JLC parts orders. Visible: {known}")
         invoice_raw = jlc_web.get_parts_invoice(db, pob)
     except jlc_web.JlcSessionExpired as e:
-        raise HTTPException(401, str(e)) from e
+        raise HTTPException(409, str(e)) from e
     except jlc_web.JlcWebError as e:
         raise HTTPException(502, str(e)) from e
     return jlc_import.plan_parts_document(pob, lots, invoice_raw)
@@ -522,7 +522,7 @@ def fetch_bom(smt_order_code: str, db: Session = Depends(get_db)):
                      f"{smt_order_code} — it may belong to a different batch")
         detail = jlc_web.get_smt_order_detail(db, uuid)
     except jlc_web.JlcSessionExpired as e:
-        raise HTTPException(401, str(e)) from e
+        raise HTTPException(409, str(e)) from e
     except jlc_web.JlcWebError as e:
         raise HTTPException(502, str(e)) from e
 
@@ -877,7 +877,7 @@ def refresh_fees(force: bool = False, db: Session = Depends(get_db)):
         try:
             ok = jlc_import._fetch_fee_info(db, row)
         except jlc_web.JlcSessionExpired as e:
-            raise HTTPException(401, str(e)) from e
+            raise HTTPException(409, str(e)) from e
         fetched += 1 if ok else 0
         failed += 0 if ok else 1
     audit(db, "jlc.import.fees.refresh", "jlc_import", None,
