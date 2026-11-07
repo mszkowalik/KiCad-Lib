@@ -56,6 +56,12 @@ jobs:
             fi
           done
           exit $rc
+      # A function of the platform is reachable from the UI (docs/reference/ui-map.md).
+      - name: every API route has a screen or a written reason
+        run: python3 scripts/check-ui-routes.py
+      # One stylesheet, and a rule with no element is a rule people maintain for nothing (web/CLAUDE.md).
+      - name: every CSS class has a user or a written reason
+        run: python3 scripts/check-css.py
 
   build:
     needs: guard

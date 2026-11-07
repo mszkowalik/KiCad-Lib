@@ -1,0 +1,35 @@
+# API routes with no caller in web/src, and the reason each one has none.
+# Format: METHOD /path, then two spaces, then the reason. scripts/check-ui-routes.py
+# reads this file. A route is here only for one of two reasons: a machine client uses
+# it, or the UI reaches the same function through another route. Name that route.
+
+# Machine clients
+GET /api/agent/mcp-server  The MCP server script. An agent fetches it after the setup prompt on the Account page.
+GET /api/agent/tools  The MCP server reads the tool list.
+POST /api/agent/tools/{name}  The MCP server runs a tool.
+GET /api/kicad/pcm/repository.json  KiCad's Plugin and Content Manager reads it. The Account page shows the address.
+GET /api/kicad/pcm/{filename}  KiCad's Plugin and Content Manager downloads packages.
+POST /api/kicad/pcm/models-delta  The KiCad sync plugin.
+
+# The UI reaches the same function through another route
+PATCH /api/run-documents/{doc_id}  The invoice page saves the header with its lines, through PATCH .../lines. The MCP server uses this one.
+GET /api/companies/{company_id}/tax-periods  Company books gets them in its own payload.
+GET /api/projects/{project_id}/ownership  The project payload carries it.
+GET /api/fieldsolver/templates  The solver page chooses the template from the pair type. An agent reads the list.
+POST /api/fieldsolver/projects/{project_id}/profiles  The page saves through .../profiles/batch. An agent saves one profile.
+GET /api/flasher/deployments/{deployment_id}  The procedures list carries it. An agent reads one.
+PATCH /api/flasher/projects/{project_id}/param-sets/{name}  The Parameter sets page writes the whole set with PUT. An agent sets single keys.
+GET /api/mqtt/config  The Fleet broker card reads /api/mqtt/status and saves with PUT.
+GET /api/process-versions/{version_id}  The project's process payload carries it. scripts/ledger-golden.py reads it.
+GET /api/snapshots/{snapshot_id}  The project's snapshot list carries it.
+GET /api/signoffs  The component browser shows each state. An agent reads the list.
+GET /api/transfers/history  The Stock split card gets the same plan from the POST dry run.
+
+GET /api/flasher/deployment-versions/{version_id}/validate  The version detail route carries the same answer as `validation`, and the version page shows it.
+GET /api/checklists  Reviews → Checklists reads /api/checklists/all, whose rows carry each id.
+
+# scripts/ledger-golden.py compares these before and after a ledger change
+GET /api/orders/{order_id}/stock-options  scripts/ledger-golden.py.
+GET /api/documents  scripts/ledger-golden.py. Purchase invoices reads /api/invoices.
+GET /api/projects/{project_id}/stock-adjustments  scripts/ledger-golden.py. Stock reads /api/stock-adjustments.
+GET /api/projects/{project_id}/cost-pool  scripts/ledger-golden.py. Stock reads /api/parts-stock.

@@ -25,6 +25,12 @@ every push to `main` (pull requests build without pushing);
   `svg_units.py` is there because BOTH renderers have to pick a symbol's unit
   out of the per-unit files kicad-cli writes, and it imports nothing, which is
   what lets one file be a package module here and a flat module there.
+- **The `guard` job also runs `scripts/check-ui-routes.py`.** A new API route with no
+  caller in `web/src` and no line in `scripts/routes-without-ui.txt` fails the build.
+  [ui-map.md](ui-map.md) says what to do with it.
+  **It also runs `scripts/check-css.py`.** A class in `web/src/styles.css` that no
+  string in `web/src` uses fails the build. Remove the rule. If the code builds the
+  name at run time, give the reason in `ALLOW` in that script.
 
 `linux/amd64` only, on purpose: the render image's `kicad/kicad` base is
 published amd64-only, and the api image compiles LibreDWG from source, which
