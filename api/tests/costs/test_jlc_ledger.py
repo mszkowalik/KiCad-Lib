@@ -545,3 +545,23 @@ def test_a_payment_fee_leaves_the_lot_and_gets_its_own_line(db, part):
     assert db.get(M.RunCostLine, part["line"].id).unit_price == 0.1
     added = db.query(M.RunCostLine).filter_by(document_id=doc.id, lot_ref="fee:POBTEST0001").one()
     assert added.unit_price == 0.23 and doc.total_amount == 100.23
+
+
+# ------------------------------------------------------------- the sync itself
+
+def test_a_sync_that_reads_no_part_while_the_balance_holds_some_is_an_error(db, monkeypatch):
+    """The syncs of 2026-10-20 and 2026-11-06 read 0 parts and reported no
+    error, so Stock compared against a ledger frozen at 2026-09-23."""
+    monkeypatch.setattr(L, "stock_keys", lambda _db: {})
+    db.query(M.JlcStockItem).delete()
+    db.add(M.JlcStockItem(lcsc="CLEDGER01", qty=500))
+    db.flush()
+    with pytest.raises(L.LedgerReadNothing):
+        L.sync(db)
+
+
+def test_a_sync_with_nothing_held_and_nothing_read_is_no_error(db, monkeypatch):
+    monkeypatch.setattr(L, "stock_keys", lambda _db: {})
+    db.query(M.JlcStockItem).delete()
+    db.flush()
+    assert L.sync(db)["parts"] == 0

@@ -65,6 +65,11 @@ STATUS_VOID = 3
 _PAGE = 100
 
 
+class LedgerReadNothing(jlc_web.JlcWebError):
+    """The stock list gave no part while the balance holds some. Both sync
+    routes already turn a `JlcWebError` into an error the Stock page shows."""
+
+
 def _ts(ms) -> datetime:
     """JLC stamps in epoch milliseconds. Kept in China time, the calendar every
     other JLC figure is dated in (see `run_actuals._jlc_date`)."""
@@ -122,6 +127,17 @@ def sync(db: Session, only: list[str] | None = None) -> dict:
     it is a balance, not a history.
     """
     keys = stock_keys(db)
+    if not keys and not only:
+        # An empty stock list is not "nothing moved". The syncs of 2026-10-20
+        # and 2026-11-06 read 0 parts and reported no error, so Stock compared
+        # against a ledger frozen at 2026-09-23 for six weeks. The balance (the
+        # OpenAPI's, a separate read) says whether there is anything to read.
+        held = db.query(M.JlcStockItem).filter(M.JlcStockItem.qty > 0).count()
+        if held:
+            raise LedgerReadNothing(
+                f"JLCPCB's stock list gave no part, but the balance holds {held} part(s), "
+                "so JLC's ledger was not read. The browser session may be dead: paste "
+                "fresh JLCPCB cookies, then sync again.")
     if only:
         want = {c.upper() for c in only}
         keys = {k: v for k, v in keys.items() if k.upper() in want}

@@ -23,6 +23,9 @@
   part's own events name. The `get_part_ledger` agent tool reads the same route.
 - **The line batch edit of a document refuses a key it does not know.** A body with `lines` instead of
   `updates` answered 200 and wrote nothing. It now answers 422 and names the key.
+- **A JLC ledger sync that reads no part while the balance holds some is an error.** The syncs of
+  2026-10-20 and 2026-11-06 read 0 parts and said nothing, so Stock compared against a ledger six weeks old.
+  "Sync stock count" also showed no ledger error at all. Both now say that the ledger was not read.
 
 ## 2026-11-08 (Batch 8 of CE_Dongle_V2 and the dongle carton count, data corrections)
 

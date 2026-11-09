@@ -215,6 +215,10 @@ export default function Stock() {
                   : "")
               : ""),
         );
+        // The balance can sync while the ledger fails (a dead browser session,
+        // an empty stock list). Dropping that error left Stock comparing
+        // against a ledger six weeks old with nothing on screen to say so.
+        if (r.ledger && "error" in r.ledger) setError(`JLC's ledger was not read: ${r.ledger.error}`);
         load();
       })
       .catch((err) => {
