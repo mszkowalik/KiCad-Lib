@@ -9331,6 +9331,8 @@ export interface CraftDevice {
   done: string[];
   /** why it cannot be finished yet */
   missing: string[];
+  /** the date of its latest finish step; null while it is not finished */
+  finished_at: string | null;
   price_usd: number | null;
 }
 

@@ -313,6 +313,21 @@ def test_finish_refuses_a_missing_required_step_and_shipping_waits_for_it(db, wo
     assert db.query(M.Unit).filter_by(device_unit_id=d.id).one().status == "finished"
 
 
+def test_the_device_list_gives_the_date_a_unit_was_finished(db, world):
+    """Finding the units finished on one day meant matching that day's clicks
+    to the shelf, because a device row had steps and no dates (todo row 68)."""
+    d, tw = _crafted_device(db, world, 8)
+    T.record_marking(db, d, laser=True, label=True)
+    for step in ("uvprint", "carton"):
+        T.apply_step(db, world["b1"], step_key=step, device_ids=[d.id], chosen="list", dry_run=False)
+    row = next(r for r in T.craft_view(db, world["b1"])["devices"] if r["device_id"] == d.id)
+    assert row["finished_at"] is None
+    plan = T.finish(db, world["b1"], device_ids=[d.id], chosen="scanned", dry_run=False)
+    click = db.get(M.Click, plan["step_run_id"])
+    row = next(r for r in T.craft_view(db, world["b1"])["devices"] if r["device_id"] == d.id)
+    assert row["finished_at"] == click.at and click.at
+
+
 def _crafted_devices(db, world, first, n):
     """`n` programmed devices of B1, enclosed, serials TW<first>…"""
     stack = _received(db, world, n)

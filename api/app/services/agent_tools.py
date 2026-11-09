@@ -3088,7 +3088,7 @@ def get_batch(run_id: int, devices: str = "", limit: int = 100) -> str:
 
     Args:
         run_id: The batch id (see get_project or get_production_run).
-        devices: Optional. "active", "finished" or "all" lists those devices; a list of serials or MACs lists those. Each row: serial, state, steps done, what it still needs.
+        devices: Optional. "active", "finished" or "all" lists those devices; a list of serials or MACs lists those. Each row: serial, state, steps done, what it still needs, and the date of its finish step.
         limit: Most device rows to return. Default 100.
     """
     from ..routers import process as proc
@@ -3123,7 +3123,8 @@ def get_batch(run_id: int, devices: str = "", limit: int = 100) -> str:
         "gaps": v.get("gaps", []),
         "devices_by_state": states, "active_devices_need": needs,
         "devices": [{"device_id": d["device_id"], "serial": d.get("serial"), "state": d.get("status"),
-                     "done": d.get("done"), "needs": d.get("missing")} for d in rows[:limit]],
+                     "done": d.get("done"), "needs": d.get("missing"),
+                     "finished_at": d.get("finished_at")} for d in rows[:limit]],
         "devices_listed": f"{min(len(rows), limit)} of {len(rows)}" if want else None,
         "recent_clicks": [{k: c.get(k) for k in ("id", "step", "qty", "chosen", "made_at", "actor", "note",
                                                  "batch_id")} for c in (v.get("clicks") or [])[:15]],

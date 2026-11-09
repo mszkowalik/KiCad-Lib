@@ -30,6 +30,9 @@
   KH button, and the organizer views showed them.
 - **The enclosure adjustments A and B say how to correct them.** Their notes told the reader to edit them,
   which the platform cannot do. They now say to write a new adjustment that names the device.
+- **The batch device list gives the date each unit was finished.** A new Finished column on the batch's
+  Devices card, and `finished_at` on each device row of `get_batch`. To find the units finished on one day,
+  type the date into the column's filter.
 
 ## 2026-11-08 (Batch 8 of CE_Dongle_V2 and the dongle carton count, data corrections)
 

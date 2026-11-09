@@ -93,8 +93,10 @@ export default function RunDevices({ run, craft, group, onModal }: {
       render: (r) => <Link to={`/production/devices/${r.id}`} onClick={(e) => e.stopPropagation()}>{r.code}</Link> },
     { key: "status", label: "Work", width: 10, get: (r) => r.twin?.status ?? "gap",
       render: (r) => (r.twin ? <StatusPill status={r.twin.status} /> : <span className="pill warn">gap</span>) },
-    { key: "done", label: "Done", width: 17, get: (r) => (r.twin?.done ?? []).map(label).join(", ") },
-    { key: "missing", label: "Still needs", width: 18, get: (r) => (r.twin?.missing ?? []).join("; "),
+    { key: "done", label: "Done", width: 12, get: (r) => (r.twin?.done ?? []).map(label).join(", ") },
+    // The finish date, so the units finished on one day are one filter away.
+    { key: "finished", label: "Finished", width: 9, className: "mono", get: (r) => r.twin?.finished_at ?? "" },
+    { key: "missing", label: "Still needs", width: 14, get: (r) => (r.twin?.missing ?? []).join("; "),
       render: (r) => (!r.twin ? <span className="muted">a unit: merge it</span>
         : r.twin.status === "finished" ? <span className="muted">—</span>
         : r.twin.missing.join("; ") || "ready to finish") },

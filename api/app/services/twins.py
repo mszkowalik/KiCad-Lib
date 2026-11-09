@@ -146,6 +146,20 @@ def needs_met(graph: dict, step: dict, done: set[str], since: set[str] | None = 
     return why
 
 
+def finished_on(db: Session, twin_ids: list[int]) -> dict[int, str]:
+    """The date of each twin's latest finish click. The batch device list gave
+    the steps a unit has done and no dates, so the units finished on one day
+    could be found only by matching that day's clicks to the shelf (todo row
+    68, 2026-11-08)."""
+    if not twin_ids:
+        return {}
+    rows = (db.query(M.MaterialEventLot.lot_id, func.max(M.Click.at))
+            .join(M.Click, M.Click.id == M.MaterialEventLot.event_id)
+            .filter(M.MaterialEventLot.lot_id.in_(twin_ids), M.Click.step_kind == "finish")
+            .group_by(M.MaterialEventLot.lot_id).all())
+    return {tid: at for tid, at in rows if at}
+
+
 def since_reopen(db: Session, twin_ids: list[int]) -> dict[int, set[str]]:
     """For each twin reopened for rework: the step keys it did after its
     latest reopen. A twin never reopened is absent (decision 0074)."""
@@ -2529,6 +2543,7 @@ def craft_view(db: Session, run: M.ProductionRun) -> dict:
     done = done_steps(db, [tw.id for tw in named])
     again = since_reopen(db, [tw.id for tw in named])
     pr = prices(db, named) if named else {}
+    fin = finished_on(db, [tw.id for tw in named if tw.status == "finished"])
     devs = {d.id: d for d in db.query(M.DeviceUnit)
             .filter(M.DeviceUnit.id.in_([tw.device_unit_id for tw in named] or [-1])).all()}
     devices = []
@@ -2539,6 +2554,7 @@ def craft_view(db: Session, run: M.ProductionRun) -> dict:
                         "origin_run_id": tw.origin_run_id, "done": in_route_order(done[tw.id]),
                         "missing": needs_met(graph, P.step_of_kind(graph, "finish") or {}, done[tw.id], again.get(tw.id))
                         if tw.status == "active" else [],
+                        "finished_at": fin.get(tw.id),
                         "price_usd": pr.get(tw.id, {}).get("total_usd")})
     # The header's figures read as the board's (processes.md, "The board and
     # the scan group"): received is the batch's own boards in, wherever they
