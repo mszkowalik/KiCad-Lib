@@ -1,5 +1,38 @@
 # Changelog
 
+## 2026-11-09 (dongle labels and alert clean-up, data corrections)
+
+- **The 362 dongle label steps that drew no label now draw one.** Henry knew one roll of 500 DYMO
+  `2112283` labels (LIFTECH 1/7/2026). Batch 8 of CE_Dongle_V2 printed 302 more, and Batch 1 of
+  CE_Dongle_V3 printed 60 more. No purchase covers them, and the user decided that they were free. An
+  `opening_balance` adjustment of 362 at zero value, dated 2026-10-08, holds them, and each of the 362
+  steps draws 1 label from it at zero cost. The draws were written by a script that uses the platform's
+  own draw code, with a backup before it.
+- **5 `HX JN1.27-2x5 TP H4.9` and 1 `FZ100UF35V90RV0145` are written off.** These pieces of an LCSC order of
+  2025-10-07 were in no office box, and JLC did not hold them either. Stock now reconciles every part.
+- **Two BOM lines have a price.** The Aqua shipping carton takes 0.551 PLN from the PUDLO invoice of
+  2024-11-28. The Hammond `1551V3GY` enclosure of DC_Temp takes the Mouser prices of 2023-10-11 (8.94 PLN
+  from 15 pieces) and 2024-01-11 (8.33 PLN from 137 pieces).
+
+## 2026-11-08 (Batch 8 of CE_Dongle_V2 and the dongle carton count, data corrections)
+
+- **Batch 8 counts its own 800 boards again.** The 10 unprogrammed boards of the 2026-10-02 stock count
+  were older boards. Batch 8 programmed them and gave each one a Batch 8 twin, so 10 Batch 8 boards had
+  no twin. The 10 twins are now found units at zero value of the batch that the MAC points to (8 of
+  Batch 7, 1 of Batch 5, 1 unknown and entered as Batch 7). 10 new Batch 8 twins hold the boards they
+  displaced: 3 finished and on delivery 2332, 3 wait for enclosures, and 4 are scrapped (2 damaged, 2 not
+  found). The 9 older boards that shipped no longer carry a share of Batch 8's board cost. The change was a
+  direct database edit (todo row 66), with a backup before it.
+- **Order 1574 (Columbus Energy) is 294 CE_DONGLE_V2, not 250.** Delivery 2332 holds 174 units, the
+  rest of Batch 8.
+- **The enclosure adjustment B of 2026-10-23 is −61, not −64.** Three of its enclosures are now on
+  devices that have a record, and the Batch 8 enclosure step drew them. The enclosure stock stays at 0.
+- **The dongle carton stock is 127, not 2,498.** The user counted 127 on 2026-11-08, all of them from the
+  300 of PUDLO 33/11/2026. A `miscount` adjustment of −2,371 holds the difference. Nobody knows where
+  those cartons went: they are most of the 3,000 of PUDLO 141/06/2026.
+- **PUDLO 141/06/2026 shows its KSeF invoice first.** Its main file was the proforma FPRO 21/26. The
+  proforma is still attached.
+
 ## 2026-11-07 (money and stock figures that did not add up)
 
 - **An order's margin is taken on the units it shipped.** "Did this order make money?" set the whole

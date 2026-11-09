@@ -201,6 +201,17 @@ CE_Dongle_V2 after both parts: 34 in stock (32 held `faulty`, 2 sellable), 15
 missing. The 10 unprogrammed boards get their records when the bench programs
 them.
 
+**Outcome (2026-11-08).** Batch 8 programmed the 10 boards between 2026-10-05
+and 2026-10-26 and gave each one a Batch 8 twin. `d4:e9:f4:f5:8c:a4` failed
+again and was scrapped on 2026-10-09. The other 9 were finished and shipped
+(489D31D7B8DC is on delivery 2332). On 2026-11-08 their twins became found
+units at zero value of the batch that the full MAC points to: 8 of Batch 7, and
+2043A84D8C0C of Batch 5 (437 Batch 5 devices share its first 4 bytes). Two are
+weak: only the 3-byte prefix of 489D31D7B8DC matches Batch 7, and no device
+matches 1C8F5739A4F8, which is entered as Batch 7 by the user's choice. The
+prefix count above (2 Batch 5, 1 Batch 4) used serials, and older batches keep
+only the last 3 bytes of the MAC in the serial.
+
 ## CE_Dongle_V3
 
 Reconciled on 2026-10-03, read-only. **The desk readout is NOT a full
