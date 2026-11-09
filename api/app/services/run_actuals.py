@@ -39,7 +39,7 @@ from sqlalchemy.orm import Session, selectinload
 from .. import models as M
 from ..config import settings
 from . import companies as _companies  # also registers `stamp_stock` (decision 0064)
-from . import cost_steps, doc_kinds, fx
+from . import cost_steps, doc_kinds, fx, jlc
 from .material_ledger import core as _ledger_core  # noqa: F401 — registers the item listener
 from .project_bom import display_currency, run_pricing_date
 
@@ -2069,6 +2069,8 @@ def parts_stock(db: Session, company_id: int | None = None) -> dict:
             "paid_unit_usd": _round(p["avg_usd"]),
             "paid_value_usd": paid_value,
             "held_qty": held,
+            # of `held_qty`, the pieces listed for resale on JLC (still ours)
+            "listed_for_sale_qty": sum(jlc.idle_qty(c.raw) for c in found.values()),
             "market_unit_usd": market_unit,
             "market_value_usd": market_value,
             "remaining_at_market_usd": remaining_market,
@@ -2126,7 +2128,8 @@ def parts_stock(db: Session, company_id: int | None = None) -> dict:
             "remaining_at_sync_qty": 0.0,
             "house_qty": 0.0, "house_boxes": [], "expected_at_jlc_qty": 0.0,
             "paid_unit_usd": None, "paid_value_usd": 0.0,
-            "held_qty": it.qty, "market_unit_usd": it.unit_price_usd,
+            "held_qty": it.qty, "listed_for_sale_qty": jlc.idle_qty(it.raw),
+            "market_unit_usd": it.unit_price_usd,
             "market_value_usd": market_value, "remaining_at_market_usd": 0.0,
             "delta_qty": float(it.qty), "delta_value_usd": None,
             "state": "jlc_only", "unknown_rate": False,

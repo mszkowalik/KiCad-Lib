@@ -363,6 +363,12 @@ export default function Stock() {
             <span className="mono">{r.mpn || r.lcsc || "—"}</span>
           )}
           {r.state === "jlc_only" ? <span className="pill warn">no invoice</span> : null}
+          {r.listed_for_sale_qty > 0 ? (
+            <span className="pill neutral"
+                  title={`${qty(r.listed_for_sale_qty)} listed for resale on JLC — still ours until a buyer pays`}>
+              for sale
+            </span>
+          ) : null}
         </>
       ),
     },

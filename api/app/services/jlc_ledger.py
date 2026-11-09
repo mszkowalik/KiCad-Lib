@@ -61,6 +61,18 @@ JLC_SUPPLIER = "JLCPCB"
 # do not (C157472, C62102 — five such rows in total).
 STATUS_VOID = 3
 
+# A resale listing ("Sell this Part") is a `bussinessType` 5 row coded `SIP…`:
+# negative when the pieces go to JLC's idle pool, positive under the same code
+# on "Unpublish" (C965790, 2026-04-27 and 2026-07-28). A listing JLC refused is
+# a status-3 row ("Published failed": C62102 and C157472, 2024 and 2026-11-09).
+# The pieces stay ours while listed; the OpenAPI reports them as `idleStock`.
+RESALE_PREFIX = "SIP"
+
+
+def is_resale_listing(business_code: str | None) -> bool:
+    return (business_code or "").upper().startswith(RESALE_PREFIX)
+
+
 _PAGE = 100
 
 
@@ -255,12 +267,23 @@ def unexplained(db: Session, lcsc: str = "") -> dict:
 
     receipts: dict[tuple[str, str], int] = {}
     theirs: list[dict] = []
+    listed: dict[tuple[str, str], dict] = {}
     for r in rows:
         if r.change_status == STATUS_VOID:
             continue  # JLC cancelled it; nothing moved
         if str(r.change_key_id) in booked:
             continue  # written as a draw straight from this row
         code = r.business_code
+        if is_resale_listing(code):
+            # Listed for resale ("Sell this Part"): the pieces leave the
+            # private stock for JLC's idle pool and are still ours. An
+            # "Unpublish" brings them back under the same code.
+            k = (r.lcsc.upper(), code)
+            row = listed.setdefault(k, {"lcsc": r.lcsc, "mpn": r.mpn, "business_code": code,
+                                        "listed_at": r.changed_at.astimezone(JLC_TZ).strftime("%Y-%m-%d"),
+                                        "qty": 0})
+            row["qty"] -= r.change_qty
+            continue
         key = (r.lcsc.upper(), code)
         if r.business_type == BT_PARTS_ORDER and r.change_qty > 0:
             receipts[key] = receipts.get(key, 0) + r.change_qty
@@ -280,9 +303,9 @@ def unexplained(db: Session, lcsc: str = "") -> dict:
 
     # A draw JLC later gave back is not a disagreement: SMT026061460600 took 20
     # parts on 2026-06-14 and returned every one on 2026-06-15 (40 rows, net
-    # zero), and a ship-out request that came back does the same under its SIP
-    # code. Netting by document keeps those out of the report — what is left is
-    # stock that really moved.
+    # zero). Netting by document keeps those out of the report — what is left
+    # is stock that really moved. (A `SIP` code is a resale listing, handled
+    # above, not a ship-out request as this comment said until 2026-11-09.)
     net: dict[tuple[str, str], int] = {}
     for t in theirs:
         if t["business_code"]:
@@ -317,10 +340,14 @@ def unexplained(db: Session, lcsc: str = "") -> dict:
                              for line, doc in held), 4),
         })
 
+    listed_now = [v for v in listed.values() if v["qty"] > 0]
     return {
         "jlc_rows_we_cannot_explain": theirs,
         "our_lines_jlc_never_received": ours,
+        "listed_for_resale": sorted(listed_now, key=lambda v: v["lcsc"]),
         "totals": {
+            "listed_for_resale_parts": len(listed_now),
+            "listed_for_resale_qty": sum(v["qty"] for v in listed_now),
             "parts": len({r.lcsc for r in rows}),
             "ledger_rows": len(rows),
             "unexplained_rows": len(theirs),

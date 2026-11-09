@@ -111,15 +111,25 @@ def _int(v) -> int:
         return 0
 
 
+def idle_qty(raw: dict | None) -> int:
+    """Pieces we listed for resale on JLC ("Sell this Part"). Still ours until
+    a buyer pays, and NOT counted in `jlcpcbParts` while listed."""
+    return _int((raw or {}).get("idleStock"))
+
+
 def _parse_item(raw: dict) -> dict:
     # Verified response shape (2026-07): componentCode, componentModel,
     # componentSpecification, and the held quantity split by source:
     # jlcpcbParts (bought at JLC) + consignedParts (shipped in by the user)
-    # + globalSourcingParts. idleStock is the unreserved subset.
+    # + globalSourcingParts + idleStock.
+    # idleStock is NOT a subset of the others, as this comment said until
+    # 2026-11-09: a part listed for resale leaves `jlcpcbParts` and appears
+    # only there (C110548: jlcpcbParts 0, idleStock 500). It is still ours.
     qty = _int(raw.get("jlcpcbParts")) + _int(raw.get("consignedParts")) + _int(
         raw.get("globalSourcingParts")
-    )
-    if qty == 0 and not any(k in raw for k in ("jlcpcbParts", "consignedParts", "globalSourcingParts")):
+    ) + idle_qty(raw)
+    if qty == 0 and not any(k in raw for k in ("jlcpcbParts", "consignedParts", "globalSourcingParts",
+                                                "idleStock")):
         qty = _int(_first(raw, "stockCount", "stockQty", "stockNumber", "quantity", "count", default=0))
     return {
         "lcsc": str(_first(raw, "componentCode", "lcscPart", "lcscCode", "code", default="")).strip(),

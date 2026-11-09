@@ -265,6 +265,13 @@ orders #5 and #6 cancelled with their shipments reversed; new order #1556
 DISPLAY their old order values (2,250 and 4,500 PLN); demand ignores them,
 and no invoice ever backed them, so no revenue figure moved.
 
+**SUPERSEDED 2026-11-09** (user): prototypes handed to Columbus are not
+shipments. Orders #5, #6 and #1556, shipments #5, #6, #2308 and #2309 and
+their 36 device events are deleted; the 6 records #11480-84 and #11493, and
+`ac:eb:e6:d3:46:98` (on CE's bench), are `in_stock` / `prototype` with a note
+that they are at CE. Backup: `~/kicadlib-backups/before-ce-prototypes-2026-11-09.psv`
+on the server.
+
 The 4 erased v3.3 units (`d3:d1:9c`, `d3:8e:68`, `d3:36:ac`, `d2:79:08`)
 remain without a known build. It only matters for the cost note when they
 are entered as found units under 0059 — like the 63 bare Aquas, they get no

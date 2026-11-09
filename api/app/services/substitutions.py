@@ -263,6 +263,33 @@ def _same_component(db: Session, a: str, b: str) -> bool:
     return ca is not None and ca == cb
 
 
+def _process_component_ids(db: Session, run: M.ProductionRun) -> set[int]:
+    """Components the batch's process takes at a step, plus every component a
+    prepared recipe turns into one of them (its inputs, recursively)."""
+    if not run.process_version_id:
+        return set()
+    from . import process as P
+
+    v = db.get(M.ProcessVersion, run.process_version_id)
+    if v is None:
+        return set()
+    graph = P._graph(v) or {}
+    ids = {int(i["component_id"]) for s in graph.get("steps") or []
+           for i in s.get("inputs") or [] if i.get("component_id")}
+    recipes = graph.get("prepared") or []
+    grew = True
+    while grew:
+        grew = False
+        for r in recipes:
+            if r.get("output_component_id") in ids:
+                for i in r.get("inputs") or []:
+                    cid = i.get("component_id")
+                    if cid and int(cid) not in ids:
+                        ids.add(int(cid))
+                        grew = True
+    return ids
+
+
 def unused(db: Session, run: M.ProductionRun) -> dict:
     """Positions the design asks for that this batch shows no sign of fitting.
 
@@ -303,6 +330,14 @@ def unused(db: Session, run: M.ProductionRun) -> dict:
     # the code alone reported the LEDs as never fitted.
     fitted_ids = {cid for cid in (_component_of(db, c) for c in codes) if cid}
     fitted_ids |= drawn_ids
+    # A crafted batch fits some design parts at its own steps, after the
+    # factory: the IPEX-SMA cables at `sma`, the antennas at `antennas`. Those
+    # are absent from the supplier's BOM by design, and absent from the draws
+    # until the step runs, so they read as "not on the board" on every V3 batch
+    # (Batch 1 and Batch 2, 2026-11-09). The step's part counts, and so does a
+    # part a prepared recipe turns into it: the carton takes the laser-marked
+    # antenna 578, made from the antenna 536 the schematic names.
+    fitted_ids |= _process_component_ids(db, run)
     covered: set[str] = set()
     for sub in for_run(db, run.id):
         covered.add((sub.specified_lcsc or "").upper())

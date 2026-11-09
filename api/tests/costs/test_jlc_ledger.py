@@ -119,6 +119,39 @@ def test_a_draw_jlc_gave_back_is_not_a_disagreement(db, part):
     assert t["netted_out_rows"] == 2
 
 
+def test_a_resale_listing_is_ours_and_not_a_disagreement(db, part):
+    """"Sell this Part" writes a `SIP…` row that takes the pieces out of the
+    private stock. They are still ours (C110548, 500 pieces, 2026-11-09), so the
+    row is reported as listed, never as a movement nobody can explain."""
+    _row(db, qty=-500, code="SIP2026110900829", bt=L.BT_PARTS_ORDER, key=900120)
+    r = L.unexplained(db)
+    assert r["totals"]["unexplained_rows"] == 0
+    assert [(x["business_code"], x["qty"]) for x in r["listed_for_resale"]] == [("SIP2026110900829", 500)]
+    assert r["totals"]["listed_for_resale_qty"] == 500
+    assert L.bookable(db) == []
+
+
+def test_an_unpublished_listing_is_no_longer_listed(db, part):
+    """"Unpublish" brings the pieces back under the same code (C965790,
+    2026-04-27 out and 2026-07-28 back)."""
+    _row(db, qty=-387, code="SIP2026042800286", bt=L.BT_PARTS_ORDER, when="2026-04-27", key=900121)
+    _row(db, qty=387, code="SIP2026042800286", bt=L.BT_PARTS_ORDER, when="2026-07-28", status=4, key=900122)
+    r = L.unexplained(db)
+    assert r["listed_for_resale"] == []
+    assert r["totals"]["unexplained_rows"] == 0
+
+
+def test_the_official_balance_counts_listed_pieces():
+    """The OpenAPI reports a listed part as `idleStock` only; it was left out
+    of the held quantity, which read the 500 listed pieces as gone."""
+    from app.services import jlc
+    item = jlc._parse_item({"componentCode": "C110548", "jlcpcbParts": 0, "consignedParts": 0,
+                            "globalSourcingParts": 0, "idleStock": 500})
+    assert item["qty"] == 500
+    assert jlc.idle_qty({"idleStock": 500}) == 500
+    assert jlc._parse_item({"componentCode": "C2673274", "jlcpcbParts": 4800, "idleStock": 0})["qty"] == 4800
+
+
 def test_a_purchase_the_ledger_never_received_is_reported(db, part):
     """The cancelled-lot shape: we booked 1,000 pieces, JLC's ledger records no
     receipt for them.

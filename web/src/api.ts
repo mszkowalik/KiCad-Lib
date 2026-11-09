@@ -4276,8 +4276,12 @@ export interface JlcLedgerBookable {
 export interface JlcLedgerReport {
   jlc_rows_we_cannot_explain: JlcUnexplainedRow[];
   our_lines_jlc_never_received: JlcUnconfirmedLine[];
+  /** parts we listed for resale on JLC, by listing; not a disagreement */
+  listed_for_resale: { lcsc: string; mpn: string; business_code: string; listed_at: string; qty: number }[];
   bookable: JlcLedgerBookable[];
   totals: {
+    listed_for_resale_parts: number;
+    listed_for_resale_qty: number;
     parts: number;
     ledger_rows: number;
     unexplained_rows: number;
@@ -4372,6 +4376,8 @@ export interface PartsStockRow {
   paid_value_usd: number;
   /** physical side: JLC consignment */
   held_qty: number;
+  /** of held_qty, the pieces listed for resale on JLC ("Sell this Part"); still ours */
+  listed_for_sale_qty: number;
   market_unit_usd: number | null;
   market_value_usd: number | null;
   /** the pool remainder priced at today's market — like-for-like with paid_value_usd */

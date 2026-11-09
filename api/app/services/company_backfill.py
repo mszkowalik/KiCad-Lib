@@ -112,7 +112,9 @@ def _jlc_web_billing(db: Session, doc: M.RunCostDocument, by_nip: dict[str, int]
     except Exception as exc:  # noqa: BLE001 — a dead session is no evidence, never a crash
         log.warning("buyer evidence: JLC parts invoice %s: %s", doc.external_id, exc)
         return None
-    for field in ("taxVatBilling", "brazilCpnjBilling"):
+    # `eoriNumber` is where the parts invoice puts the billed VAT number
+    # ("PL8513315635"); `taxVatBilling` is not in that payload at all.
+    for field in ("taxVatBilling", "brazilCpnjBilling", "eoriNumber"):
         nip = _digits(str((inv or {}).get(field) or ""))
         if nip in by_nip:
             return by_nip[nip]

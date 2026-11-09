@@ -1,5 +1,37 @@
 # Changelog
 
+## 2026-11-09 (JLC resale listings, COB buyers, parts the process fits)
+
+- **A part listed for resale on JLC stays in stock.** 21 parts that neither CE_Dongle_V3 nor
+  CE_Dongle_V3_AC uses were listed on JLC's idle-parts market on 2026-11-09 (C110548 and 20 others, about
+  2 572 USD at cost). JLC reports listed pieces as `idleStock`, which the balance left out, and writes a
+  `SIP…` ledger row, which the ledger report read as a movement nobody could explain. Both now count the
+  pieces as ours, and the Stock row says "for sale". Three listings JLC refused (the WJ15EDGKM terminal
+  blocks C62102, C62113 and C157472, "Published failed", as in 2024) stay in stock.
+- **A JLC parts order names its buyer company again.** The parts invoice carries the billed VAT number as
+  `eoriNumber`; the importer and the buyer backfill read `taxVatBilling`, which that payload does not
+  have, so the COB orders of 2026-11-05 came in with no company. The invoice PDFs of documents 4296 to
+  4298 are drawn (4297 final, 4296 and 4298 proformas while JLC still sources 3 lots).
+- **A part the process fits is no longer "not on the board".** The V3 cables (step `sma`) and antennas
+  (step `antennas`, which takes the laser-marked antenna a prepared recipe makes from the schematic's
+  part) were flagged on Batch 1 and Batch 2. The check now counts a part a step of the batch's process
+  takes, directly or through a recipe.
+- **Data corrections on prod, recorded on their rows:**
+  - Substitutions recorded from JLC's own BOMs: C60133 for C15195 at C26–C31 on Aqua Batches 2–5,
+    C2837530 for C2837519 on the V3.1 prototypes, C144804 for C25748 at R7 on Run #2. BOOT1 and RESET1
+    on Dongle V2 Batches 2 and 3 were left empty (a membrane button was used before the tact switch), and
+    J6 on the V3.1 prototypes was probably not soldered (user, uncertain).
+  - The DHL duty and VAT of 291,00 PLN for the LCSC shipment WL2510010084 is document 4300 (9Sigma), a
+    cost with no VAT deduction because no customs document exists; the duty/VAT split in its note is an
+    estimate from the commercial invoice. Documents 4299 and 4300 are marked "not sent" to the accountant.
+  - DotConnect 2022: invoice 7/6/2022 is cancelled, because correction 2/7/2022/KOREKTA renumbered it to
+    3/7/2022 and the register counted the sale twice. Both 2022 number corrections now point at the
+    invoice they correct. The defects of proformas 01/02/2025 and 2/7/2023 are noted on them.
+  - The 2024 carton placeholder (document 3187) is the final record; the 200-carton Dongle gap stays
+    unexplained.
+  - The V3 prototypes given to Columbus Energy are no shipments: orders 5, 6 and 1556 and their four
+    shipments are deleted, and the seven devices at CE are `in_stock` / `prototype` with a note.
+
 ## 2026-11-09 (plans: a supplier sends part at once and back-orders the rest)
 
 - **A supplier link holds both deliveries of one source.** Beside the quantity at once it now holds how

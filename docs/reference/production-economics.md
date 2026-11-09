@@ -365,11 +365,20 @@ guard reads one company's stock is in [companies.md](companies.md).
   answers HTTP 200 with an internal 500. `POST /api/jlc/stock/sync` fetches both,
   best effort on the ledger — the balance must not fail because the browser
   session lapsed.
-- **`changeStatus=3` is a movement that DID NOT HAPPEN** — a ship-out request
-  JLC cancelled. It still states a quantity and a before/after pair. Excluding
-  it, all 67 parts replay to the balance JLC reports; including it, two do not
-  (C157472, C62102). A part that does not replay is a FETCH problem, never a
-  disagreement about stock.
+- **`changeStatus=3` is a movement that DID NOT HAPPEN** — on C157472 and
+  C62102 it is a resale listing JLC refused ("Published failed"), not a
+  ship-out request as this line said until 2026-11-09. It still states a
+  quantity and a before/after pair. Excluding it, all 67 parts replay to the
+  balance JLC reports; including it, two do not. A part that does not replay is
+  a FETCH problem, never a disagreement about stock.
+- **A part listed for resale is still ours.** "Sell this Part" moves the pieces
+  out of `jlcpcbParts` into `idleStock` and writes a `SIP…` ledger row
+  (`bussinessType` 5). "Unpublish" writes the reverse row under the same code.
+  The balance counts `idleStock` (`jlc._parse_item`), the ledger reports the
+  listing as `listed_for_resale` and never as an unexplained movement, and the
+  Stock row says "for sale". A SALE is not observed yet: when a listed part
+  leaves `idleStock` the balance drops below the pool, and that delta is the
+  signal to record the sale and its revenue (first listings 2026-11-09).
 - **A pair of ledger rows netting to zero is not a disagreement.** JLC draws an
   order's parts and returns them when it is cancelled — 44 such rows today under
   `SMT026061460600` alone. `jlc_ledger.unexplained` nets by document code first.

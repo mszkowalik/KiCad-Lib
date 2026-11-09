@@ -78,3 +78,21 @@ def test_a_cob_order_takes_its_price_and_total_corrections(db: Session):
     out = jlc_apply.reprice_from_jlc(db, {"990001": lot}, dry_run=True)
     assert [(c["line_id"], c["new_unit"]) for c in out["changes"]] == [(line.id, 0.012)]
     assert [(c["document_id"], c["new_total"]) for c in out["document_changes"]] == [(doc.id, 12.0)]
+
+
+def test_a_parts_order_names_its_buyer_from_the_eori_field():
+    """JLC's parts invoice carries the billed VAT number as `eoriNumber`; it has
+    no `taxVatBilling`. The COB orders of 2026-11-05 were imported with no
+    company because only the second was read (todo row 55)."""
+    from app.services import jlc_import
+    plan = jlc_import.plan_parts_document(COB, [], {"eoriNumber": "PL8513315635", "invoiceNo": "X"})
+    assert plan["billing_vat"] == "PL8513315635"
+
+
+def test_the_buyer_backfill_reads_the_eori_field(db: Session, monkeypatch):
+    from app.services import company_backfill
+    monkeypatch.setattr(jlc_web, "available", lambda _db: True)
+    monkeypatch.setattr(jlc_web, "get_parts_invoice", lambda _db, _no, **_kw: {"eoriNumber": "PL8513315635"})
+    doc = M.RunCostDocument(supplier=jlc_apply.SUPPLIER, external_id=COB, doc_date="2049-11-05",
+                            currency="USD", total_amount=1.0)
+    assert company_backfill._jlc_web_billing(db, doc, {"8513315635": 42}) == 42

@@ -332,3 +332,22 @@ def test_another_boards_substitution_is_not_applied(db, world):
     row.board = "B9"
     db.flush()
     assert S.by_designator(db, run) == {}
+
+
+def test_a_part_the_process_fits_is_not_missing_from_the_board(db, world):
+    """V3 fits its cables at the `sma` step and its antennas at `antennas`,
+    after the factory. The carton takes the laser-marked antenna 578, which a
+    prepared recipe makes from the antenna the schematic names. Both read as
+    "not on the board" until the process counted (2026-11-09)."""
+    run = world["runs"][0]
+    v = M.ProcessVersion(project_id=world["project"].id, version_no=1, status="published", graph={
+        "steps": [{"key": "sma", "kind": "step", "inputs": [{"qty": 2, "component_id": 9001}]},
+                  {"key": "antennas", "kind": "step", "inputs": [{"qty": 1, "component_id": 9003}]}],
+        "prepared": [{"key": "mark", "inputs": [{"qty": 1, "component_id": 9002}],
+                      "output_component_id": 9003}]})
+    db.add(v)
+    db.flush()
+    run.process_version_id = v.id
+    assert S._process_component_ids(db, run) == {9001, 9002, 9003}
+    run.process_version_id = None
+    assert S._process_component_ids(db, run) == set()

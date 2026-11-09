@@ -329,7 +329,11 @@ def plan_parts_document(pob: str, lots: list[dict], invoice_raw: dict | None) ->
         "kind": "parts",
         "external_id": pob,
         # The billed company's VAT number (decision 0064); never `taxVat`.
-        "billing_vat": str(inv.get("taxVatBilling") or inv.get("brazilCpnjBilling") or ""),
+        # The parts invoice carries it as `eoriNumber` ("PL8513315635", read
+        # 2026-11-09 on POB and COB orders alike); `taxVatBilling` is absent
+        # there, which left the COB orders of 2026-11-05 with no company.
+        "billing_vat": str(inv.get("taxVatBilling") or inv.get("brazilCpnjBilling")
+                           or inv.get("eoriNumber") or ""),
         "doc_number": str(inv.get("invoiceNo") or ""),
         "doc_date": jlc_invoice.parse_invoice_date(inv.get("invoiceDate")),
         "currency": "USD",
