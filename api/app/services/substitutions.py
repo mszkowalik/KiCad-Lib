@@ -365,6 +365,47 @@ def unused(db: Session, run: M.ProductionRun) -> dict:
     return {"has_supplier_bom": True, "unused": out}
 
 
+def _fitted_codes(db: Session, run_id: int, cache: dict) -> set[str]:
+    """LCSC codes a batch is KNOWN to have fitted: its supplier's BOM and its
+    draws. Positive evidence only — a batch with neither says nothing."""
+    if "orders" not in cache:
+        cache["orders"] = _orders_by_run(db)
+        cache["boms"] = _supplier_boms(db)
+    if run_id in cache.setdefault("fitted", {}):
+        return cache["fitted"][run_id]
+    orders = {o for o, rid in cache["orders"].items() if rid == run_id}
+    codes = {str(li.get("componentCode") or "").upper() for b in cache["boms"] if b["order"] in orders
+             for li in b["lines"].values() if li.get("componentCode")}
+    codes |= {(c.lcsc or "").upper() for c in db.query(M.Draw).filter_by(run_id=run_id).all() if c.lcsc}
+    cache["fitted"][run_id] = codes
+    return codes
+
+
+def _followed_later(db: Session, run: M.ProductionRun, sub: M.RunSubstitution, cache: dict) -> bool:
+    """True when a LATER batch of the same project and board records no
+    substitution at these positions AND is known to have fitted the design's
+    part (its supplier BOM or its draws name it). Without that evidence the
+    later batch may simply be unrecorded, so the finding stays."""
+    if not run.run_date or not sub.specified_lcsc:
+        return False
+    later = (db.query(M.ProductionRun)
+             .filter(M.ProductionRun.project_id == run.project_id,
+                     M.ProductionRun.board == run.board,
+                     M.ProductionRun.id != run.id,
+                     M.ProductionRun.run_date > run.run_date,
+                     M.ProductionRun.status != "planned").all())
+    want = set(_refs(sub.designator))
+    for r in later:
+        theirs: set[str] = set()
+        for x in for_run(db, r.id):
+            theirs |= set(_refs(x.designator))
+        if want & theirs:
+            continue
+        if sub.specified_lcsc.upper() in _fitted_codes(db, r.id, cache):
+            return True
+    return False
+
+
 def drift(db: Session) -> list[dict]:
     """Recorded substitutions whose design has not caught up.
 
@@ -375,6 +416,7 @@ def drift(db: Session) -> list[dict]:
     from . import alternates
 
     out = []
+    cache: dict = {}
     for s in db.query(M.RunSubstitution).filter_by(design_updated=False).all():
         run = db.get(M.ProductionRun, s.run_id)
         if run is None:
@@ -389,6 +431,12 @@ def drift(db: Session) -> list[dict]:
         fitted = (s.fitted_component_id or _component_of(db, s.fitted_lcsc)
                   or alternates.component_by_lcsc(db, s.fitted_lcsc))
         if alternates.is_approved(db, spec, fitted, run.project_id, s.designator):
+            continue
+        # A LATER batch of the project that fitted the design's part at these
+        # positions makes this one history: the factory follows the design
+        # again, so nothing is bought wrong. Aqua Batches 2-5 fitted C60133 at
+        # C26-C31 and Batch 6 the C15195 the design names (recorded 2026-11-09).
+        if _followed_later(db, run, s, cache):
             continue
         held = (db.query(M.JlcStockItem)
                   .filter(M.JlcStockItem.lcsc == s.specified_lcsc).first())

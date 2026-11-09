@@ -351,3 +351,23 @@ def test_a_part_the_process_fits_is_not_missing_from_the_board(db, world):
     assert S._process_component_ids(db, run) == {9001, 9002, 9003}
     run.process_version_id = None
     assert S._process_component_ids(db, run) == set()
+
+
+def test_a_substitution_a_later_batch_undid_is_history_not_drift(db, world):
+    """V2 Batches 2 and 3 left BOOT1/RESET1 empty; every later batch fitted the
+    tact switch the design names. Nothing is bought wrong, so no finding."""
+    first, second = world["runs"]
+    first.status = second.status = "completed"
+    db.add(M.RunSubstitution(run_id=first.id, board="B1", variant="", designator="C2",
+                             specified_lcsc="CSPEC", qty_per_device=0, source="us"))
+    db.flush()
+    mine = lambda: [d for d in S.drift(db) if d["run_id"] in (first.id, second.id)]  # noqa: E731
+    assert len(mine()) == 1      # no evidence yet that the later batch followed the design
+    ledger.draw(db, run_id=second.id, lcsc="CSPEC", taken=10, unit_cost_usd=0.1, basis="manual",
+                at="2026-06-01")
+    db.flush()
+    assert mine() == []          # the later batch drew the design's part: history, not drift
+    db.add(M.RunSubstitution(run_id=second.id, board="B1", variant="", designator="C2",
+                             specified_lcsc="CSPEC", fitted_lcsc="CFIT", qty_per_device=1))
+    db.flush()
+    assert {d["run_id"] for d in mine()} == {first.id, second.id}

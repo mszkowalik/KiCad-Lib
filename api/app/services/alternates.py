@@ -163,7 +163,7 @@ def for_component(db: Session, component_id: int) -> dict:
     blocks = db.query(M.ProjectAlternateBlock).filter(
         (M.ProjectAlternateBlock.component_id == component_id)
         | (M.ProjectAlternateBlock.alternate_id == component_id)).order_by(M.ProjectAlternateBlock.id).all()
-    names = _names(db, {r.alternate_id for r in mine} | {r.component_id for r in of}
+    names = _names(db, {component_id} | {r.alternate_id for r in mine} | {r.component_id for r in of}
                    | {b.component_id for b in blocks} | {b.alternate_id for b in blocks})
     projects = {p.id: p.name for p in db.query(M.Project).filter(
         M.Project.id.in_({b.project_id for b in blocks} or {-1}))}

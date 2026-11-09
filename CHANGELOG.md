@@ -8,6 +8,12 @@
   approved alternate no longer raises the "the design still names the superseded part" finding, a plan
   counts the alternate's stock and open purchases as the part, and a purchase proposal names the alternate
   marked "buy".
+- **A substitution a later batch undid no longer reads as a standing finding.** When a later batch of the
+  project fitted the design's part at those positions (its supplier BOM or its draws name it), the older
+  substitution is history: V2 Batches 2 and 3 (BOOT1/RESET1 left empty) and R7 on the V3 Run #2
+  prototypes. The Aqua C26–C31 finding stays, because the last Aqua batch fitted C60133.
+- **An approved alternate's own name is in the alternates list again.** `component_name` came back empty
+  for the part's own rows.
 - **A batch with no supplier BOM says that nothing looked for substitutions.** Its Materials tab now says
   so and points at "Substitute this part" (decision 0108 item 8).
 - **Library decisions of 2026-11-09:**

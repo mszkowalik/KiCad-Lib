@@ -422,6 +422,14 @@ guard reads one company's stock is in [companies.md](companies.md).
   fitted. Detection stays JLC-only: a batch the supplier does not BOM records
   its substitutions by hand, and its Materials tab says the platform did not
   look.
+- **A substitution a later batch undid is history, not a finding.** When a
+  later batch of the same project and board records no substitution at those
+  positions AND its supplier BOM or its draws name the design's part, the
+  factory follows the design again and nothing is bought wrong
+  (`substitutions._followed_later`). Without that positive evidence the later
+  batch may only be unrecorded, so the finding stays. Found 2026-11-09: the
+  BOOT1/RESET1 positions V2 Batches 2 and 3 left empty read as standing
+  findings although every batch since fitted the tact switch.
 - **A substituted part is ONE row on the Materials tab.** The planned side is
   the design's part, the used side is the draws of the part really fitted, and
   the value delta is then the true cost of the substitution (+$74.54 on batch
