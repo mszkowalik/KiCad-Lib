@@ -21,6 +21,8 @@
   component alone, with an empty MPN, so `mpn=35.0207000.BL` showed the 11 purchases and none of the 18 step
   draws, and a balance of 5,127 where the true one was 0. The ledger now adopts the one library component the
   part's own events name. The `get_part_ledger` agent tool reads the same route.
+- **The line batch edit of a document refuses a key it does not know.** A body with `lines` instead of
+  `updates` answered 200 and wrote nothing. It now answers 422 and names the key.
 
 ## 2026-11-08 (Batch 8 of CE_Dongle_V2 and the dongle carton count, data corrections)
 

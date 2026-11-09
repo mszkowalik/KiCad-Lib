@@ -9,7 +9,7 @@ from decimal import Decimal
 from types import SimpleNamespace
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import and_, or_
 from sqlalchemy.orm import Session
 
@@ -309,7 +309,14 @@ class LinesBatchIn(BaseModel):
     either half on its own strands the draws priced against it (user decision
     2026-09-19). So the whole set is guarded on its NET effect and committed
     together, or nothing is written.
+
+    An unknown key is refused (422, naming it): a body with `lines` instead of
+    `updates` answered 200 and wrote nothing, and the EMMA correction of the
+    organizer load was lost until a read-back found it (2026-11-07). Only the top
+    level is strict — the browser sends whole line rows as `updates`.
     """
+
+    model_config = ConfigDict(extra="forbid")
 
     document: DocumentPatch | None = None   # the header fields, changed in the same breath
     updates: list[LineEdit] = []
