@@ -2,7 +2,7 @@
 name: kicad-conventions-simulation
 description: "Authoring simulation models and symbol links: the sigma_ namespace, parameter naming from datasheet symbols (V_BR at test current, never V_RWM), mandatory pin maps and the NC sentinel, per-component Sim.Params, switch drive modes (static / alter / PWL), scenario .control blocks, and the ngspice convergence traps. Use when writing a sim model, linking a symbol, or setting Sim.Params."
 ---
-<!-- platform-skill: conventions-simulation v12 — source of truth is the platform; check with list_skills, refresh with get_skill -->
+<!-- platform-skill: conventions-simulation v13 — source of truth is the platform; check with list_skills, refresh with get_skill -->
 # Simulation model conventions
 
 Simulation models are versioned library objects, like symbols and footprints.
@@ -272,10 +272,10 @@ runs its embedded ngspice in, the same model read the full ground current. So a
 plain `ngspice -b`) and right in KiCad, and `vss` is right in both. Never treat a
 KiCad plot as proof that a model's ground pin carries current.
 
-**One model still carries a bare `gnd` port: `sigma_hss`.** It is a primitive,
-and the composed wrapper `sigma_sym_bts723gw` addresses its ports BY NAME in
-its composition (`nodes`), so renaming the port also means editing that
-composition. Do both in one pass.
+**No model carries a bare `gnd` port any more** (2026-11-09). A composed
+wrapper addresses its blocks' ports BY NAME in its composition (`nodes`), so
+renaming a primitive's port means re-saving every composition that uses it, in
+the same pass: `sigma_hss` and `sigma_sym_bts723gw` were done that way.
 
 Renaming a port flags every link on it stale, so each fix is a deliberate edit
 plus a `set_symbol_sim_link` re-save, never a sweep done in passing. Record the
@@ -286,7 +286,7 @@ Fixed this way: `sigma_ldo` on 2026-09-28 (v4, all 10 links re-saved; on
 TPS7A1650DRBR the GND leg went from 0 A to its 5 uA IQ, and output and input
 current did not change), and on 2026-11-09 `sigma_ucc27538` (v3),
 `sigma_ldo_neg` (v3), `sigma_btt6050` (v4) and `sigma_buck_fb` (v3), each with
-its one link re-saved. Plain mode read 0 A before and the ground current after;
+its one link re-saved, and `sigma_hss` (v5) with the BTS723GW composition. Plain mode read 0 A before and the ground current after;
 KiCad's mode read the same before and after, so no KiCad result moved.
 In a bare harness for `sigma_buck_fb` (24 V in, the 33.2k/14.3k divider, a
 16.6 ohm load) the operating point put the output at VIN, and the transient did

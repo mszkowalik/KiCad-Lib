@@ -149,6 +149,11 @@ Facts that are not obvious from the code:
   `sigma_sym_bts723gw` wrapper on it) fail on `$` comments — the exact trap
   this bullet describes, in a published model. `propose_sim_model_version`
   now refuses a `$` outside column 1.
+  The two modes also differ on the node name `gnd`: plain mode joins it to
+  node 0 even inside a subcircuit, and `pslta` mode does not (measured
+  2026-11-09). The platform runs plain `ngspice -b`, so a model whose ground
+  port is `gnd` loses its ground current here and keeps it in KiCad. See
+  `conventions-simulation`, "Never name a port gnd".
 - **Model names are the namespace**: `sigma_` prefix enforced
   (`sim_store.NAME_RE`), and the row name must equal the `.subckt` name.
   `kind` is `primitive` (a building block), `part` (a hand-written wrapper for

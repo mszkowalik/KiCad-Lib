@@ -37,11 +37,11 @@
   corrections of a parts refresh, the reference normaliser and the company backfill tested `POB` only, so
   the `COB` orders of 2026-11-05 got no invoice PDF ("not a JLCPCB parts order"). The invoice dialog on
   Finance → Invoices offers them too.
-- **Four simulation models carry their ground current in the platform's simulator.** `sigma_ucc27538`,
-  `sigma_ldo_neg`, `sigma_btt6050` and `sigma_buck_fb` named their ground port `gnd`, which plain ngspice
-  joins to global 0, so their ground pin read 0 A on the Simulator page. The port is `vss` now, and the links
-  of UCC27538, L79Lxx_SOT89, BTT6050-1ERA and LMR43620R5 are re-saved. KiCad's own simulation did not have
-  the defect, and its results do not change. `sigma_hss` is still open (todo row 35).
+- **Five simulation models carry their ground current in the platform's simulator.** `sigma_ucc27538`,
+  `sigma_ldo_neg`, `sigma_btt6050`, `sigma_buck_fb` and `sigma_hss` named their ground port `gnd`, which plain
+  ngspice joins to global 0, so their ground pin read 0 A on the Simulator page. The port is `vss` now. The
+  links of UCC27538, L79Lxx_SOT89, BTT6050-1ERA and LMR43620R5 and the BTS723GW composition are re-saved.
+  KiCad's own simulation did not have the defect, and its results do not change.
 
 ## 2026-11-08 (Batch 8 of CE_Dongle_V2 and the dongle carton count, data corrections)
 
