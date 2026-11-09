@@ -26,6 +26,10 @@
     `sym.geometry` already state; nothing changed.
   - `TAJD107K016RNJ` (C7223, KYOCERA AVX) is in the library, so it can be approved as the alternate of
     `T491D107K016AT` on CE_Dongle_V2 C2. It is unreviewed.
+- **Three alternates approved on prod (user, 2026-11-09):** `TAJD107K016RNJ` for `T491D107K016AT` (V2 C2,
+  marked buy), `TMUX1208QRSVRQ1` for `TMUX1208RSVR` (V3 U7–U10, keep buying the original) and
+  `CC0402KRX7R9BB103` (C60133, added to the library for this) for `CL05B103KB5NNNC` (Aqua C26–C31). No
+  substitution finding is left.
 - **Todo rows closed without work, at the user's word:** 41 and 42 (bench guards: every V3 batch is
   9Sigma's and runs one process version, so neither case can happen now), 66 (correcting a finished twin
   of the wrong board stays a database edit; it is rare). Row 23 was already done: `BLM18EG101TN1D` carries
