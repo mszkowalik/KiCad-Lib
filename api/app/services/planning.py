@@ -923,9 +923,13 @@ def _parts(db: Session, L: Loaded, plan: M.Plan, designs: dict[int, Design], bat
         out_parts.append(row)
         srcs = list(sources.get(p["component_id"]) or [])
         lc = (p["lcsc"] or "").strip().upper()
+        # A part JLC must buy in, measured only on in-stock receipts (2 days or
+        # less), has no measured presale: its lead time is unknown, not 0.
+        usable = lc in measured and ((pub is not None and pub >= short_qty) or measured[lc]["max"] > 2) if lc else False
         if lc and lc in measured:
+            row["jlc_measured"] = measured[lc]
+        if usable:
             m = measured[lc]
-            row["jlc_measured"] = m
             typed = next((x for x in srcs if x["supplier"] == "JLCPCB"), None)
             # JLC's public stock decides which past receipt predicts the next one:
             # a part JLC holds arrives as fast as the fastest receipt; a part it

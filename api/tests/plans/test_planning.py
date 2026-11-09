@@ -298,3 +298,19 @@ def test_a_jlc_part_that_jlc_must_buy_in_takes_its_slowest_measured_receipt(db, 
     s = PL.schedule(db, world.plan, TODAY)
     pr = next(p for p in s["proposals"] if p["component_id"] == world.comp.id)
     assert pr["supplier"] == "JLCPCB" and pr["lead_days"] == 16 and "slowest" in pr["lead_source"]
+
+
+def test_a_part_measured_only_in_stock_has_no_presale_lead(db, world):
+    from datetime import UTC, datetime
+
+    line = db.query(M.SnapshotBomLine).filter_by(snapshot_id=world.snap.id).one()
+    line.lcsc = "C99999902"
+    db.add(M.JlcStockChange(change_key_id=9_900_000_010, stock_key_id=9_900_000_010, lcsc="C99999902",
+                            changed_at=datetime(2026, 11, 5, tzinfo=UTC), change_qty=10, qty_after=10,
+                            business_code="COB202611051831177", business_type=5))
+    _order(db, world, "V3-1", "2026-12-01", [{"qty": 100, "day": "2027-02-11"}], qty=100)
+    svc.add_batch(db, world.plan, {"project_id": world.proj.id, "qty": 100, "order": {"day": "2027-01-15"}})
+    db.flush()
+    s = PL.schedule(db, world.plan, TODAY)
+    pr = next(p for p in s["proposals"] if p["component_id"] == world.comp.id)
+    assert pr["no_lead"] and pr["lead_days"] is None

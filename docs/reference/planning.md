@@ -98,7 +98,9 @@ refusing the supplier's fact.
   the order day that the parts order's number carries
   (`planning.jlc_measured_leads`). When JLC's public stock covers the shortfall
   the fastest receipt counts, else the slowest: a part JLC must buy in comes as
-  a presale lot, and the last receipt can be an in-stock one of 0 days. PCBA lead time is not measured: a batch's
+  a presale lot, and the last receipt can be an in-stock one of 0 days. A part
+  JLC must buy in whose receipts were all in-stock ones (2 days or less) has no
+  measured lead time. PCBA lead time is not measured: a batch's
   arrival lag is typed (default 20 days, source estimate).
 - A proposal is computed, never stored. It takes the sources with quantity at
   once first, then the first source with a lead time. Its order day is the
