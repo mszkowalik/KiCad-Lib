@@ -1051,6 +1051,19 @@ def component_ledger(db: Session, component_id: int | None = None,
     """
     want = set(_identity_keys(component_id, mpn or "", lcsc or ""))
     events, doc_by_id, surcharge = _pool_events(db, company_id)
+    if not component_id:
+        # A part asked for by MPN or LCSC is also the library component its own
+        # events name: a purchase line carries the component AND the MPN, and a
+        # process step draws by the component alone, with an empty MPN. Without
+        # this, `mpn=35.0207000.BL` showed the 11 buys and none of the 18 step
+        # draws, and a balance of 5,127 where the true one was 0 (2026-11-08).
+        # Only one component is adopted: two would be two parts sharing a code.
+        named = {row.component_id for _d, _k, row in events
+                 if getattr(row, "component_id", None)
+                 and set(_identity_keys(None, getattr(row, "mpn", "") or "",
+                                        getattr(row, "lcsc", "") or "")) & want}
+        if len(named) == 1:
+            want.add(f"c{named.pop()}")
     extras = conversion_extras_usd(db)  # conversion costs on prepared-part lots (0058)
     runs = {r.id: r for r in db.query(M.ProductionRun).all()}
     kinds = dict(db.query(M.MaterialEvent.id, M.MaterialEvent.kind).all())

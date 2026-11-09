@@ -17,6 +17,10 @@
 - **Two BOM lines have a price.** The Aqua shipping carton takes 0.551 PLN from the PUDLO invoice of
   2024-11-28. The Hammond `1551V3GY` enclosure of DC_Temp takes the Mouser prices of 2023-10-11 (8.94 PLN
   from 15 pieces) and 2024-01-11 (8.33 PLN from 137 pieces).
+- **A part's ledger asked by MPN shows the draws a process step made by component.** A step draws by the
+  component alone, with an empty MPN, so `mpn=35.0207000.BL` showed the 11 purchases and none of the 18 step
+  draws, and a balance of 5,127 where the true one was 0. The ledger now adopts the one library component the
+  part's own events name. The `get_part_ledger` agent tool reads the same route.
 
 ## 2026-11-08 (Batch 8 of CE_Dongle_V2 and the dongle carton count, data corrections)
 
