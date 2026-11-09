@@ -10,6 +10,20 @@
   marked "buy".
 - **A batch with no supplier BOM says that nothing looked for substitutions.** Its Materials tab now says
   so and points at "Substitute this part" (decision 0108 item 8).
+- **Library decisions of 2026-11-09:**
+  - `Kinghelm` is the one manufacturer name for Shenzhen Kinghelm Electronics; the four Buttons parts that
+    carried `Shenzhen Kinghelm Elec` were renamed (and lost their component verification, a material edit).
+    `TWGMC`, `Milliohm` and `TECH PUBLIC` are accepted as written, and `KYOCERA AVX` is added.
+    `cmp.manufacturer_canonical` lists 110 names; skill `conventions-library` v49.
+  - `comp_type` stays the discriminator inside a category and the category tree stays flat (decision 0109).
+  - The symbol pin grid is 1.27 mm absolute with 2.54 mm pin spacing, as `sym.pins_grid` and
+    `sym.geometry` already state; nothing changed.
+  - `TAJD107K016RNJ` (C7223, KYOCERA AVX) is in the library, so it can be approved as the alternate of
+    `T491D107K016AT` on CE_Dongle_V2 C2. It is unreviewed.
+- **Todo rows closed without work, at the user's word:** 41 and 42 (bench guards: every V3 batch is
+  9Sigma's and runs one process version, so neither case can happen now), 66 (correcting a finished twin
+  of the wrong board stays a database edit; it is rare). Row 23 was already done: `BLM18EG101TN1D` carries
+  `100Ω@100MHz`, and `cmp.value_field` has the FERRITE variant.
 - **A part listed for resale on JLC stays in stock.** 21 parts that neither CE_Dongle_V3 nor
   CE_Dongle_V3_AC uses were listed on JLC's idle-parts market on 2026-11-09 (C110548 and 20 others, about
   2 572 USD at cost). JLC reports listed pieces as `idleStock`, which the balance left out, and writes a

@@ -1,8 +1,8 @@
 ---
 name: kicad-conventions-library
-description: "Component DATA conventions: the index of every rule with the check that holds it, plus the manufacturer names nobody has been able to resolve. The rules themselves live in the component checklist — read them with get_review_checklist('component'). Use when setting Value, ki_description, Manufacturer 1 or a category."
+description: "Component DATA conventions: the index of every rule with the check that holds it, plus the manufacturer names decided without a company source. The rules themselves live in the component checklist — read them with get_review_checklist('component'). Use when setting Value, ki_description, Manufacturer 1 or a category."
 ---
-<!-- platform-skill: conventions-library v48 — source of truth is the platform; check with list_skills, refresh with get_skill -->
+<!-- platform-skill: conventions-library v49 — source of truth is the platform; check with list_skills, refresh with get_skill -->
 # Library conventions
 
 **The rules are checks now, not prose.** Every convention this document used to
@@ -12,8 +12,8 @@ Value formats per category, the description templates per sub-family, the power
 spellings, the category-placement rule. Read them with
 `get_review_checklist("component")` — once, before you author or verify.
 
-What is left here is what a check cannot hold: the names nobody has resolved,
-and where to look when a rule does not fit.
+What is left here is what a check cannot hold: the names decided without a
+source, and where to look when a rule does not fit.
 
 ## Where each rule lives
 
@@ -61,26 +61,27 @@ comp_type of the components on a base symbol, and it is how the op-amp triangle
 rules reach `OPA991XDBV` and not a resistor. Add a new token when a genuinely
 new kind of part arrives; reuse the existing one when it fits.
 
-## Manufacturer names nobody has resolved — ask, do not guess
+**`comp_type` is THE discriminator inside a category, and the platform uses no
+subcategories** (user decision 2026-11-09, decision 0109). A category whose
+parts follow different rules (Inductors: inductor, ferrite, choke,
+transformer) splits its checks into variants on `comp_type`; it never grows a
+child category. `Category.parent_id` exists in the schema and stays unused.
+
+## Manufacturer names decided without a company source
 
 The canonical spellings and every stylization exception live in
-`cmp.manufacturer_canonical`. These four do not, because no primary source
-settles them:
+`cmp.manufacturer_canonical`. Four names had no primary source and were decided
+by the user on 2026-11-09, so they are no longer open:
 
-- **`TWGMC`** (on `SS34`) — still unresolved after a second research attempt.
-  Only a weak, unquotable claim links it to "Taiwan Dijia Electronics Co., Ltd."
-- **`Milliohm`** (on `HoYH0805-3/4W-50mR-1%`, LCSC C42389461) — Shenzhen 毫欧
-  电子, whose datasheet and own site (moolee.com.cn) name the company ONLY in
-  Chinese. No English brand form exists in the company's own material, so the
-  test cannot be applied at all. `Milliohm` is LCSC's brand-page form and a
-  literal reading of 毫欧, and it is what the component carries.
-- **`TECH PUBLIC`** (on `PESD5V0S1BA`) — consistently ALL-CAPS across every
-  distributor, possibly Taizhou Electronics, but no company homepage was found.
-  Left as-is; do **not** promote it to a confirmed all-caps brand.
-- **`Kinghelm` vs `Shenzhen Kinghelm Elec`** — two sessions used two canonical
-  forms for one company. The abbreviated form is on 4 Buttons/RF components; a
-  later session normalized a different component to bare `Kinghelm`. **Do not
-  silently pick one** — this needs a maintainer decision, then one pass.
+- **`Kinghelm`** is the one name for Shenzhen Kinghelm Electronics. The four
+  Buttons parts that carried `Shenzhen Kinghelm Elec` were renamed, and that
+  form is off the list.
+- **`TWGMC`** (on `SS34`), **`Milliohm`** (Shenzhen 毫欧电子, which names itself
+  only in Chinese) and **`TECH PUBLIC`** (on `PESD5V0S1BA`) are kept exactly as
+  written and are on the list.
+
+Renaming `Manufacturer 1` is a material edit: the four Kinghelm parts lost their
+component verification and need it again.
 
 Thirteen further names are off the canonical list and visible as warnings on
 `cmp.manufacturer_canonical`. Two of those are probably wrong and were left
@@ -105,8 +106,6 @@ Torex Semiconductor, and `HanRun` disagrees with the footprint token `Hanrun`.
   `{Pitch}` template instead of the current three-way free-text convention.
 - **Buttons** — backfill verified Length/Width/Height/Force properties across
   the category, then template.
-- **`BLM18EG101TN1D`** — `Value = 68nH` against a `100Ω@100MHz` impedance; both
-  are real published specs and the rule says impedance. Needs a decision.
 
 ## Audit history — check before starting a "first pass"
 
