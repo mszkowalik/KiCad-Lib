@@ -133,8 +133,15 @@ function ProposalsCard({ full, apply, onPart }: { full: PlanFull; apply: Apply; 
     { key: "part", label: "Part", width: 24, narrow: 45, get: (p) => partName(p),
       render: (p) => <button type="button" className="btn-link" onClick={(e) => { e.stopPropagation(); onPart(p.part_key); }}>{partName(p)}</button> },
     { key: "supplier", label: "Supplier", width: 28, get: (p) => p.supplier || "no source with a lead time",
+      render: (p) => (
+        <>
+          {p.supplier || "no source with a lead time"}
+          {p.split?.[1] > 1 ? <span className="muted"> · {p.at_once ? "at once" : "the rest"}, {p.split[0]} of {p.split[1]}</span> : null}
+        </>
+      ),
       title: (p) => p.lead_source || p.supplier || "No supplier link of this part has a lead time." },
-    { key: "qty", label: "Qty", width: 10, numeric: true, get: (p) => p.qty, render: (p) => units(p.qty) },
+    { key: "qty", label: "Qty", width: 10, numeric: true, get: (p) => p.qty, render: (p) => units(p.qty),
+      title: (p) => (p.split?.[1] > 1 ? `${units(p.qty)} of the ${units(p.of_short)} short` : "") },
     { key: "order", label: "Order", width: "104px", get: (p) => p.order_day, className: "mono" },
     { key: "arrival", label: "Arrival", width: "104px", get: (p) => p.arrival_day || "unknown", className: "mono" },
     { key: "need", label: "Needed by", width: "104px", get: (p) => p.need_day, className: "mono" },

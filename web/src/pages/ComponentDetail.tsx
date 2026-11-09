@@ -467,6 +467,7 @@ interface DraftLink {
    *  at once. A plan reads them for its purchase proposals. */
   lead_days: number | null;
   qty_at_once: number | null;
+  at_once_days: number | null;
   lead_source: string;
   lead_as_of: string;
 }
@@ -480,7 +481,9 @@ function leadText(l: SupplierLink): string {
 function leadTitle(l: SupplierLink): string | undefined {
   return [
     l.lead_days != null ? `${l.lead_days} days from the order` : "",
-    l.qty_at_once != null ? `${l.qty_at_once.toLocaleString()} at once` : "",
+    l.qty_at_once != null
+      ? `${l.qty_at_once.toLocaleString()} at once${l.at_once_days != null ? ` in ${l.at_once_days} days` : ""}`
+      : "",
     l.lead_source ?? "",
     l.lead_as_of ? `as of ${l.lead_as_of}` : "",
   ].filter(Boolean).join(" · ") || undefined;
@@ -566,6 +569,7 @@ function PriceLadderCard({ compId }: { compId: number }) {
       note: l.note,
       lead_days: l.lead_days ?? null,
       qty_at_once: l.qty_at_once ?? null,
+      at_once_days: l.at_once_days ?? null,
       lead_source: l.lead_source ?? "",
       lead_as_of: l.lead_as_of ?? "",
       tiers: l.connector
@@ -590,6 +594,7 @@ function PriceLadderCard({ compId }: { compId: number }) {
         note: draft.note,
         lead_days: draft.lead_days,
         qty_at_once: draft.qty_at_once,
+        at_once_days: draft.at_once_days,
         lead_source: draft.lead_source,
         lead_as_of: draft.lead_as_of,
       });
@@ -782,15 +787,20 @@ function PriceLadderCard({ compId }: { compId: number }) {
                                 </Field>
                               </FieldRow>
                               <FieldRow>
-                                <Field label="Lead time (days)" hint="From the order to the goods here">
+                                <Field label="Lead time (days)" hint="From the order to the goods here, for more than they hold">
                                   <NumberInput className="text num-input" value={draft.lead_days} min={0}
                                     onChange={(v) => setDraft({ ...draft, lead_days: Math.round(v) })}
                                     onEmpty={() => setDraft({ ...draft, lead_days: null })} />
                                 </Field>
-                                <Field label="Quantity at once" hint="The most they deliver in one go">
+                                <Field label="Quantity at once" hint="What they hold now and send in one go">
                                   <NumberInput className="text num-input" value={draft.qty_at_once} min={0}
                                     onChange={(v) => setDraft({ ...draft, qty_at_once: Math.round(v) })}
                                     onEmpty={() => setDraft({ ...draft, qty_at_once: null })} />
+                                </Field>
+                                <Field label="At once in (days)" hint="How soon the quantity at once arrives. Empty is 0">
+                                  <NumberInput className="text num-input" value={draft.at_once_days} min={0}
+                                    onChange={(v) => setDraft({ ...draft, at_once_days: Math.round(v) })}
+                                    onEmpty={() => setDraft({ ...draft, at_once_days: null })} />
                                 </Field>
                                 <Field label="Where the lead time comes from" wide>
                                   <input className="text" value={draft.lead_source} maxLength={300}

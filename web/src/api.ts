@@ -3865,9 +3865,11 @@ export interface SupplierLink {
   position: number | null;
   origin: string;
   has_prices: boolean;
-  /** Decision 0107 item 15: how long the source takes, and how many it sends at once. */
+  /** Decision 0107 item 15: how long the source takes, and how many it sends at once.
+   *  `qty_at_once` arrives `at_once_days` after the order; more than that takes `lead_days`. */
   lead_days?: number | null;
   qty_at_once?: number | null;
+  at_once_days?: number | null;
   lead_source?: string;
   lead_as_of?: string;
 }
@@ -3926,7 +3928,7 @@ export function updateSupplierLink(
   componentId: number,
   linkId: number,
   body: { part_number?: string; url?: string; note?: string; lead_days?: number | null; qty_at_once?: number | null;
-    lead_source?: string; lead_as_of?: string; clear_lead?: boolean },
+    at_once_days?: number | null; lead_source?: string; lead_as_of?: string; clear_lead?: boolean },
 ): Promise<PricePointsResponse> {
   return request(`/api/components/${componentId}/suppliers/${linkId}`, {
     method: "PATCH",
@@ -11209,6 +11211,12 @@ export interface PlanProposal {
   lead_source: string;
   late: boolean;
   no_lead: boolean;
+  /** The source sends this part at once (its quantity at once), not after its lead time. */
+  at_once: boolean;
+  /** The whole shortfall these proposals cover together. */
+  of_short: number;
+  /** [this one, of how many] proposals for the same shortfall. */
+  split: [number, number];
   unit_price_pln: number | null;
   amount_pln: number | null;
   covered_by_po_id?: number;

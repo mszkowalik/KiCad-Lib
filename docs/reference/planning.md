@@ -93,7 +93,13 @@ refusing the supplier's fact.
 ## Lead times and proposals
 
 - A source is a `component_suppliers` link with `lead_days`, `qty_at_once`,
-  `lead_source` and `lead_as_of`. A JLCPCB part with no typed lead takes the
+  `at_once_days`, `lead_source` and `lead_as_of`. The quantity at once arrives
+  `at_once_days` after the order (empty is 0), and more than that takes
+  `lead_days`. **A distributor that holds stock and back-orders the rest from
+  its manufacturer is ONE link**, not a link per company: the enclosures are
+  bought from LC Elektronik for both parts, and Takachi is only the maker (user,
+  2026-11-09). Decision 0107 item 16 names Takachi as the second source; that
+  example is wrong. A JLCPCB part with no typed lead takes the
   **measured** one: a receipt in `jlc_stock_changes` (business type 5) minus
   the order day that the parts order's number carries
   (`planning.jlc_measured_leads`). When JLC's public stock covers the shortfall
@@ -106,6 +112,9 @@ refusing the supplier's fact.
   once first, then the first source with a lead time. Its order day is the
   later of today and the need day less the lead time; it is `late` when it
   arrives after the need day, and `no_lead` when no source has a lead time.
+  When one shortfall takes two proposals, each carries `at_once`, `of_short`
+  (the whole shortfall) and `split` ([this one, of how many]), so the page
+  says that two rows of one part are one shortfall in two deliveries.
 - Accepting writes one draft purchase order per proposal, with a copy of it.
   A draft counts as supply, so a proposal still open for its part is what is
   missing beside it: the draft reads "out of date" with `suggested_qty`, and

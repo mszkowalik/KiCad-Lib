@@ -1528,8 +1528,12 @@ class ComponentSupplier(Base):
     origin: Mapped[str] = mapped_column(String(20), default="user", server_default="user")
     # Decision 0107 item 15: how long this supplier takes, and how many it can
     # send at once, with where the figure came from and when it was read.
+    # `qty_at_once` arrives `at_once_days` after the order (empty: 0); a
+    # quantity beyond it takes `lead_days`. One distributor holding stock and
+    # back-ordering the rest from its manufacturer is one link, not two.
     lead_days: Mapped[int | None] = mapped_column(Integer, nullable=True)
     qty_at_once: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    at_once_days: Mapped[int | None] = mapped_column(Integer, nullable=True)
     lead_source: Mapped[str] = mapped_column(String(300), default="", server_default="")
     lead_as_of: Mapped[str] = mapped_column(String(10), default="", server_default="")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)

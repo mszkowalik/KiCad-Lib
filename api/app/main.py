@@ -856,6 +856,8 @@ _PHASE1_DDL = (
      "ALTER TABLE component_suppliers ADD COLUMN IF NOT EXISTS lead_source varchar(300) NOT NULL DEFAULT ''"),
     ("component_suppliers.lead_as_of",
      "ALTER TABLE component_suppliers ADD COLUMN IF NOT EXISTS lead_as_of varchar(10) NOT NULL DEFAULT ''"),
+    ("component_suppliers.at_once_days",
+     "ALTER TABLE component_suppliers ADD COLUMN IF NOT EXISTS at_once_days integer"),
 )
 
 # name -> "ok" | "failed: ..."; served by GET /api/health/schema.

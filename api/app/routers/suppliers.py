@@ -177,7 +177,8 @@ def list_price_points(comp_id: int, db: Session = Depends(get_db)):
             {"id": ln.id, "supplier_id": ln.supplier_id, "supplier": ln.supplier.name,
              "connector": ln.supplier.connector, "part_number": ln.part_number, "url": ln.url,
              "note": ln.note, "position": ln.position, "origin": ln.origin,
-             "lead_days": ln.lead_days, "qty_at_once": ln.qty_at_once, "lead_source": ln.lead_source,
+             "lead_days": ln.lead_days, "qty_at_once": ln.qty_at_once, "at_once_days": ln.at_once_days,
+             "lead_source": ln.lead_source,
              "lead_as_of": ln.lead_as_of,
              "has_prices": ln.supplier.name in priced}
             for ln in links
@@ -220,6 +221,7 @@ class LinkPatch(BaseModel):
     # empty value clears it; `lead_source` says where the figure came from.
     lead_days: int | None = None
     qty_at_once: int | None = None
+    at_once_days: int | None = None   # how soon `qty_at_once` arrives; `lead_days` is for the rest
     lead_source: str | None = Field(default=None, max_length=300)
     lead_as_of: str | None = Field(default=None, max_length=10)
     clear_lead: bool = False
@@ -264,9 +266,9 @@ def update_link(comp_id: int, link_id: int, body: LinkPatch, db: Session = Depen
     suppliers.link(db, comp_id, row.supplier, body.part_number, body.url, body.note)
     sent = body.model_dump(exclude_unset=True)
     if body.clear_lead:
-        row.lead_days = row.qty_at_once = None
+        row.lead_days = row.qty_at_once = row.at_once_days = None
         row.lead_source = row.lead_as_of = ""
-    for k in ("lead_days", "qty_at_once"):
+    for k in ("lead_days", "qty_at_once", "at_once_days"):
         if k in sent:
             v = sent[k]
             if v is not None and v < 0:

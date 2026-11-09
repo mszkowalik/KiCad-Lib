@@ -314,3 +314,22 @@ def test_a_part_measured_only_in_stock_has_no_presale_lead(db, world):
     s = PL.schedule(db, world.plan, TODAY)
     pr = next(p for p in s["proposals"] if p["component_id"] == world.comp.id)
     assert pr["no_lead"] and pr["lead_days"] is None
+
+
+def test_one_shortfall_in_two_deliveries_says_which_part_each_is():
+    plan = SimpleNamespace(id=7)
+    row = {"key": "c1", "short": 2860.0, "component_id": 1, "mpn": "", "lcsc": "", "name": "Enclosure"}
+    today = date(2026, 11, 9)
+    # one distributor: 1,100 from its stock in 7 days, the rest back-ordered at 150 days
+    lce = {"supplier": "LC", "supplier_id": 10, "qty_at_once": 1100, "at_once_days": 7, "lead_days": 150,
+           "lead_source": "e-mail"}
+    out = PL._propose(plan, row, {}, [lce], date(2027, 1, 7), today, None)
+    assert [(x["supplier"], x["qty"], x["lead_days"], x["at_once"], x["split"]) for x in out] == [
+        ("LC", 1100, 7, True, [1, 2]), ("LC", 1760, 150, False, [2, 2])]
+    assert all(x["of_short"] == 2860 for x in out)
+    assert len({x["key"] for x in out}) == 2
+    assert out[0]["order_day"] == "2026-12-31" and out[1]["arrival_day"] == "2027-04-08" and out[1]["late"]
+    # a second source with only a lead time takes the rest
+    other = {"supplier": "Other", "supplier_id": 11, "qty_at_once": None, "lead_days": 30, "lead_source": ""}
+    out = PL._propose(plan, row, {}, [lce, other], date(2027, 1, 7), today, None)
+    assert [(x["supplier"], x["qty"], x["lead_days"]) for x in out] == [("LC", 1100, 7), ("Other", 1760, 30)]

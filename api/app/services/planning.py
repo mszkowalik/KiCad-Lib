@@ -1021,8 +1021,8 @@ def _sources(db: Session, component_ids: list[int]) -> dict[int, list[dict]]:
                                                  r[1].position or 0)):
         out[link.component_id].append({"supplier_id": sup.id, "supplier": sup.name, "link_id": link.id,
                                        "part_number": link.part_number, "lead_days": link.lead_days,
-                                       "qty_at_once": link.qty_at_once, "lead_source": link.lead_source,
-                                       "lead_as_of": link.lead_as_of})
+                                       "qty_at_once": link.qty_at_once, "at_once_days": link.at_once_days,
+                                       "lead_source": link.lead_source, "lead_as_of": link.lead_as_of})
     return out
 
 
@@ -1063,20 +1063,24 @@ def jlc_measured_leads(db: Session) -> dict[str, dict]:
 
 def _propose(plan: M.Plan, row: dict, p: dict, sources: list[dict], first_short: date | None, today: date,
              usd_pln: float | None) -> list[dict]:
-    """Proposals for one short part: first the sources that can send at once,
-    then the first source with a lead time for the rest (decision 0107
-    item 16). A part with no source with a lead time gets one proposal that
-    says so."""
+    """Proposals for one short part: first the sources that can send at once
+    (in their `at_once_days`), then the first source with a lead time for the
+    rest (decision 0107 item 16). That can be the same source: a distributor
+    sends what it holds and back-orders the rest from its manufacturer. A part
+    with no source with a lead time gets one proposal that says so."""
     need_day = first_short or today
     left = row["short"]
     out = []
     unit_pln = (p.get("avg_usd") or 0) * usd_pln if (p.get("avg_usd") and usd_pln) else None
 
-    def add(src: dict | None, qty: float, lead: int | None):
+    def add(src: dict | None, qty: float, lead: int | None, at_once: bool = False):
         order_day = max(today, need_day - timedelta(days=lead)) if lead is not None else today
         arrival = order_day + timedelta(days=lead) if lead is not None else None
         sup = src["supplier"] if src else ""
-        out.append({"key": f"{plan.id}:{sup or '-'}:{row['key']}", "part_key": row["key"],
+        key = f"{plan.id}:{sup or '-'}:{row['key']}"
+        if any(x["key"] == key for x in out):   # the rest from the source that also sent part at once
+            key += ":rest"
+        out.append({"key": key, "part_key": row["key"],
                     "component_id": row["component_id"], "mpn": row["mpn"], "lcsc": row["lcsc"],
                     "name": row["name"], "supplier": sup, "supplier_id": src["supplier_id"] if src else None,
                     "qty": round(qty, 3), "order_day": iso(order_day), "arrival_day": iso(arrival),
@@ -1084,6 +1088,7 @@ def _propose(plan: M.Plan, row: dict, p: dict, sources: list[dict], first_short:
                     "lead_source": (src or {}).get("lead_source") or "",
                     "late": bool(arrival and arrival > need_day),
                     "no_lead": lead is None,
+                    "at_once": at_once, "of_short": round(row["short"], 3),
                     "unit_price_pln": round(unit_pln, 4) if unit_pln else None,
                     "amount_pln": _r2(unit_pln * qty) if unit_pln else None})
 
@@ -1092,12 +1097,14 @@ def _propose(plan: M.Plan, row: dict, p: dict, sources: list[dict], first_short:
             break
         if src.get("qty_at_once"):
             q = min(left, float(src["qty_at_once"]))
-            add(src, q, src.get("lead_days") or 0)
+            add(src, q, src.get("at_once_days") or 0, at_once=True)
             left -= q
     if left > 1e-6:
         timed = next((s for s in sources if s.get("lead_days") is not None and not s.get("qty_at_once")), None) \
             or next((s for s in sources if s.get("lead_days") is not None), None)
         add(timed, left, timed.get("lead_days") if timed else None)
+    for i, x in enumerate(out):   # one shortfall in two deliveries reads as two rows: say which part each is
+        x["split"] = [i + 1, len(out)]
     return out
 
 

@@ -1,5 +1,16 @@
 # Changelog
 
+## 2026-11-09 (plans: a supplier sends part at once and back-orders the rest)
+
+- **A supplier link holds both deliveries of one source.** Beside the quantity at once it now holds how
+  many days that quantity takes ("At once in"), and the lead time applies to anything above it. A
+  distributor that holds 1,100 enclosures and back-orders the rest from the maker is one link, not two
+  suppliers.
+- **One shortfall in two deliveries no longer reads as a duplicate.** The plan's purchase proposals show
+  the two rows as "at once, 1 of 2" and "the rest, 2 of 2", and the quantity's hover gives the whole
+  shortfall. The two rows of one source now have two keys; before, both had the same key, and picking one
+  picked both.
+
 ## 2026-11-09 (plans: a contract's schedule in Henry)
 
 - **Sales → Plans schedules a contract before the customer orders** (decision 0107). A plan holds draft
