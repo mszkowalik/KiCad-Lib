@@ -47,12 +47,11 @@ BT_PARTS_ORDER = 5
 BT_WAREHOUSE = 10
 
 # A JLCPCB parts order is a document of this supplier whose `external_id` is the
-# parts order's number (`jlc_apply.SUPPLIER`, `plan_parts_document`). JLC numbers
-# them `POB…`, and since 2026-11-05 also `COB…`: the two orders of that day put
-# 49 receipts in the ledger that read "no document of ours reports", although
-# both documents were in the platform.
+# parts order's number (`jlc_apply.SUPPLIER`, `plan_parts_document`), which
+# starts with one of `jlc_web.PARTS_ORDER_PREFIXES`. Only `POB` counted until
+# 2026-11-09, and the two `COB` orders of 2026-11-05 put 49 receipts in the
+# ledger that read "no document of ours reports", although both were in Henry.
 JLC_SUPPLIER = "JLCPCB"
-PARTS_ORDER_PREFIXES = ("POB", "COB")
 
 # `changeStatus` 3 is a movement that DID NOT TAKE EFFECT — a ship-out request
 # JLC cancelled. It still states a quantity and a before/after pair, so a naive
@@ -224,7 +223,7 @@ def _local_index(db: Session) -> tuple[dict, dict]:
                       M.RunCostLine.allocate != "excluded",
                       M.RunCostDocument.supplier == JLC_SUPPLIER,
                       or_(*(M.RunCostDocument.external_id.like(f"{p}%")
-                            for p in PARTS_ORDER_PREFIXES))).all())
+                            for p in jlc_web.PARTS_ORDER_PREFIXES))).all())
     for line, doc in rows:
         purchases.setdefault(((line.lcsc or "").upper(), doc.external_id), []).append((line, doc))
     return draws, purchases

@@ -28,10 +28,10 @@ import { useLoad } from "../useLoad";
 /** The route's own cap on one request. */
 const MAX_DOCUMENTS = 200;
 
-/** The route draws a W… or a POB… and refuses the rest. */
+/** The route draws a W… or a parts order (POB…, or COB… since 2026-11-05) and refuses the rest. */
 function isJlcInvoice(d: RunCostDocumentRow): boolean {
   const ext = (d.external_id ?? "").toUpperCase();
-  return /jlc/i.test(d.supplier) && (ext.startsWith("W") || ext.startsWith("POB"));
+  return /jlc/i.test(d.supplier) && (ext.startsWith("W") || ext.startsWith("POB") || ext.startsWith("COB"));
 }
 
 export default function JlcInvoicePdfDialog({ onClose }: { onClose: () => void }) {

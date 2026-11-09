@@ -385,7 +385,7 @@ def attach(db: Session, doc: M.RunCostDocument, *, force: bool = False, actor: s
     a document with a PDF that is not a proforma is left alone; one with a
     proforma gets nothing while JLCPCB still issues a proforma, and gets the
     final invoice once JLCPCB does."""
-    if not (doc.external_id or "").startswith("POB"):
+    if not jlc_web.is_parts_order(doc.external_id):
         raise InvoicePdfError(f"document {doc.id} is not a JLCPCB parts order (external id {doc.external_id!r})")
     pdfs = _pdfs(db, doc.id)
     if not force and any(not is_proforma_file(n) for n in pdfs):

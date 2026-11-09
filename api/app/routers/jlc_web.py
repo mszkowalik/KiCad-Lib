@@ -142,7 +142,7 @@ class InvoicePdfBody(BaseModel):
 @router.post("/invoice-pdfs")
 def invoice_pdfs(body: InvoicePdfBody, db: Session = Depends(get_db)):
     """Draw JLCPCB's invoice for each document and file it with the document:
-    a parts order's (POB…, decision 0082) or an assembly order's (W…,
+    a parts order's (POB… or COB…, decision 0082) or an assembly order's (W…,
     decision 0086). JLCPCB keeps no PDF of either; its own DOWNLOAD button
     screenshots the page in the browser.
 
@@ -158,7 +158,7 @@ def invoice_pdfs(body: InvoicePdfBody, db: Session = Depends(get_db)):
             results.append({"document_id": doc_id, "status": "error", "error": "no such document"})
             continue
         try:
-            # A parts order (POB…) or an assembly order (W…, decision 0086).
+            # A parts order (POB… or COB…) or an assembly order (W…, decision 0086).
             drawer = jlc_mfg_invoice_pdf if (doc.external_id or "").upper().startswith("W") else jlc_invoice_pdf
             results.append(drawer.attach(db, doc, force=body.force, actor=actor))
             db.commit()

@@ -181,6 +181,16 @@ def test_a_response_that_is_not_this_invoice_attaches_nothing(db, store, monkeyp
     assert store == {} and doc.attachment_id is None
 
 
+def test_a_cob_parts_order_gets_one_too(db, store, monkeypatch):
+    """JLC numbered the parts orders of 2026-11-05 `COB…`, and the draw refused
+    them as "not a JLCPCB parts order" (todo row 55)."""
+    cob = "COB204901010000001"
+    monkeypatch.setattr(jlc_web, "get_parts_invoice", lambda db, pob, reveal=False: _invoice(orderBatchNo=cob))
+    doc = _doc(db)
+    doc.external_id = cob
+    assert P.attach(db, doc)["status"] == "attached"
+
+
 def test_only_a_parts_order_gets_one(db, store):
     doc = _doc(db)
     doc.external_id = "W2049010100001"

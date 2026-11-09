@@ -104,6 +104,17 @@ CUSTOMER_STOCK_PATH = f"{_SMT_BASE}/myLibrary/getCustomerComponentStock"
 COMPONENT_CHANGES_PATH = f"{_SMT_BASE}/myLibrary/selectComponentChanges"
 
 
+#: A JLCPCB parts order's number starts with one of these. JLC numbered them
+#: `POB…` until the orders of 2026-11-05, which are `COB…`; the parts invoice,
+#: the lots and the ledger answer both the same way (read 2026-11-09).
+PARTS_ORDER_PREFIXES = ("POB", "COB")
+
+
+def is_parts_order(ref: str | None) -> bool:
+    """Is `ref` the number of a JLCPCB parts order (not an SMT order `W…`)?"""
+    return (ref or "").strip().upper().startswith(PARTS_ORDER_PREFIXES)
+
+
 class JlcWebError(RuntimeError):
     """Any failure talking to the JLCPCB web API."""
 
@@ -797,7 +808,7 @@ def list_parts_orders(db: Session, *, page: int = 1, page_size: int = 25,
 
 
 def get_parts_invoice(db: Session, order_batch_no: str, *, reveal: bool = False) -> dict:
-    """Invoice for a parts purchase batch (POB...) — `componentGoodsVOList`.
+    """Invoice for a parts purchase batch (POB… or COB…) — `componentGoodsVOList`.
 
     JLC sends the buyer's street, building number and e-mail as `{secret}…`.
     `reveal=True` decrypts them with the key pair of the call (`reveal_secrets`),

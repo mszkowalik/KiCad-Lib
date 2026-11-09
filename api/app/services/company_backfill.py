@@ -105,7 +105,7 @@ def _jlc_web_billing(db: Session, doc: M.RunCostDocument, by_nip: dict[str, int]
     """The billed VAT number of a JLC parts order, asked of JLC itself."""
     from . import jlc_web
 
-    if not (doc.external_id or "").startswith("POB") or not jlc_web.available(db):
+    if not jlc_web.is_parts_order(doc.external_id) or not jlc_web.available(db):
         return None
     try:
         inv = jlc_web.get_parts_invoice(db, doc.external_id)

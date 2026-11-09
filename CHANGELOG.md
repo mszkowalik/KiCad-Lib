@@ -33,6 +33,10 @@
 - **The batch device list gives the date each unit was finished.** A new Finished column on the batch's
   Devices card, and `finished_at` on each device row of `get_batch`. To find the units finished on one day,
   type the date into the column's filter.
+- **Every JLC path takes a `COB…` parts order like a `POB…` one.** The invoice PDF, the price and total
+  corrections of a parts refresh, the reference normaliser and the company backfill tested `POB` only, so
+  the `COB` orders of 2026-11-05 got no invoice PDF ("not a JLCPCB parts order"). The invoice dialog on
+  Finance → Invoices offers them too.
 
 ## 2026-11-08 (Batch 8 of CE_Dongle_V2 and the dongle carton count, data corrections)
 

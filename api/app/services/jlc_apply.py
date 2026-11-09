@@ -37,7 +37,7 @@ from sqlalchemy.orm import Session
 from .. import models as M
 from ..models import utcnow
 from ..routers.util import audit
-from . import cost_steps, jlc_import, jlc_invoice, lots, run_actuals
+from . import cost_steps, jlc_import, jlc_invoice, jlc_web, lots, run_actuals
 
 log = logging.getLogger(__name__)
 
@@ -104,10 +104,19 @@ def _norm_ref(v: str) -> str:
     collapses the observed typos.
     """
     s = (v or "").strip().upper()
-    for prefix in ("POB", "W"):
+    for prefix in (*jlc_web.PARTS_ORDER_PREFIXES, "W"):
         if s.startswith(prefix):
             return prefix + s[len(prefix):].lstrip("0")
     return s
+
+
+def _digits(ref: str) -> str:
+    """A normalised reference without its prefix: the part a doc number embeds.
+    `lstrip("POBW")` did this by character set, which leaves a `COB` number whole."""
+    for prefix in (*jlc_web.PARTS_ORDER_PREFIXES, "W"):
+        if ref.startswith(prefix):
+            return ref[len(prefix):]
+    return ref
 
 
 def find_document(db: Session, external_id: str, doc_number: str) -> M.RunCostDocument | None:
@@ -140,7 +149,7 @@ def find_near_duplicate(db: Session, external_id: str,
             return d
         # A blank external_id with the reference embedded in the doc number is
         # the other observed shape (doc 9 holds 20146320202410172302255).
-        if not d.external_id and d.doc_number and want.lstrip("POBW") in (d.doc_number or ""):
+        if not d.external_id and d.doc_number and _digits(want) in (d.doc_number or ""):
             return d
     return None
 
@@ -687,7 +696,7 @@ def reprice_from_jlc(db: Session, lots_by_key: dict[str, dict],
         if doc is None:
             continue
         pob = (doc.external_id or "").strip()
-        if not pob.startswith("POB"):
+        if not jlc_web.is_parts_order(pob):
             continue
         cands = list(by_pob.get((pob, line.lcsc)) or []) if line.lcsc else []
         if not cands:
@@ -796,7 +805,7 @@ def reprice_from_jlc(db: Session, lots_by_key: dict[str, dict],
             + lot.get("payment_fee_usd", 0.0))
     for doc in docs.values():
         pob = (doc.external_id or "").strip()
-        if not pob.startswith("POB") or pob not in paid_by_pob:
+        if not jlc_web.is_parts_order(pob) or pob not in paid_by_pob:
             continue
         paid = round(paid_by_pob[pob], 2)
         old = round(doc.total_amount or 0.0, 2)
