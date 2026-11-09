@@ -318,7 +318,8 @@ recorded so a document reconciles. `run_actuals.pooled_part_lines` is that test.
 "17,647 pieces we booked as bought that JLC never received" the moment a
 supplier-parts position was itemised (2026-09-19). Any new query over part lines
 gets the same filter. A comparison with JLC's warehouse also needs the
-document to be a JLCPCB parts order (supplier `JLCPCB`, `external_id` `POB…`):
+document to be a JLCPCB parts order (supplier `JLCPCB`, `external_id` `POB…` or
+`COB…`, `jlc_ledger.PARTS_ORDER_PREFIXES`):
 a pooled LCSC retail line read as 70 pieces JLC never received (2026-11-07).
 
 ## A batch costs, an order earns, and a UNIT joins them

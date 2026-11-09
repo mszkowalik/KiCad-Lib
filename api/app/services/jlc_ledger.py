@@ -29,6 +29,7 @@ from __future__ import annotations
 import logging
 from datetime import datetime, timezone
 
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from .. import models as M
@@ -46,9 +47,12 @@ BT_PARTS_ORDER = 5
 BT_WAREHOUSE = 10
 
 # A JLCPCB parts order is a document of this supplier whose `external_id` is the
-# parts order's number (`jlc_apply.SUPPLIER`, `plan_parts_document`).
+# parts order's number (`jlc_apply.SUPPLIER`, `plan_parts_document`). JLC numbers
+# them `POB…`, and since 2026-11-05 also `COB…`: the two orders of that day put
+# 49 receipts in the ledger that read "no document of ours reports", although
+# both documents were in the platform.
 JLC_SUPPLIER = "JLCPCB"
-PARTS_ORDER_PREFIX = "POB"
+PARTS_ORDER_PREFIXES = ("POB", "COB")
 
 # `changeStatus` 3 is a movement that DID NOT TAKE EFFECT — a ship-out request
 # JLC cancelled. It still states a quantity and a before/after pair, so a naive
@@ -185,8 +189,8 @@ def _local_index(db: Session) -> tuple[dict, dict]:
     purchase either, it is money recorded so a document reconciles.
 
     And only a JLCPCB PARTS ORDER puts stock into that warehouse: a document of
-    supplier JLCPCB whose `external_id` is the POB number, which is the code the
-    ledger names on a receipt. Any other supplier's pooled line was read as a
+    supplier JLCPCB whose `external_id` is the POB or COB number, which is the
+    code the ledger names on a receipt. Any other supplier's pooled line was read as a
     JLC purchase, so the LCSC retail order WM2510010035, delivered to the office,
     read "70 pieces we booked as bought that JLC never received" (2026-11-07).
     """
@@ -203,7 +207,8 @@ def _local_index(db: Session) -> tuple[dict, dict]:
                       M.RunCostLine.run_id.is_(None),
                       M.RunCostLine.allocate != "excluded",
                       M.RunCostDocument.supplier == JLC_SUPPLIER,
-                      M.RunCostDocument.external_id.like(f"{PARTS_ORDER_PREFIX}%")).all())
+                      or_(*(M.RunCostDocument.external_id.like(f"{p}%")
+                            for p in PARTS_ORDER_PREFIXES))).all())
     for line, doc in rows:
         purchases.setdefault(((line.lcsc or "").upper(), doc.external_id), []).append((line, doc))
     return draws, purchases

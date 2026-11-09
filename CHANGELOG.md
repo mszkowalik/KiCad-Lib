@@ -1,6 +1,6 @@
 # Changelog
 
-## 2026-11-09 (dongle labels and alert clean-up, data corrections)
+## 2026-11-09 (dongle labels, JLC `COB` orders and alert clean-up)
 
 - **The 362 dongle label steps that drew no label now draw one.** Henry knew one roll of 500 DYMO
   `2112283` labels (LIFTECH 1/7/2026). Batch 8 of CE_Dongle_V2 printed 302 more, and Batch 1 of
@@ -8,6 +8,10 @@
   `opening_balance` adjustment of 362 at zero value, dated 2026-10-08, holds them, and each of the 362
   steps draws 1 label from it at zero cost. The draws were written by a script that uses the platform's
   own draw code, with a backup before it.
+- **Stock compares `COB` parts orders with JLC's ledger.** JLC numbered its parts orders of 2026-11-05
+  `COB…`. The comparison counted only `POB…` orders, so Stock said that no document reported 49 movements,
+  although both orders were in Henry. The other `POB`-only paths (the invoice PDF, the price corrections)
+  are still open in todo row 55.
 - **5 `HX JN1.27-2x5 TP H4.9` and 1 `FZ100UF35V90RV0145` are written off.** These pieces of an LCSC order of
   2025-10-07 were in no office box, and JLC did not hold them either. Stock now reconciles every part.
 - **Two BOM lines have a price.** The Aqua shipping carton takes 0.551 PLN from the PUDLO invoice of

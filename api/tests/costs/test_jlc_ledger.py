@@ -163,6 +163,18 @@ def test_an_unconfirmed_line_is_priced_in_dollars(db, part):
     assert out[0]["usd"] == pytest.approx(1000 * 0.1 * 1.2)
 
 
+def test_a_cob_parts_order_explains_its_receipts(db, part):
+    """JLC numbered the parts orders of 2026-11-05 `COB…`. Both documents were in
+    the platform, and their 49 receipts still read "no document of ours
+    reports", because only a `POB…` number counted as a parts order."""
+    part["doc"].external_id = "COBTEST0001"
+    db.flush()
+    _row(db, qty=1000, code="COBTEST0001", bt=L.BT_PARTS_ORDER, when="2026-02-01", key=900122)
+    out = L.unexplained(db)
+    assert out["totals"]["unexplained_rows"] == 0
+    assert out["our_lines_jlc_never_received"] == []
+
+
 def test_a_receipt_the_ledger_confirms_is_not_reported(db, part):
     _row(db, qty=1000, code="POBTEST0001", bt=L.BT_PARTS_ORDER, when="2026-02-01",
          key=900107)
