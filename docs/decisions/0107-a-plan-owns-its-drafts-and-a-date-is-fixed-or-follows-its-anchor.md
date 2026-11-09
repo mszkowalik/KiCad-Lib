@@ -147,8 +147,9 @@ real order already has, and confirming it is one edit, not a copy.
     plan. The full chart is on the part's page.
 15. **A supply source has a lead time and a quantity at once.** `component_suppliers` gains a
     lead time in days, the quantity the supplier can deliver at once, a source text and an
-    as-of date. A JLCPCB part with no typed lead time takes the measured one: the last receipt in
-    JLC's own inventory ledger less the order day that the parts order's number carries. A
+    as-of date. A JLCPCB part with no typed lead time takes the measured one: a receipt in JLC's own
+    inventory ledger less the order day that the parts order's number carries, the
+    fastest when JLC's public stock covers the shortfall, else the slowest. A
     PCBA lead time is not measured: a planned batch's arrival lag is typed (20 days by
     default, source "estimate"). A part with no source that has
     a lead time reads "no source with a lead time": the shortage shows, the arrival does not.

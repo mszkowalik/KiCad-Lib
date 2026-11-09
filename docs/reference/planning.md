@@ -94,9 +94,11 @@ refusing the supplier's fact.
 
 - A source is a `component_suppliers` link with `lead_days`, `qty_at_once`,
   `lead_source` and `lead_as_of`. A JLCPCB part with no typed lead takes the
-  **measured** one: the last receipt in `jlc_stock_changes` (business type 5)
-  minus the order day that the parts order's number carries
-  (`planning.jlc_measured_leads`). PCBA lead time is not measured: a batch's
+  **measured** one: a receipt in `jlc_stock_changes` (business type 5) minus
+  the order day that the parts order's number carries
+  (`planning.jlc_measured_leads`). When JLC's public stock covers the shortfall
+  the fastest receipt counts, else the slowest: a part JLC must buy in comes as
+  a presale lot, and the last receipt can be an in-stock one of 0 days. PCBA lead time is not measured: a batch's
   arrival lag is typed (default 20 days, source estimate).
 - A proposal is computed, never stored. It takes the sources with quantity at
   once first, then the first source with a lead time. Its order day is the

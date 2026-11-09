@@ -927,14 +927,20 @@ def _parts(db: Session, L: Loaded, plan: M.Plan, designs: dict[int, Design], bat
             m = measured[lc]
             row["jlc_measured"] = m
             typed = next((x for x in srcs if x["supplier"] == "JLCPCB"), None)
-            text = (f"measured: {m['last_code']} reached the JLC inventory in {m['last']} days "
-                    f"(median {m['median']} of {m['n']})")
+            # JLC's public stock decides which past receipt predicts the next one:
+            # a part JLC holds arrives as fast as the fastest receipt; a part it
+            # must buy in (a presale lot) as slowly as the slowest.
+            in_stock = pub is not None and pub >= short_qty
+            lead = m["min"] if in_stock else m["max"]
+            text = (f"measured from {m['n']} JLC receipts: {m['min']} to {m['max']} days; "
+                    + (f"JLC holds {pub:,}, so the fastest" if in_stock else
+                       f"JLC holds {pub or 0:,} of {short_qty:,.0f}, so the slowest ({m['max_code']})"))
             if typed is None:
                 srcs.append({"supplier_id": jlc.id if jlc else None, "supplier": "JLCPCB", "link_id": None,
-                             "part_number": lc, "lead_days": m["last"], "qty_at_once": None,
+                             "part_number": lc, "lead_days": lead, "qty_at_once": None,
                              "lead_source": text, "lead_as_of": m["last_on"]})
             elif typed.get("lead_days") is None:
-                typed.update(lead_days=m["last"], lead_source=text, lead_as_of=m["last_on"])
+                typed.update(lead_days=lead, lead_source=text, lead_as_of=m["last_on"])
         if status == "short" and not p["prepared"]:
             proposals.extend(_propose(plan, row, p, srcs, first_short, today, usd_pln))
     out_parts.sort(key=lambda r: (0 if r["status"] == "short" else 1 if r["status"] == "public" else 2,
@@ -1046,7 +1052,8 @@ def jlc_measured_leads(db: Session) -> dict[str, dict]:
         leads = sorted(x[1] for x in xs)
         last = xs[-1]
         out[lcsc] = {"last": last[1], "last_code": last[2], "last_on": iso(last[0]),
-                     "median": leads[len(leads) // 2], "n": len(leads)}
+                     "median": leads[len(leads) // 2], "n": len(leads), "min": leads[0], "max": leads[-1],
+                     "max_code": max(xs, key=lambda x: x[1])[2]}
     return out
 
 

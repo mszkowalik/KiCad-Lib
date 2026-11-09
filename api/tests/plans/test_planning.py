@@ -275,3 +275,26 @@ def test_deleting_a_plan_removes_what_it_owns_and_lets_go_of_the_rest(db, world)
     node = db.get(M.PlanNode, dv.node_id)
     assert node.mode == "fixed" and node.day and node.plan_id is None
     assert db.query(M.PlanReservation).filter(M.PlanReservation.plan_id == world.plan.id).count() == 0
+
+
+def test_a_jlc_part_that_jlc_must_buy_in_takes_its_slowest_measured_receipt(db, world):
+    from datetime import UTC, datetime
+
+    line = db.query(M.SnapshotBomLine).filter_by(snapshot_id=world.snap.id).one()
+    line.lcsc = "C99999901"
+    jlc = db.query(M.Supplier).filter_by(name="JLCPCB").first()
+    if jlc is None:
+        db.add(M.Supplier(name="JLCPCB"))
+    for i, (code, got) in enumerate((("POB0202609230016917", datetime(2026, 10, 9, tzinfo=UTC)),
+                                     ("COB202611051831177", datetime(2026, 11, 5, tzinfo=UTC)))):
+        db.add(M.JlcStockChange(change_key_id=9_900_000_000 + i, stock_key_id=9_900_000_000, lcsc="C99999901",
+                                changed_at=got, change_qty=100, qty_after=100, business_code=code, business_type=5))
+    db.flush()
+    m = PL.jlc_measured_leads(db)["C99999901"]
+    assert (m["min"], m["max"], m["last"]) == (0, 16, 0)
+    _order(db, world, "V3-1", "2026-12-01", [{"qty": 100, "day": "2027-02-11"}], qty=100)
+    svc.add_batch(db, world.plan, {"project_id": world.proj.id, "qty": 100, "order": {"day": "2027-01-15"}})
+    db.flush()
+    s = PL.schedule(db, world.plan, TODAY)
+    pr = next(p for p in s["proposals"] if p["component_id"] == world.comp.id)
+    assert pr["supplier"] == "JLCPCB" and pr["lead_days"] == 16 and "slowest" in pr["lead_source"]
