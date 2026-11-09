@@ -411,6 +411,17 @@ guard reads one company's stock is in [companies.md](companies.md).
   bought on 2026-08-06 at $1.2296 against a historic $0.336, three months after
   the position moved to `C7223` — purchasing read the design, and the design
   still asked for it.
+- **An APPROVED ALTERNATE ends that finding without a schematic edit**
+  ([0108](../decisions/0108-an-approved-alternate-stands-in-for-a-part-and-the-schematic-stays.md)).
+  The component page's "Approved alternates" card says which part may replace
+  this one, one direction, in every project unless a project refuses it
+  (`project_alternate_blocks`, everywhere or at some designators). A plan
+  counts an approved alternate's stock and open purchase lines as the part,
+  unless the plan needs the alternate itself; the alternate flagged `buy` is
+  what the purchase proposal names. A batch draw still takes the part that was
+  fitted. Detection stays JLC-only: a batch the supplier does not BOM records
+  its substitutions by hand, and its Materials tab says the platform did not
+  look.
 - **A substituted part is ONE row on the Materials tab.** The planned side is
   the design's part, the used side is the draws of the part really fitted, and
   the value delta is then the true cost of the substitution (+$74.54 on batch

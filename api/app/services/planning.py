@@ -814,12 +814,36 @@ def _parts(db: Session, L: Loaded, plan: M.Plan, designs: dict[int, Design], bat
         for i in lt["inputs"]:
             p = part(i["component_id"], i["mpn"], "", "")
             p["needs"].append({"day": start, "qty": i["qty"] * (lt["qty"] or 0), "why": lt["label"], "jlc": False})
+    # Approved alternates (decision 0108 item 6): an alternate the plan does not
+    # need itself stands in for the part it is approved for — its stock and its
+    # open purchase lines count there. A project of the plan that refuses the
+    # alternate keeps it out.
+    from . import alternates as _alt
+
+    needed = {p["component_id"] for p in parts.values() if p["component_id"]}
+    approvals = _alt.pairs(db) if needed else {}
+    refused = {(b.component_id, b.alternate_id) for b in db.query(M.ProjectAlternateBlock).filter(
+        M.ProjectAlternateBlock.project_id.in_(list(designs) or [-1]))} if approvals else set()
+    stand_in: dict[int, int] = {}
+    for cid in sorted(needed):
+        for a in sorted(approvals.get(cid, ())):
+            if a not in needed and a not in stand_in and (cid, a) not in refused:
+                stand_in[a] = cid
+    buy_for = {c: a for c, a in _alt.buy_alternates(db).items()
+               if c in needed and (c, a) not in refused} if approvals else {}
     # supplies: the plan's purchase orders that are not received
     for po in pos:
         if po["status"] not in ("draft", "ordered"):
             continue
         day = parse_day(po["arrival_day"])
         for ln in po["lines"]:
+            if ln["component_id"] in stand_in:
+                p = part(stand_in[ln["component_id"]], "", "", "")
+                p["supplies"].append({"day": day, "qty": float(ln["qty"] or 0), "tier": f"po_{po['status']}",
+                                      "why": f"{po['supplier']} {po['reference'] or '#' + str(po['id'])}"
+                                             f" (approved alternate {ln['name'] or ln['mpn'] or ln['lcsc']})",
+                                      "po_id": po["id"], "unknown_day": day is None})
+                continue
             p = part(ln["component_id"], ln["mpn"], ln["lcsc"], ln["name"])
             p["supplies"].append({"day": day, "qty": float(ln["qty"] or 0), "tier": f"po_{po['status']}",
                                   "why": f"{po['supplier']} {po['reference'] or '#' + str(po['id'])}",
@@ -851,10 +875,25 @@ def _parts(db: Session, L: Loaded, plan: M.Plan, designs: dict[int, Design], bat
             rv = next(r for r in reservations_out if r["key"] == k)
             part(rv["component_id"], rv["mpn"], rv["lcsc"], "")
     supply_rows = {}
+    alt_ids = {a for a in stand_in}
+    alt_names = {c.id: c.name for c in db.query(M.Component).filter(M.Component.id.in_(
+        alt_ids | set(buy_for.values()) or {-1}))}
     for p in parts.values():
         keys = _keys_of(p["component_id"], p["mpn"], p["lcsc"])
         ent = next((pool_by_key[k] for k in keys if k in pool_by_key), None)
         on_hand = max(float(ent.get("qty") or 0), 0.0) if ent else 0.0
+        p["alternates_on_hand"] = []
+        for a, cid in stand_in.items():
+            if cid != p["component_id"]:
+                continue
+            akeys = _keys_of(a, "", "")
+            aent = next((pool_by_key[k] for k in akeys if k in pool_by_key), None)
+            aq = max(float(aent.get("qty") or 0), 0.0) if aent else 0.0
+            if aq > 0:
+                # other demand on the alternate is not modelled: the plan does
+                # not need it, and stand_in excludes any part it does need
+                on_hand += aq
+                p["alternates_on_hand"].append({"component_id": a, "name": alt_names.get(a, ""), "qty": aq})
         reserved = sum(q for k, q in res_by_key.items() if k in keys or k == p["key"])
         other = sum(q for k, q in other_by_key.items() if k in keys or k == p["key"])
         work = sum(q for k, q in in_work.items() if k in keys)
@@ -868,7 +907,7 @@ def _parts(db: Session, L: Loaded, plan: M.Plan, designs: dict[int, Design], bat
     public = {s.component_id: s.jlc_stock for s in db.query(M.ComponentSupply)
               .filter(M.ComponentSupply.component_id.in_(cids))} if cids else {}
     names = {c.id: c for c in db.query(M.Component).filter(M.Component.id.in_(cids))} if cids else {}
-    sources = _sources(db, cids)
+    sources = _sources(db, cids + sorted(set(buy_for.values()) - set(cids)))
 
     rates = _pln_rate(db)
     usd_pln = to_pln(1.0, "USD", rates) or None
@@ -916,6 +955,7 @@ def _parts(db: Session, L: Loaded, plan: M.Plan, designs: dict[int, Design], bat
                "status": status, "first_need": iso(first_need), "first_short": iso(first_short),
                "short": round(short_qty, 3), "end_balance": round(bal, 3),
                "points": _thin(points), "unknown_arrivals": len(unknown_days),
+               "alternates_on_hand": [{**a, "qty": round(a["qty"], 3)} for a in p.get("alternates_on_hand", [])],
                "needs": [{"day": iso(n["day"]), "qty": round(n["qty"], 3), "why": n["why"]} for n in
                          sorted(p["needs"], key=lambda n: n["day"])][:200],
                "supplies": [{"day": iso(s["day"]), "qty": round(s["qty"], 3), "tier": s["tier"], "why": s["why"]}
@@ -946,7 +986,16 @@ def _parts(db: Session, L: Loaded, plan: M.Plan, designs: dict[int, Design], bat
             elif typed.get("lead_days") is None:
                 typed.update(lead_days=lead, lead_source=text, lead_as_of=m["last_on"])
         if status == "short" and not p["prepared"]:
-            proposals.extend(_propose(plan, row, p, srcs, first_short, today, usd_pln))
+            alt = buy_for.get(p["component_id"])
+            if alt:
+                # decision 0108 item 3: the proposal names the alternate to buy
+                name = alt_names.get(alt, "")
+                arow = {**row, "component_id": alt, "mpn": name, "lcsc": "", "name": name}
+                for x in _propose(plan, arow, p, list(sources.get(alt) or []), first_short, today, usd_pln):
+                    x["instead_of"] = row["name"]
+                    proposals.append(x)
+            else:
+                proposals.extend(_propose(plan, row, p, srcs, first_short, today, usd_pln))
     out_parts.sort(key=lambda r: (0 if r["status"] == "short" else 1 if r["status"] == "public" else 2,
                                   r["first_short"] or "9999", r["name"]))
     # a draft purchase order compared with what the plan needs now (item 17).

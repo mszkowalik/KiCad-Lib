@@ -139,6 +139,8 @@ export default function RunMaterials({
   const [subs, setSubs] = useState<RunSubstitution[]>([]);
   const [cands, setCands] = useState<SubstitutionCandidate[]>([]);
   const [unused, setUnused] = useState<UnusedPosition[]>([]);
+  // null until known; false: no supplier BOM, so nothing looked for substitutions
+  const [hasSupplierBom, setHasSupplierBom] = useState<boolean | null>(null);
   // Parts bought straight for this batch. They never enter the pool, so no draw
   // reports them and nothing else on this tab can see them.
   const [supply, setSupply] = useState<BatchSupplyRow[]>([]);
@@ -165,8 +167,8 @@ export default function RunMaterials({
       .then((a) => setAdjs(a.adjustments.filter((x) => x.charge_run_id === run.id)))
       .catch(() => setAdjs([]));
     getRunSubstitutions(run.id, signal)
-      .then((r) => { setSubs(r.substitutions); setUnused(r.unused); })
-      .catch(() => { setSubs([]); setUnused([]); });
+      .then((r) => { setSubs(r.substitutions); setUnused(r.unused); setHasSupplierBom(r.has_supplier_bom); })
+      .catch(() => { setSubs([]); setUnused([]); setHasSupplierBom(null); });
     getBatchSupply(run.id, signal)
       .then((r) => setSupply(r.rows))
       .catch(() => setSupply([]));
@@ -481,6 +483,17 @@ export default function RunMaterials({
           says whether the list below can be trusted — a position the supplier
           met and we ALSO drew reads as an ordinary row down there. */}
       <SupplyCoverage runId={run.id} />
+
+      {/* A check that could not run says so (decision 0108 item 8): with no
+          supplier BOM, a part fitted in place of the design's is visible to
+          nobody unless a person records it. */}
+      {hasSupplierBom === false ? (
+        <p className="muted dim">
+          No supplier BOM is stored for this batch, so the platform did not look for substituted parts. If the
+          assembler fitted a part other than the design&rsquo;s, record it with &ldquo;Substitute this part&rdquo; on
+          its row.
+        </p>
+      ) : null}
 
       <div className="card table-wrap">
         <table className="data data-fixed run-materials-table">

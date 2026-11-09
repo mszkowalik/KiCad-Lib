@@ -2,6 +2,14 @@
 
 ## 2026-11-09 (JLC resale listings, COB buyers, parts the process fits)
 
+- **A part can have approved alternates** (decision 0108). The component page has an "Approved alternates"
+  card: approve a part that may replace this one in every project, mark the one to buy, and refuse it in a
+  project (everywhere or at some designators). The schematic stays as it is. A batch that fitted an
+  approved alternate no longer raises the "the design still names the superseded part" finding, a plan
+  counts the alternate's stock and open purchases as the part, and a purchase proposal names the alternate
+  marked "buy".
+- **A batch with no supplier BOM says that nothing looked for substitutions.** Its Materials tab now says
+  so and points at "Substitute this part" (decision 0108 item 8).
 - **A part listed for resale on JLC stays in stock.** 21 parts that neither CE_Dongle_V3 nor
   CE_Dongle_V3_AC uses were listed on JLC's idle-parts market on 2026-11-09 (C110548 and 20 others, about
   2 572 USD at cost). JLC reports listed pieces as `idleStock`, which the balance left out, and writes a

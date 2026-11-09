@@ -384,6 +384,8 @@ _add(["/api/plan-lots/"], "lot_id", _via(M.PlanLot, "plan_id", _plan))
 _add(["/api/plan-reservations/"], "res_id", _via(M.PlanReservation, "plan_id", _plan))
 _add(["/api/plan-customer-parts/"], "cp_id", _via(M.PlanCustomerPart, "plan_id", _plan))
 _add(["/api/purchase-orders/"], "po_id", _via(M.PurchaseOrder, "company_id", _company))
+_add(["/api/projects/{project_id}/alternate-blocks/"], "block_id",
+     _via(M.ProjectAlternateBlock, "project_id", _project))
 _add(["/api/consumption/"], "cons_id", _stock_row(M.Draw))
 _add(["/api/stock-adjustments/"], "adj_id", _stock_row(M.Adjustment))
 
@@ -492,6 +494,8 @@ NOT_COMPANY_FIELDS: set[str] = {
     "row_id",
     # the library part a material-ledger state map names (admin, decision 0097)
     "item_component_id",
+    # an approved alternate of a library part (decision 0108)
+    "alternate_id",
     # the shared office organizers; the pieces are gated by `company_id` (decision 0104)
     "box_id", "to_box_id", "item_id",
 }

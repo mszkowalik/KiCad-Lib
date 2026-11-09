@@ -372,6 +372,8 @@ def drift(db: Session) -> list[dict]:
     stops the superseded part being bought again, which is the failure that
     produced the whole idea.
     """
+    from . import alternates
+
     out = []
     for s in db.query(M.RunSubstitution).filter_by(design_updated=False).all():
         run = db.get(M.ProductionRun, s.run_id)
@@ -380,6 +382,14 @@ def drift(db: Session) -> list[dict]:
         design = _snapshot_index(db, run.project_id)
         if (s.specified_lcsc or "").upper() not in design:
             continue  # the design already moved on; nothing to warn about
+        # An approved alternate the project does not refuse is the answer the
+        # schematic would have given (decision 0108 item 5): no finding.
+        spec = (s.specified_component_id or _component_of(db, s.specified_lcsc)
+                or alternates.component_by_lcsc(db, s.specified_lcsc))
+        fitted = (s.fitted_component_id or _component_of(db, s.fitted_lcsc)
+                  or alternates.component_by_lcsc(db, s.fitted_lcsc))
+        if alternates.is_approved(db, spec, fitted, run.project_id, s.designator):
+            continue
         held = (db.query(M.JlcStockItem)
                   .filter(M.JlcStockItem.lcsc == s.specified_lcsc).first())
         out.append({

@@ -52,6 +52,7 @@ import {
 } from "../components/editing";
 import { BackLink, ErrorBanner, LifecyclePill, ReviewPill, SignoffPill, Spinner, StatusPill } from "../components/Ui";
 import CommentsPanel from "../components/CommentsPanel";
+import AlternatesCard from "../components/AlternatesCard";
 import RowChangesCard from "../components/RowChangesCard";
 import SignoffCard from "../components/SignoffCard";
 import ReviewSubjectRows, { type SubjectRow } from "../components/ReviewSubjectRows";
@@ -1839,6 +1840,7 @@ export default function ComponentDetail() {
 
         <PriceLadderCard compId={compId} />
         {detail ? <WhereUsedCard compId={compId} name={detail.name} /> : null}
+        {detail ? <AlternatesCard compId={compId} name={detail.name} /> : null}
 
         <CommentsPanel kind="components" id={compId} noun="component" />
         <RowChangesCard table="components" id={compId} />

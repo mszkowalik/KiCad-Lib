@@ -137,6 +137,7 @@ is `NNNN-title-with-dashes.md`, four digits, no gaps skipped on purpose.
 | [0105](0105-a-draw-takes-the-moving-average.md) | Price every draw at the moving average and remove FIFO: the picker, the `lot_pricing` switch and the history job go, while the bindings JLC reported and their guards stay (supersedes [0073](0073-a-draw-takes-the-cost-of-the-lots-it-is-bound-to.md)) | Backend, production |
 | [0106](0106-a-tagged-route-is-an-agent-tool.md) | A tagged route is an agent tool, called through the whole app | Agents |
 | [0107](0107-a-plan-owns-its-drafts-and-a-date-is-fixed-or-follows-its-anchor.md) | Plan a contract with drafts the plan owns: a draft sales order, a planned batch and a draft purchase order carry `plan_id`, every planned date is a node that is fixed or follows an anchor, every part has a balance over time from the plan's chosen snapshot, a purchase proposal is computed and never stored, stock can be reserved for a plan, deleting a plan deletes its drafts and reservations in one undoable write batch | Backend, frontend, sales, production, stock |
+| [0108](0108-an-approved-alternate-stands-in-for-a-part-and-the-schematic-stays.md) | Approve an alternate on the part once, and let planning and buying follow it while the schematic stays (overrides item 7 of [0038](0038-a-substitution-belongs-to-the-batch.md) for an approved alternate) | Backend, frontend, library, production, planning |
 
 ## Proposed
 

@@ -67,7 +67,13 @@ function PartCard({ part, today, onReserve, onClose }: {
       </div>
       <div className="stat-row">
         <StatChip n={units(part.need)}>needed</StatChip>
-        <StatChip n={units(part.on_hand)}>on hand</StatChip>
+        <StatChip n={units(part.on_hand)}
+                  title={part.alternates_on_hand?.length
+                    ? "of which approved alternates (decision 0108): "
+                      + part.alternates_on_hand.map((a) => `${a.name} ${units(a.qty)}`).join(", ")
+                    : undefined}>
+          on hand{part.alternates_on_hand?.length ? " (with alternates)" : ""}
+        </StatChip>
         <StatChip n={units(part.reserved)} tone={part.reserved ? "acc" : undefined}>reserved for the plan</StatChip>
         {part.reserved_broken ? <StatChip n={units(part.reserved_broken)} tone="err">reserved, gone</StatChip> : null}
         {part.other_reserved ? <StatChip n={units(part.other_reserved)}>reserved for other plans</StatChip> : null}
@@ -131,7 +137,12 @@ function ProposalsCard({ full, apply, onPart }: { full: PlanFull; apply: Apply; 
             onClick={(e) => e.stopPropagation()} onChange={() => toggle(p.key)} />,
     },
     { key: "part", label: "Part", width: 24, narrow: 45, get: (p) => partName(p),
-      render: (p) => <button type="button" className="btn-link" onClick={(e) => { e.stopPropagation(); onPart(p.part_key); }}>{partName(p)}</button> },
+      title: (p) => (p.instead_of ? `${partName(p)}, the approved alternate to buy instead of ${p.instead_of}` : ""),
+      render: (p) => (
+        <button type="button" className="btn-link" onClick={(e) => { e.stopPropagation(); onPart(p.part_key); }}>
+          {partName(p)}{p.instead_of ? <span className="muted"> · for {p.instead_of}</span> : null}
+        </button>
+      ) },
     { key: "supplier", label: "Supplier", width: 28, get: (p) => p.supplier || "no source with a lead time",
       render: (p) => (
         <>

@@ -11198,6 +11198,8 @@ export interface PlanPart {
   unknown_arrivals: number;
   needs: { day: string; qty: number; why: string }[];
   supplies: { day: string; qty: number; tier: string; why: string }[];
+  /** approved alternates (decision 0108) whose stock is counted in on_hand */
+  alternates_on_hand?: { component_id: number; name: string; qty: number }[];
 }
 
 export interface PlanProposal {
@@ -11226,6 +11228,8 @@ export interface PlanProposal {
   unit_price_pln: number | null;
   amount_pln: number | null;
   covered_by_po_id?: number;
+  /** the part the plan needs, when this proposal buys its approved alternate (decision 0108) */
+  instead_of?: string;
 }
 
 export interface PlanReservationRow {
@@ -11572,4 +11576,86 @@ export interface OrderPlanView {
 }
 export function getOrderDeliveries(id: number, signal?: AbortSignal): Promise<OrderPlanView> {
   return request(`/api/orders/${id}/deliveries`, { signal });
+}
+
+// ---- Approved alternates (decision 0108) -------------------------------------
+
+export interface ComponentAlternateRow {
+  id: number;
+  component_id: number;
+  component_name: string;
+  alternate_id: number;
+  alternate_name: string;
+  buy: boolean;
+  note: string;
+  created_by: string;
+  created_at: string;
+}
+
+export interface AlternateBlockRow {
+  id: number;
+  project_id: number;
+  project_name: string;
+  component_id: number;
+  component_name: string;
+  alternate_id: number;
+  alternate_name: string;
+  refs: string;
+  note: string;
+  created_by: string;
+  created_at: string;
+}
+
+export interface ComponentAlternates {
+  /** parts that may replace this one */
+  alternates: ComponentAlternateRow[];
+  /** parts this one may replace */
+  alternate_of: ComponentAlternateRow[];
+  blocks: AlternateBlockRow[];
+}
+
+export function getComponentAlternates(componentId: number, signal?: AbortSignal): Promise<ComponentAlternates> {
+  return request(`/api/components/${componentId}/alternates`, { signal });
+}
+
+export function approveAlternate(
+  componentId: number,
+  body: { alternate_id: number; buy?: boolean; note?: string },
+): Promise<ComponentAlternates> {
+  return request(`/api/components/${componentId}/alternates`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
+export function updateAlternate(
+  componentId: number,
+  rowId: number,
+  body: { buy?: boolean; note?: string },
+): Promise<ComponentAlternates> {
+  return request(`/api/components/${componentId}/alternates/${rowId}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
+export function removeAlternate(componentId: number, rowId: number): Promise<ComponentAlternates> {
+  return request(`/api/components/${componentId}/alternates/${rowId}`, { method: "DELETE" });
+}
+
+export function blockAlternate(
+  projectId: number,
+  body: { component_id: number; alternate_id: number; refs?: string; note?: string },
+): Promise<ComponentAlternates> {
+  return request(`/api/projects/${projectId}/alternate-blocks`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
+export function unblockAlternate(projectId: number, blockId: number): Promise<ComponentAlternates> {
+  return request(`/api/projects/${projectId}/alternate-blocks/${blockId}`, { method: "DELETE" });
 }

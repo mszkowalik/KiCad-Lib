@@ -16,6 +16,7 @@ from decimal import Decimal
 from sqlalchemy import (
     BigInteger,
     Boolean,
+    CheckConstraint,
     DateTime,
     Float,
     ForeignKey,
@@ -1542,6 +1543,50 @@ class ComponentSupplier(Base):
     supplier: Mapped[Supplier] = relationship()
 
     __table_args__ = (UniqueConstraint("component_id", "supplier_id", name="uq_component_supplier"),)
+
+
+class ComponentAlternate(Base):
+    """A part another part may stand in for, approved once on the library
+    (decision 0108). ONE direction: `component_id` may be replaced by
+    `alternate_id`. NOT versioned, like a supplier link: approving an
+    alternate does not change which part a component is.
+
+    `buy`: a purchase proposal for the part names this alternate. At most one
+    per part. An approved alternate ends the standing substitution finding
+    (0038 item 7) and counts as the part in a plan's balance."""
+
+    __tablename__ = "component_alternates"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    component_id: Mapped[int] = mapped_column(ForeignKey("components.id"), index=True)
+    alternate_id: Mapped[int] = mapped_column(ForeignKey("components.id"), index=True)
+    buy: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    note: Mapped[str] = mapped_column(String(500), default="", server_default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    created_by: Mapped[str] = mapped_column(String(100), default="user")
+
+    __table_args__ = (UniqueConstraint("component_id", "alternate_id", name="uq_component_alternate"),
+                      CheckConstraint("component_id <> alternate_id", name="ck_component_alternate_self"))
+
+
+class ProjectAlternateBlock(Base):
+    """A project that refuses an approved alternate (decision 0108 item 4).
+    `refs` empty: every position of the part in the project; otherwise the
+    comma-separated designators where the circuit cares."""
+
+    __tablename__ = "project_alternate_blocks"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"), index=True)
+    component_id: Mapped[int] = mapped_column(ForeignKey("components.id"))
+    alternate_id: Mapped[int] = mapped_column(ForeignKey("components.id"))
+    refs: Mapped[str] = mapped_column(String(200), default="", server_default="")
+    note: Mapped[str] = mapped_column(String(500), default="", server_default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    created_by: Mapped[str] = mapped_column(String(100), default="user")
+
+    __table_args__ = (UniqueConstraint("project_id", "component_id", "alternate_id", "refs",
+                                       name="uq_project_alternate_block"),)
 
 
 # ---------------------------------------------------------- JLC private stock
