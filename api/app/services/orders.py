@@ -45,7 +45,7 @@ STATE_AFTER = {
 }
 INVOICE_KINDS = ("proforma", "advance", "final", "correction")
 MONEY_KINDS = ("advance", "final", "correction")  # a proforma is not money
-ORDER_STATUSES = ("open", "partial", "fulfilled", "cancelled")
+ORDER_STATUSES = ("open", "partial", "fulfilled", "cancelled", "draft")
 
 
 def _round(v: float | None) -> float | None:
@@ -492,6 +492,10 @@ def refresh_order_status(order: M.SalesOrder) -> str:
     if order.cancelled:
         order.status = "cancelled"
         return order.status
+    # Decision 0107: a draft is a planned order the customer has not placed.
+    if order.draft:
+        order.status = "draft"
+        return order.status
     ordered = sum(li.qty_ordered or 0 for li in order.lines)
     shipped = sum(line_shipped(li) for li in order.lines)
     if ordered and shipped >= ordered:
@@ -603,6 +607,8 @@ def create_shipment(db: Session, order: M.SalesOrder, *, kind: str = "delivery",
         raise HTTPException(422, "use return_device for returns")
     if order.cancelled:
         raise HTTPException(409, "the order is cancelled")
+    if order.draft:
+        raise HTTPException(409, "the order is a draft: confirm it when the customer places it")
     by_id = {li.id: li for li in order.lines}
     sh = M.Shipment(order_id=order.id, kind="delivery", shipped_at=shipped_at or "",
                     delivery_note=delivery_note or "", tracking=tracking or "", notes=notes or "")
@@ -725,12 +731,16 @@ def _require_open(sh: M.Shipment) -> None:
         raise HTTPException(409, f"shipment {sh.id} is {sh.status}, not open")
     if sh.order.cancelled:
         raise HTTPException(409, "the order is cancelled")
+    if sh.order.draft:
+        raise HTTPException(409, "the order is a draft: confirm it when the customer places it")
 
 
 def open_shipment(db: Session, order: M.SalesOrder, *, delivery_note: str = "", tracking: str = "",
                   notes: str = "") -> M.Shipment:
     if order.cancelled:
         raise HTTPException(409, "the order is cancelled")
+    if order.draft:
+        raise HTTPException(409, "the order is a draft: confirm it when the customer places it")
     sh = M.Shipment(order_id=order.id, kind="delivery", status="open", shipped_at="",
                     delivery_note=delivery_note or "", tracking=tracking or "", notes=notes or "")
     db.add(sh)
@@ -1132,6 +1142,8 @@ def unship_device(db: Session, device: M.DeviceUnit, *, shipment_id: int | None 
 # ------------------------------------------------- correcting a FIFO guess
 
 def allocate_devices(db: Session, line: M.SalesOrderLine, device_ids: list[int], actor: str = "") -> int:
+    if line.order is not None and line.order.draft:
+        raise HTTPException(409, "the order is a draft: confirm it when the customer places it")
     n = 0
     for did in device_ids:
         d = db.get(M.DeviceUnit, did)
@@ -1439,6 +1451,8 @@ def order_json(db: Session, order: M.SalesOrder, *, with_detail: bool = False,
         "customer_id": order.customer_id, "customer": order.customer.name,
         "order_ref": order.order_ref, "order_date": order.order_date, "currency": order.currency,
         "vat_pct": order.vat_pct, "status": order.status, "cancelled": order.cancelled,
+        "draft": bool(order.draft), "plan_id": order.plan_id, "plan_key": order.plan_key,
+        "advance_due": order.advance_due,
         "notes": order.notes, "created_at": order.created_at.isoformat() if order.created_at else None,
         "lines": lines,
         "qty_ordered": sum(li.qty_ordered or 0 for li in order.lines),
@@ -1708,7 +1722,7 @@ def project_demand(db: Session, project_id: int | None = None) -> list[dict]:
     """
     q = (db.query(M.SalesOrderLine, M.SalesOrder)
          .join(M.SalesOrder)
-         .filter(M.SalesOrder.cancelled.is_(False)))
+         .filter(M.SalesOrder.cancelled.is_(False), M.SalesOrder.draft.is_(False)))
     if project_id:
         q = q.filter(M.SalesOrderLine.project_id == project_id)
     open_qty: dict[int, int] = defaultdict(int)

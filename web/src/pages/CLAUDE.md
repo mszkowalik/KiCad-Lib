@@ -176,6 +176,9 @@ code, and keep the redirects: saved links depend on them.
   the Batch card (label, quantity planned, devices produced, run date), status, the
   design commit, notes, overrides, materials, costs, files.
   The project Runs tab is a plain list. Do not add run-editing UI anywhere else.
+  The one exception is a PLANNED batch of a plan: the plan's Setup tab plans it,
+  marks it ordered and deletes it through the plan routes, because its dates are
+  the plan's nodes ([planning.md](../../../docs/reference/planning.md)).
   **That sentence has to stay literally true, and it was not.** The page
   claimed every `PATCH /api/runs/{id}` field was editable here while `label`,
   `qty`, `run_date` and `qty_good` had no control anywhere in the app — so a

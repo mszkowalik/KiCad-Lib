@@ -463,6 +463,27 @@ interface DraftLink {
   note: string;
   /** null = this link's prices are refreshed by the platform, not typed. */
   tiers: DraftTier[] | null;
+  /** Decision 0107 item 15: how long this source takes and how many it sends
+   *  at once. A plan reads them for its purchase proposals. */
+  lead_days: number | null;
+  qty_at_once: number | null;
+  lead_source: string;
+  lead_as_of: string;
+}
+
+/** "28 d": a source's lead time, short enough for its column. The cell's title
+ *  holds the quantity at once, where the figure came from and its date. */
+function leadText(l: SupplierLink): string {
+  return l.lead_days != null ? `${l.lead_days} d` : "";
+}
+
+function leadTitle(l: SupplierLink): string | undefined {
+  return [
+    l.lead_days != null ? `${l.lead_days} days from the order` : "",
+    l.qty_at_once != null ? `${l.qty_at_once.toLocaleString()} at once` : "",
+    l.lead_source ?? "",
+    l.lead_as_of ? `as of ${l.lead_as_of}` : "",
+  ].filter(Boolean).join(" · ") || undefined;
 }
 
 type Tier = { qty_from: number; unit_price: number; currency: string };
@@ -543,6 +564,10 @@ function PriceLadderCard({ compId }: { compId: number }) {
       part_number: l.part_number,
       url: l.url,
       note: l.note,
+      lead_days: l.lead_days ?? null,
+      qty_at_once: l.qty_at_once ?? null,
+      lead_source: l.lead_source ?? "",
+      lead_as_of: l.lead_as_of ?? "",
       tiers: l.connector
         ? null
         : pointsOf(l.supplier).map((p) => ({ qty_from: p.qty_from, unit_price: p.unit_price, currency: p.currency })),
@@ -563,11 +588,29 @@ function PriceLadderCard({ compId }: { compId: number }) {
         part_number: l.connector ? undefined : draft.part_number,
         url: draft.url,
         note: draft.note,
+        lead_days: draft.lead_days,
+        qty_at_once: draft.qty_at_once,
+        lead_source: draft.lead_source,
+        lead_as_of: draft.lead_as_of,
       });
       if (tiers !== undefined) r = await setSupplierLinkPrices(compId, l.id, tiers);
       setEditing(null);
       return r;
     });
+  };
+
+  const clearLead = async (l: SupplierLink) => {
+    const ok = await dialog.confirm(
+      `Clear the lead time of ${l.supplier}? A plan then reads "no source with a lead time" for it, unless another source has one.`,
+      { title: "Clear lead time", confirmLabel: "Clear", tone: "danger" },
+    );
+    if (ok) {
+      run("clear", async () => {
+        const r = await updateSupplierLink(compId, l.id, { clear_lead: true });
+        setEditing(null);
+        return r;
+      });
+    }
   };
 
   const removeLink = async (l: SupplierLink) => {
@@ -673,8 +716,9 @@ function PriceLadderCard({ compId }: { compId: number }) {
               <thead>
                 <tr>
                   <th>Supplier</th>
-                  <th>Part number</th>
+                  <th title="The supplier's part number">Part no.</th>
                   <th>Price breaks</th>
+                  <th title="Lead time in days">Lead</th>
                   <th />
                 </tr>
               </thead>
@@ -701,13 +745,17 @@ function PriceLadderCard({ compId }: { compId: number }) {
                         <td className={`mono ${wins ? "" : "muted"}`} title={ladderText(pts)}>
                           {pts.length > 0 ? ladderShort(pts) : "no prices"}
                         </td>
+                        <td className={leadText(l) ? "mono" : "muted"}
+                          title={leadTitle(l)}>
+                          {leadText(l) || "—"}
+                        </td>
                         <td className="ctr">
                           <button type="button" className="icon-btn" title="Earlier in this part's order"
                             disabled={busy !== null || i === 0} onClick={() => move(i, -1)}>↑</button>
                           <button type="button" className="icon-btn" title="Later in this part's order"
                             disabled={busy !== null || i === data.suppliers.length - 1} onClick={() => move(i, 1)}>↓</button>
                           <button type="button" className="icon-btn" disabled={busy !== null}
-                            title={editing === l.id ? "Close the editor" : "Edit part number, page, note and prices"}
+                            title={editing === l.id ? "Close the editor" : "Edit part number, page, note, lead time and prices"}
                             onClick={() => (editing === l.id ? setEditing(null) : startEdit(l))}>✎</button>
                           {l.connector ? null : (
                             <button type="button" className="row-del" title={`Remove ${l.supplier}`}
@@ -717,7 +765,7 @@ function PriceLadderCard({ compId }: { compId: number }) {
                       </tr>
                       {editing === l.id && draft !== null ? (
                         <tr>
-                          <td colSpan={4} className="expand-cell">
+                          <td colSpan={5} className="expand-cell">
                             <div className="ladder-edit">
                               <FieldRow>
                                 <Field label="Part number" hint={l.connector ? "Follows the LCSC Part property" : undefined}>
@@ -731,6 +779,27 @@ function PriceLadderCard({ compId }: { compId: number }) {
                                 <Field label="Note" wide>
                                   <input className="text" value={draft.note} placeholder="e.g. quote number"
                                     onChange={(e) => setDraft({ ...draft, note: e.target.value })} />
+                                </Field>
+                              </FieldRow>
+                              <FieldRow>
+                                <Field label="Lead time (days)" hint="From the order to the goods here">
+                                  <NumberInput className="text num-input" value={draft.lead_days} min={0}
+                                    onChange={(v) => setDraft({ ...draft, lead_days: Math.round(v) })}
+                                    onEmpty={() => setDraft({ ...draft, lead_days: null })} />
+                                </Field>
+                                <Field label="Quantity at once" hint="The most they deliver in one go">
+                                  <NumberInput className="text num-input" value={draft.qty_at_once} min={0}
+                                    onChange={(v) => setDraft({ ...draft, qty_at_once: Math.round(v) })}
+                                    onEmpty={() => setDraft({ ...draft, qty_at_once: null })} />
+                                </Field>
+                                <Field label="Where the lead time comes from" wide>
+                                  <input className="text" value={draft.lead_source} maxLength={300}
+                                    placeholder="e.g. their e-mail of 2026-11-05"
+                                    onChange={(e) => setDraft({ ...draft, lead_source: e.target.value })} />
+                                </Field>
+                                <Field label="As of">
+                                  <input className="text" type="date" value={draft.lead_as_of}
+                                    onChange={(e) => setDraft({ ...draft, lead_as_of: e.target.value })} />
                                 </Field>
                               </FieldRow>
                               {draft.tiers !== null ? (
@@ -780,6 +849,12 @@ function PriceLadderCard({ compId }: { compId: number }) {
                                   onClick={() => setEditing(null)}>
                                   Cancel
                                 </button>
+                                {leadText(l) || l.qty_at_once != null || l.lead_source || l.lead_as_of ? (
+                                  <button type="button" className="btn btn-sm btn-danger" disabled={busy !== null}
+                                    onClick={() => void clearLead(l)}>
+                                    Clear lead time…
+                                  </button>
+                                ) : null}
                               </div>
                             </div>
                           </td>

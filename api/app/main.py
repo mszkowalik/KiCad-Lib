@@ -51,6 +51,7 @@ from .routers import (
     suppliers,
     transfers as transfers_router,
     undo as undo_router,
+    plans as plans_router,
     users,
     view,
     orders,
@@ -166,6 +167,7 @@ app.include_router(orders.router)
 app.include_router(organizers.router)
 app.include_router(activity.router)
 app.include_router(undo_router.router)
+app.include_router(plans_router.router)
 
 # Published-state file mirror, served read-only (sync + downloads).
 app.mount("/files", StaticFiles(directory=settings.mirror_dir), name="files")
@@ -835,6 +837,25 @@ _PHASE1_DDL = (
      "DROP INDEX IF EXISTS ix_run_cost_line_kind"),
     ("run_cost_lines.kind drop",
      "ALTER TABLE run_cost_lines DROP COLUMN IF EXISTS kind"),
+    # Decision 0107: plans own drafts. The new tables arrive through create_all.
+    ("sales_orders.draft",
+     "ALTER TABLE sales_orders ADD COLUMN IF NOT EXISTS draft boolean NOT NULL DEFAULT false"),
+    ("sales_orders.plan_id",
+     "ALTER TABLE sales_orders ADD COLUMN IF NOT EXISTS plan_id integer"),
+    ("sales_orders.plan_key",
+     "ALTER TABLE sales_orders ADD COLUMN IF NOT EXISTS plan_key varchar(40) NOT NULL DEFAULT ''"),
+    ("sales_orders.advance_due",
+     "ALTER TABLE sales_orders ADD COLUMN IF NOT EXISTS advance_due varchar(10) NOT NULL DEFAULT ''"),
+    ("production_runs.plan_id",
+     "ALTER TABLE production_runs ADD COLUMN IF NOT EXISTS plan_id integer"),
+    ("component_suppliers.lead_days",
+     "ALTER TABLE component_suppliers ADD COLUMN IF NOT EXISTS lead_days integer"),
+    ("component_suppliers.qty_at_once",
+     "ALTER TABLE component_suppliers ADD COLUMN IF NOT EXISTS qty_at_once integer"),
+    ("component_suppliers.lead_source",
+     "ALTER TABLE component_suppliers ADD COLUMN IF NOT EXISTS lead_source varchar(300) NOT NULL DEFAULT ''"),
+    ("component_suppliers.lead_as_of",
+     "ALTER TABLE component_suppliers ADD COLUMN IF NOT EXISTS lead_as_of varchar(10) NOT NULL DEFAULT ''"),
 )
 
 # name -> "ok" | "failed: ..."; served by GET /api/health/schema.

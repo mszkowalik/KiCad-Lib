@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { plural, localWhen } from "../format";
+import type { OrderRow, SalesInvoiceRow } from "../api";
 
 /** "← Back" that means BACK, not UP.
  *
@@ -142,6 +143,17 @@ const STATUS_TONES: Record<string, string> = {
   // `reversed` stay neutral, because nothing is wrong with a withdrawn one.
   "in force": "ok",
   stale: "warn",
+  // A purchase order that arrived (decision 0107). `ordered` stays neutral: a
+  // batch uses the same word.
+  received: "ok",
+  // A plan's words (decision 0107): its status, a step of its agenda, a part's
+  // balance. `planned`, `fixed`, `proposal` and `sent` keep their tones.
+  agreed: "ok",
+  done: "ok",
+  late: "err",
+  blocked: "err",
+  short: "err",
+  "public only": "warn",
   // JLC's words on an order that waits for us, and the invoice draw's answer.
   // `shipped` stays neutral: an order of ours may use the same word.
   attached: "ok",
@@ -279,6 +291,34 @@ export const REVIEW_RANK: Record<string, number> = { failed: 0, unreviewed: 1, p
  *  Home said 325 while the link it gave opened 397. */
 export function waitsForReview(state: string | null | undefined): boolean {
   return state !== "checked";
+}
+
+/** A sales invoice the old register imported: its payment is what that register
+ *  said, and it rarely said, so it reads "not recorded" and never "overdue". */
+export const importedSalesInvoice = (r: SalesInvoiceRow) => r.source.startsWith("script");
+
+/** The ONE word a sales invoice's state is, for the register's chips and for
+ *  Home's line, so Home's count opens a list of exactly that many rows. */
+export function salesInvoiceState(r: SalesInvoiceRow): string {
+  if (r.status === "draft") return "draft";
+  if (r.status === "cancelled") return "cancelled";
+  if (r.kind === "proforma") return "proforma";
+  if (r.paid) return "paid";
+  if (importedSalesInvoice(r)) return "not recorded";
+  return r.overdue ? "overdue" : "unpaid";
+}
+
+/** An order whose shipped units are worth more than its money invoices: units
+ *  went out and nobody invoiced them yet. The shipped value is each line's price
+ *  for each unit shipped, up to the quantity ordered, as `order_economics` counts
+ *  it. An advance that covers what went out is not a gap, so `invoice_gap` alone
+ *  is the wrong test: it counts the rest of an order that has not shipped. A
+ *  draft (decision 0107) ships nothing. Home's line and the Orders chip both call
+ *  this. */
+export function shippedNotInvoiced(o: OrderRow): boolean {
+  if (o.draft || o.cancelled || o.qty_shipped <= 0) return false;
+  const shipped = o.lines.reduce((s, l) => s + Math.min(l.qty_shipped, l.qty_ordered) * (l.unit_price || 0), 0);
+  return shipped - (o.invoiced_net ?? 0) >= 0.01;
 }
 
 /** Who answered, as one glyph: ⚙ the validator on publish, 🤖 an agent run.

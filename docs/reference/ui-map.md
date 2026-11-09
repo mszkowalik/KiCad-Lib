@@ -17,8 +17,8 @@ do, so a function goes under the job it serves.
 | Engineering | Simulator | Test a circuit | Circuit, Field solver |
 | Engineering | Reviews | Check the library | Queue, Checklists |
 | Operations | Production | Make devices | Batches, Bench, Devices, Procedures |
-| Operations | Stock | Know what we hold | Parts, Organizers, Finished devices, Transfers, Suppliers, JLCPCB |
-| Operations | Sales | Sell and ship | Orders, Shipments, Sales invoices, Customers |
+| Operations | Stock | Know what we hold | Parts, Organizers, Finished devices, Transfers, Suppliers, Purchase orders, JLCPCB |
+| Operations | Sales | Sell and ship | Orders, Shipments, Sales invoices, Customers, Plans |
 | Operations | Finance | Know what it cost | Cost overview, Purchase invoices, KSeF, Company books, Exchange rates |
 | User menu | Account | One person's settings | Tokens, git accounts, KiCad setup, theme |
 | User menu | History | What changed, and undo | My changes, Write batches, Everyone |

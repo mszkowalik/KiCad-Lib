@@ -136,6 +136,7 @@ is `NNNN-title-with-dashes.md`, four digits, no gaps skipped on purpose.
 | [0104](0104-an-organizer-box-says-where-the-ledger-says-what-it-cost.md) | Keep the office organizers in their own tables: a box says where the pieces are, and a take or a count writes the draw or the adjustment that says what they cost. R&D use is a cost no batch pays | Backend architecture |
 | [0105](0105-a-draw-takes-the-moving-average.md) | Price every draw at the moving average and remove FIFO: the picker, the `lot_pricing` switch and the history job go, while the bindings JLC reported and their guards stay (supersedes [0073](0073-a-draw-takes-the-cost-of-the-lots-it-is-bound-to.md)) | Backend, production |
 | [0106](0106-a-tagged-route-is-an-agent-tool.md) | A tagged route is an agent tool, called through the whole app | Agents |
+| [0107](0107-a-plan-owns-its-drafts-and-a-date-is-fixed-or-follows-its-anchor.md) | Plan a contract with drafts the plan owns: a draft sales order, a planned batch and a draft purchase order carry `plan_id`, every planned date is a node that is fixed or follows an anchor, every part has a balance over time from the plan's chosen snapshot, a purchase proposal is computed and never stored, stock can be reserved for a plan, deleting a plan deletes its drafts and reservations in one undoable write batch | Backend, frontend, sales, production, stock |
 
 ## Proposed
 

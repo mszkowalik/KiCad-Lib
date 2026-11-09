@@ -15,6 +15,7 @@ reasoning is in [decision 0063](../decisions/0063-two-companies-own-projects-ove
 | Batch (`production_runs.company_id`) | Set when the batch is created: the request's `company_id`, else the project's owner on the batch date (`default_run_company`). Frozen while the books are closed. |
 | Sales order (`sales_orders.company_id`) | The request's `company_id`, else the user's only company, else the owner of the first product's project on the order date (`routers/orders._seller`). |
 | Supplier document (`run_cost_documents.company_id`, `company_source`) | The BILLED company. A JLC import reads it from `taxVatBilling`. A typed document takes the request's company, else the user's only one. The backfill below fills the past. A person changes it on the invoice. |
+| Plan, purchase order (`plans.company_id`, `purchase_orders.company_id`) | The request's `company_id`, else the user's only company. A plan's draft orders, planned batches, purchase orders and reservations take the plan's company (decision 0107). The plan and purchase-order lists follow the header scope. |
 | Draw, adjustment (`company_id`) | Stamped on insert from the batch, the step, the transformation or the project's owner on the day (`companies.stamp_stock`). An uncharged JLC draw takes its assembly invoice's buyer. |
 
 Never derive a batch's or an order's company from its project's CURRENT owner.

@@ -50,27 +50,19 @@ import SalesTemplateDialog from "../components/invoices/SalesTemplateDialog";
 import { INVOICE_LINE_COLUMNS as LINE_COLUMNS } from "../components/PrintedInvoice";
 import RecordFiles from "../components/RecordFiles";
 import AccountantMark from "../components/AccountantMark";
-import { ErrorBanner, Spinner, StatusPill } from "../components/Ui";
+import { ErrorBanner, Spinner, StatusPill, importedSalesInvoice, salesInvoiceState } from "../components/Ui";
 import { pl, today } from "../format";
 import { absoluteFileUrl, fileHref } from "../viewkind";
 import PageShell from "../components/PageShell";
+import { useSearchParams } from "react-router-dom";
 
 const KIND_TEXT: Record<string, string> = {
   vat: "VAT", proforma: "proforma", correction: "correction", advance: "advance", settlement: "settlement",
 };
 
-/** An imported document's payment is what the old register said, and it
- *  rarely said: "payment not recorded" is the honest word, never "overdue". */
-const imported = (r: SalesInvoiceRow) => r.source.startsWith("script");
-
-function stateOf(r: SalesInvoiceRow): string {
-  if (r.status === "draft") return "draft";
-  if (r.status === "cancelled") return "cancelled";
-  if (r.kind === "proforma") return "proforma";
-  if (r.paid) return "paid";
-  if (imported(r)) return "not recorded";
-  return r.overdue ? "overdue" : "unpaid";
-}
+/** `stateOf` is shared with Home's "past due" line (`components/Ui.tsx`). */
+const imported = importedSalesInvoice;
+const stateOf = salesInvoiceState;
 
 const COLUMNS: Column<SalesInvoiceRow>[] = [
   { key: "date", label: "Date", width: 9, className: "mono", get: (r) => r.issue_date },
@@ -461,7 +453,9 @@ export default function SalesInvoices() {
   const [templates, setTemplates] = useState<SalesTemplate[]>([]);
   const [error, setError] = useState("");
   const [version, setVersion] = useState(0);
-  const [narrow, setNarrow] = useState("");
+  // `?state=overdue` narrows the register: Home links here with it.
+  const [searchParams] = useSearchParams();
+  const [narrow, setNarrow] = useState(() => searchParams.get("state") ?? "");
   const { isAdmin } = useAuth();
   const [writing, setWriting] = useState<"history" | "import" | null>(null);
 

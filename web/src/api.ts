@@ -3865,6 +3865,11 @@ export interface SupplierLink {
   position: number | null;
   origin: string;
   has_prices: boolean;
+  /** Decision 0107 item 15: how long the source takes, and how many it sends at once. */
+  lead_days?: number | null;
+  qty_at_once?: number | null;
+  lead_source?: string;
+  lead_as_of?: string;
 }
 
 export interface PricePointsResponse {
@@ -3920,7 +3925,8 @@ export function addSupplierLink(
 export function updateSupplierLink(
   componentId: number,
   linkId: number,
-  body: { part_number?: string; url?: string; note?: string },
+  body: { part_number?: string; url?: string; note?: string; lead_days?: number | null; qty_at_once?: number | null;
+    lead_source?: string; lead_as_of?: string; clear_lead?: boolean },
 ): Promise<PricePointsResponse> {
   return request(`/api/components/${componentId}/suppliers/${linkId}`, {
     method: "PATCH",
@@ -8192,8 +8198,13 @@ export interface OrderRow {
   order_date: string;
   currency: string;
   vat_pct: number;
-  status: "open" | "partial" | "fulfilled" | "cancelled";
+  status: "open" | "partial" | "fulfilled" | "cancelled" | "draft";
   cancelled: boolean;
+  /** Decision 0107: a planned order the customer has not placed. */
+  draft?: boolean;
+  plan_id?: number | null;
+  plan_key?: string;
+  advance_due?: string;
   notes: string;
   created_at: string | null;
   lines: OrderLineRow[];
@@ -10896,4 +10907,655 @@ export function importOrganizers(body: {
   rows: OrganizerImportRow[]; at: string; source_ref?: string; dry_run: boolean;
 }): Promise<OrganizerImportResult> {
   return request("/api/organizers/import", jsonBody("POST", body));
+}
+
+
+// ------------------------------------------------------------------ plans (decision 0107)
+
+export type PlanNodeMode = "fixed" | "after";
+export type PlanLagUnit = "days" | "workdays" | "weeks" | "months";
+export type PlanParty = "ours" | "customer" | "supplier";
+export type PlanSource = "" | "estimate" | "measured" | "confirmed";
+
+/** One planned date. `after` holds references: "n:<node>", "order:<order>",
+ *  "advance:<order>". */
+export interface PlanNode {
+  id: number;
+  plan_id: number | null;
+  kind: "delivery" | "batch_order" | "batch_arrival" | "po_order" | "po_arrival" | "lot" | "milestone" | "closure";
+  subject_id: number | null;
+  label: string;
+  mode: PlanNodeMode;
+  day: string;
+  after: string[] | null;
+  lag: number;
+  lag_unit: PlanLagUnit;
+  snap_weekday: number | null;
+  end_day: string;
+  duration_days: number | null;
+  source: PlanSource;
+  source_text: string;
+  party: PlanParty;
+  done_on: string;
+  amount: number | null;
+  currency: string;
+  position: number;
+}
+
+export type PlanNodeIn = Partial<Omit<PlanNode, "id" | "plan_id" | "subject_id">>;
+
+export interface PlanProjectRow {
+  id: number;
+  project_id: number;
+  project: string;
+  snapshot_mode: "fixed" | "branch";
+  snapshot_id: number | null;
+  branch: string;
+  board: string;
+  variant: string;
+  line_rate_week: number | null;
+}
+
+export interface PlanAttention {
+  plan_id: number;
+  name: string;
+  error?: string;
+  counts: Partial<Record<"block" | "risk" | "decide", number>>;
+  top: PlanBlocker[];
+  purchases_this_week?: number;
+  late_advances?: number;
+  conflicts?: number;
+  shortages?: number;
+  broken_reservations?: number;
+  public_only?: number;
+}
+
+export interface PlanRow {
+  id: number;
+  name: string;
+  company_id: number | null;
+  customer_id: number | null;
+  customer: string;
+  status: "draft" | "sent" | "agreed";
+  sent_on: string;
+  agreed_on: string;
+  currency: string;
+  vat_pct: number;
+  advance_pct: number;
+  advance_days: number;
+  final_days: number;
+  min_lead_months: number;
+  advance_limit_net: number | null;
+  /** 0 = Monday. */
+  delivery_weekday: number | null;
+  build_lead_days: number;
+  attrition_pct: number;
+  notes: string;
+  reviewed: Record<string, { snapshot_id: number | null; process_version_id: number | null }>;
+  created_at: string | null;
+  created_by: string;
+  projects: PlanProjectRow[];
+  orders?: number;
+  attention?: PlanAttention | null;
+}
+
+export type PlanIn = Partial<Omit<PlanRow, "id" | "customer" | "reviewed" | "created_at" | "created_by" | "projects" | "orders" | "attention">> & { name?: string };
+
+export interface PlanFlag { code: string; text: string }
+
+export interface PlanDelivery {
+  id: number;
+  qty: number;
+  node_id: number | null;
+  day: string;
+  planned: string;
+  late_days: number;
+  conflict: string;
+  mode: PlanNodeMode | "";
+  done: boolean;
+}
+
+export interface PlanOrderLine {
+  id: number;
+  project_id: number;
+  project: string;
+  product: string;
+  qty: number;
+  unit_price: number;
+  deliveries: PlanDelivery[];
+  planned_qty: number;
+  mismatch: boolean;
+}
+
+export interface PlanRealInvoice {
+  number: string;
+  issue_date: string;
+  due_date: string;
+  paid: boolean;
+  paid_date: string;
+  net: number;
+  gross: number | null;
+  sales_invoice_id?: number;
+  order_invoice_id?: number;
+}
+
+export interface PlanOrder {
+  id: number;
+  key: string;
+  order_ref: string;
+  draft: boolean;
+  status: string;
+  order_date: string;
+  advance_due: string;
+  advance_due_override: string;
+  advance_paid_on: string;
+  advance_state: "paid" | "due" | "late";
+  advance_effective: string;
+  earliest_delivery: string;
+  net: number;
+  advance_net: number;
+  advance_gross: number;
+  final_net: number;
+  final_gross: number;
+  final_day: string;
+  final_due: string;
+  first_delivery: string;
+  last_delivery: string;
+  real_invoices: { advance: PlanRealInvoice[]; final: PlanRealInvoice[] };
+  lines: PlanOrderLine[];
+  flags: PlanFlag[];
+}
+
+export interface PlanBatch {
+  id: number;
+  label: string;
+  project_id: number;
+  project: string;
+  qty: number;
+  status: string;
+  planned: boolean;
+  order_node_id: number | null;
+  arrival_node_id: number | null;
+  order_day: string;
+  arrival_day: string;
+  order_late_days: number;
+  arrival_late_days: number;
+  order_planned: string;
+  conflict: string;
+  closures: string[];
+  cost: number | null;
+  cost_currency: string;
+}
+
+export interface PlanCoverage {
+  project_id: number;
+  project: string;
+  short: { delivery: string; need_day: string; need: number; have: number; short: number; order: string }[];
+  line_rate_week: number | null;
+  over_rate: { week: string; units: number }[];
+  units: number;
+}
+
+export interface PlanPoLine {
+  id: number;
+  component_id: number | null;
+  mpn: string;
+  lcsc: string;
+  name: string;
+  qty: number;
+  unit_price: number | null;
+  key?: string;
+}
+
+export interface PlanPurchase {
+  id: number;
+  supplier: string;
+  supplier_id: number | null;
+  status: "draft" | "ordered" | "received" | "cancelled";
+  reference: string;
+  currency: string;
+  order_node_id: number | null;
+  arrival_node_id: number | null;
+  order_day: string;
+  arrival_day: string;
+  order_late_days: number;
+  arrival_late_days: number;
+  amount: number;
+  amount_pln: number;
+  proposal_key: string;
+  proposal: Record<string, unknown> | null;
+  lines: PlanPoLine[];
+  out_of_date?: string;
+  suggested_qty?: number;
+  surplus?: { key: string; name: string; qty: number; value: number }[];
+}
+
+export interface PlanLotRow {
+  id: number;
+  project_id: number;
+  recipe_key: string;
+  label: string;
+  qty: number;
+  rate_per_day: number | null;
+  workdays: number | null;
+  start_node_id: number | null;
+  start_day: string;
+  end_day: string;
+  late_days: number;
+  output_component_id: number | null;
+  inputs: { component_id: number | null; mpn: string; qty: number }[];
+  unknown_recipe: boolean;
+}
+
+export interface PlanMilestone {
+  id: number;
+  kind: "milestone" | "closure";
+  label: string;
+  day: string;
+  end_day: string;
+  planned: string;
+  late_days: number;
+  done: boolean;
+  conflict: string;
+  party: PlanParty;
+  source: PlanSource;
+  source_text: string;
+}
+
+export interface PlanPart {
+  key: string;
+  component_id: number | null;
+  mpn: string;
+  lcsc: string;
+  name: string;
+  prepared: boolean;
+  internal: boolean;
+  need: number;
+  on_hand: number;
+  reserved: number;
+  reserved_broken: number;
+  other_reserved: number;
+  in_work_other: number;
+  free: number;
+  jlc_public: number | null;
+  incoming: number;
+  from_lots: number;
+  /** `public`: only JLC's public stock covers it, and nothing reserves that. */
+  status: "ok" | "short" | "public";
+  first_need: string;
+  first_short: string;
+  short: number;
+  end_balance: number;
+  points: { day: string; balance: number }[];
+  unknown_arrivals: number;
+  needs: { day: string; qty: number; why: string }[];
+  supplies: { day: string; qty: number; tier: string; why: string }[];
+}
+
+export interface PlanProposal {
+  key: string;
+  part_key: string;
+  component_id: number | null;
+  mpn: string;
+  lcsc: string;
+  name: string;
+  supplier: string;
+  supplier_id: number | null;
+  qty: number;
+  order_day: string;
+  arrival_day: string;
+  need_day: string;
+  lead_days: number | null;
+  lead_source: string;
+  late: boolean;
+  no_lead: boolean;
+  unit_price_pln: number | null;
+  amount_pln: number | null;
+  covered_by_po_id?: number;
+}
+
+export interface PlanReservationRow {
+  id: number;
+  key: string;
+  component_id: number | null;
+  mpn: string;
+  lcsc: string;
+  qty: number;
+  remaining: number;
+  source_line_id: number | null;
+  note: string;
+  created_by: string;
+  created_at: string;
+}
+
+export interface PlanCash {
+  inflows: { day: string; net: number; key: string; paid: boolean }[];
+  outflows: { day: string; net: number; label: string; kind: string }[];
+  steps: { day: string; out: number; cum_out: number; cum_in: number; margin: number }[];
+  lowest: { day: string; out: number; cum_out: number; cum_in: number; margin: number } | null;
+  months: { month: string; advance: number; final: number; total: number; by_project: Record<string, number> }[];
+  total_gross: number;
+  total_net: number;
+  vat_factor: number;
+}
+
+export interface PlanCustomerPartRow {
+  id: number;
+  name: string;
+  project_id: number | null;
+  per_unit: number;
+  received: number;
+  confirmed: boolean;
+  note: string;
+  needs: { need_day: string; cumulative: number }[];
+  next_need: { need_day: string; cumulative: number } | null;
+}
+
+export interface PlanChange {
+  project_id: number;
+  first: boolean;
+  snapshot_from: number | null;
+  snapshot_to: number | null;
+  process_from: number | null;
+  process_to: number | null;
+  bom: {
+    added: { refs: string; qty: number; value: string; lcsc: string }[];
+    removed: { refs: string; qty: number; value: string; lcsc: string }[];
+    changed: { from: { refs: string; qty: number; value: string }; to: { refs: string; qty: number; value: string } }[];
+    counts: { added: number; removed: number; changed: number };
+  } | null;
+}
+
+export interface PlanDesign {
+  project_id: number;
+  project: string;
+  snapshot_id: number | null;
+  snapshot_ref: string;
+  snapshot_sha: string;
+  board: string;
+  variant: string;
+  process_version_id: number | null;
+  process_version_no: number | null;
+  bom_lines: number;
+  step_inputs: number;
+  recipes: { key: string; label: string; rate_per_day: number | null; output_component_id: number | null }[];
+  warnings: string[];
+}
+
+export interface PlanBlocker {
+  severity: "block" | "risk" | "decide";
+  title: string;
+  text: string;
+  stops: string;
+  action: string;
+  by: string;
+  source: string;
+  /** "part:<key>" or "po:<id>", when the fix has a place. */
+  link: string;
+}
+
+export interface PlanCheck { key: string; label: string; ok: boolean; items: string[]; skipped?: boolean }
+
+export interface PlanEvent {
+  day: string;
+  party: PlanParty;
+  kind: string;
+  text: string;
+  amount: number | null;
+  status: "planned" | "late" | "done" | "blocked" | "fixed" | "proposal";
+  project_id: number | null;
+  problem: boolean;
+  ref: string;
+}
+
+export interface PlanSchedule {
+  today: string;
+  cycle: string;
+  orders: PlanOrder[];
+  advances: { day: string; net: number; orders: string[] }[];
+  over_limit: { day: string; net: number; orders: string[] }[];
+  weeks: { day: string; by_project: Record<string, number>; total: number; orders: { order_id: number; key: string; qty: number; project_id: number }[] }[];
+  batches: PlanBatch[];
+  coverage: PlanCoverage[];
+  purchase_orders: PlanPurchase[];
+  lots: PlanLotRow[];
+  milestones: PlanMilestone[];
+  parts: PlanPart[];
+  proposals: PlanProposal[];
+  reservations: PlanReservationRow[];
+  cash: PlanCash;
+  customer_parts: PlanCustomerPartRow[];
+  changes: PlanChange[];
+  progress: { order_id: number; key: string; planned_by_today: number; shipped: number; behind: number }[];
+  designs: PlanDesign[];
+  checks: PlanCheck[];
+  blockers: PlanBlocker[];
+  agenda: PlanEvent[];
+}
+
+export interface PlanFull {
+  plan: PlanRow;
+  nodes: PlanNode[];
+  lots: { id: number; project_id: number; recipe_key: string; label: string; qty: number; rate_per_day: number | null; duration_days: number | null; start_node_id: number | null }[];
+  schedule: PlanSchedule;
+}
+
+export interface PlanDeliveryIn {
+  qty: number;
+  day?: string;
+  mode?: PlanNodeMode | "";
+  after?: string[] | null;
+  lag?: number;
+  lag_unit?: PlanLagUnit;
+  snap_weekday?: number | null;
+  source?: PlanSource;
+  source_text?: string;
+  done_on?: string;
+}
+
+export interface PlanOrderIn {
+  plan_key?: string;
+  order_ref?: string;
+  order_date: string;
+  advance_due?: string;
+  customer_id?: number | null;
+  notes?: string;
+  lines: { project_id: number; product?: string; qty_ordered: number; unit_price: number; deliveries: PlanDeliveryIn[] }[];
+}
+
+/** A date step of a batch, a lot or a purchase: fixed on `day`, or after refs + lag. */
+export interface PlanStepIn {
+  mode?: PlanNodeMode | "";
+  day?: string;
+  after?: string[] | null;
+  lag?: number | null;
+  lag_unit?: PlanLagUnit;
+  amount?: number | null;
+  currency?: string;
+  source?: PlanSource;
+  source_text?: string;
+}
+
+export function listPlans(signal?: AbortSignal): Promise<PlanRow[]> {
+  return request(`/api/plans`, { signal });
+}
+export function getPlansAttention(signal?: AbortSignal): Promise<PlanAttention[]> {
+  return request(`/api/plans/attention`, { signal });
+}
+export function createPlan(body: PlanIn): Promise<PlanFull> {
+  return request(`/api/plans`, jsonBody("POST", body));
+}
+export function getPlan(id: number, signal?: AbortSignal): Promise<PlanFull> {
+  return request(`/api/plans/${id}`, { signal });
+}
+export function updatePlan(id: number, body: PlanIn): Promise<PlanFull> {
+  return request(`/api/plans/${id}`, jsonBody("PATCH", body));
+}
+export function setPlanProjects(id: number, projects: Omit<PlanProjectRow, "id" | "project">[]): Promise<PlanFull> {
+  return request(`/api/plans/${id}/projects`, jsonBody("PUT", { projects }));
+}
+export function markPlanReviewed(id: number): Promise<PlanFull> {
+  return request(`/api/plans/${id}/reviewed`, { method: "POST" });
+}
+export interface PlanOwned {
+  dry_run: boolean;
+  delete: { draft_orders: { id: number; key: string }[]; planned_batches: { id: number; label: string }[]; draft_purchase_orders: { id: number; supplier: string }[]; reservations: number; lots: number; nodes: number; customer_parts: number };
+  keep: { orders: { id: number; key: string }[]; batches: { id: number; label: string }[]; purchase_orders: { id: number; supplier: string; status: string }[] };
+}
+export function deletePlan(id: number, dryRun: boolean): Promise<PlanOwned> {
+  return request(`/api/plans/${id}/delete`, jsonBody("POST", { dry_run: dryRun }));
+}
+export function addPlanOrder(id: number, body: PlanOrderIn): Promise<PlanFull> {
+  return request(`/api/plans/${id}/orders`, jsonBody("POST", body));
+}
+export function updatePlanOrder(id: number, orderId: number, body: { plan_key?: string; order_date?: string; advance_due?: string; notes?: string }): Promise<PlanFull> {
+  return request(`/api/plans/${id}/orders/${orderId}`, jsonBody("PATCH", body));
+}
+export function deletePlanOrder(id: number, orderId: number): Promise<PlanFull> {
+  return request(`/api/plans/${id}/orders/${orderId}`, { method: "DELETE" });
+}
+export function setLineDeliveries(lineId: number, deliveries: PlanDeliveryIn[]): Promise<PlanFull> {
+  return request(`/api/order-lines/${lineId}/deliveries`, jsonBody("PUT", { deliveries }));
+}
+export function addPlanNode(id: number, body: PlanNodeIn): Promise<PlanFull> {
+  return request(`/api/plans/${id}/nodes`, jsonBody("POST", body));
+}
+export function updatePlanNode(nodeId: number, body: PlanNodeIn): Promise<PlanFull> {
+  return request(`/api/plan-nodes/${nodeId}`, jsonBody("PATCH", body));
+}
+export function deletePlanNode(nodeId: number): Promise<PlanFull> {
+  return request(`/api/plan-nodes/${nodeId}`, { method: "DELETE" });
+}
+export function addPlanBatch(id: number, body: { project_id: number; label?: string; qty: number; notes?: string; order?: PlanStepIn; arrival?: PlanStepIn; ack_review?: boolean }): Promise<PlanFull> {
+  return request(`/api/plans/${id}/batches`, jsonBody("POST", body));
+}
+export function markPlanBatchOrdered(id: number, runId: number, orderedOn: string): Promise<PlanFull> {
+  return request(`/api/plans/${id}/batches/${runId}/ordered`, jsonBody("POST", { ordered_on: orderedOn }));
+}
+export function deletePlanBatch(id: number, runId: number): Promise<PlanFull> {
+  return request(`/api/plans/${id}/batches/${runId}`, { method: "DELETE" });
+}
+export function addPlanLot(id: number, body: { project_id: number; recipe_key: string; label?: string; qty: number; rate_per_day?: number | null; duration_days?: number | null; start?: PlanStepIn }): Promise<PlanFull> {
+  return request(`/api/plans/${id}/lots`, jsonBody("POST", body));
+}
+export function updatePlanLot(lotId: number, body: { label?: string; qty?: number; rate_per_day?: number | null; duration_days?: number | null }): Promise<PlanFull> {
+  return request(`/api/plan-lots/${lotId}`, jsonBody("PATCH", body));
+}
+export function deletePlanLot(lotId: number): Promise<PlanFull> {
+  return request(`/api/plan-lots/${lotId}`, { method: "DELETE" });
+}
+export function acceptPlanProposals(id: number, keys: string[]): Promise<PlanFull> {
+  return request(`/api/plans/${id}/proposals/accept`, jsonBody("POST", { keys }));
+}
+export interface PlanReservationIn { component_id?: number | null; mpn?: string; lcsc?: string; qty?: number; source_line_id?: number | null; note?: string }
+export function addPlanReservations(id: number, reservations: PlanReservationIn[]): Promise<PlanFull> {
+  return request(`/api/plans/${id}/reservations`, jsonBody("POST", { reservations }));
+}
+export function deletePlanReservation(resId: number): Promise<PlanFull> {
+  return request(`/api/plan-reservations/${resId}`, { method: "DELETE" });
+}
+export interface ReservableLines {
+  document_id: number;
+  supplier: string;
+  external_id: string;
+  lines: { id: number; component_id: number | null; mpn: string; lcsc: string; description: string; qty: number; reserved: { plan_id: number; qty: number }[] }[];
+}
+export function getReservableLines(docId: number, signal?: AbortSignal): Promise<ReservableLines> {
+  return request(`/api/run-documents/${docId}/reservable`, { signal });
+}
+export function addPlanCustomerPart(id: number, body: { project_id?: number | null; name: string; per_unit?: number; received?: number; confirmed?: boolean; note?: string }): Promise<PlanFull> {
+  return request(`/api/plans/${id}/customer-parts`, jsonBody("POST", body));
+}
+export function updatePlanCustomerPart(cpId: number, body: { name?: string; per_unit?: number; received?: number; confirmed?: boolean; note?: string }): Promise<PlanFull> {
+  return request(`/api/plan-customer-parts/${cpId}`, jsonBody("PATCH", body));
+}
+export function deletePlanCustomerPart(cpId: number): Promise<PlanFull> {
+  return request(`/api/plan-customer-parts/${cpId}`, { method: "DELETE" });
+}
+
+export interface PurchaseOrderListRow {
+  id: number;
+  plan_id: number | null;
+  plan: string;
+  supplier: string;
+  supplier_id: number | null;
+  status: "draft" | "ordered" | "received" | "cancelled";
+  reference: string;
+  currency: string;
+  lines: number;
+  amount: number;
+  order_day: string;
+  arrival_day: string;
+  names: string;
+}
+export interface PurchaseOrderRow {
+  id: number;
+  plan_id: number | null;
+  plan: string;
+  company_id: number | null;
+  supplier_id: number | null;
+  supplier: string;
+  status: "draft" | "ordered" | "received" | "cancelled";
+  reference: string;
+  currency: string;
+  ordered_on: string;
+  expected_on: string;
+  received_on: string;
+  order_day: string;
+  arrival_day: string;
+  notes: string;
+  document_id: number | null;
+  proposal_key: string;
+  proposal: Record<string, unknown> | null;
+  order_node_id: number | null;
+  arrival_node_id: number | null;
+  created_by: string;
+  created_at: string | null;
+  amount: number;
+  lines: PlanPoLine[];
+}
+export interface PurchaseOrderIn {
+  plan_id?: number | null;
+  company_id?: number | null;
+  supplier_id?: number | null;
+  supplier?: string;
+  reference?: string;
+  currency?: string;
+  notes?: string;
+  expected_on?: string;
+  lines?: { component_id?: number | null; mpn?: string; lcsc?: string; name?: string; qty: number; unit_price?: number | null }[];
+  order?: PlanStepIn;
+  arrival?: PlanStepIn;
+}
+export function listPurchaseOrders(signal?: AbortSignal, opts: { status?: string; planId?: number } = {}): Promise<PurchaseOrderListRow[]> {
+  const q = new URLSearchParams();
+  if (opts.status) q.set("status", opts.status);
+  if (opts.planId) q.set("plan_id", String(opts.planId));
+  const qs = q.toString();
+  return request(`/api/purchase-orders${qs ? `?${qs}` : ""}`, { signal });
+}
+export function createPurchaseOrder(body: PurchaseOrderIn): Promise<PurchaseOrderRow> {
+  return request(`/api/purchase-orders`, jsonBody("POST", body));
+}
+export function getPurchaseOrder(id: number, signal?: AbortSignal): Promise<PurchaseOrderRow> {
+  return request(`/api/purchase-orders/${id}`, { signal });
+}
+export function updatePurchaseOrder(id: number, body: Omit<PurchaseOrderIn, "plan_id" | "company_id" | "order" | "arrival"> & { status?: string; status_day?: string; document_id?: number | null; take_proposal?: boolean }): Promise<PurchaseOrderRow> {
+  return request(`/api/purchase-orders/${id}`, jsonBody("PATCH", body));
+}
+export function deletePurchaseOrder(id: number): Promise<{ deleted: number }> {
+  return request(`/api/purchase-orders/${id}`, { method: "DELETE" });
+}
+
+export function confirmOrder(id: number, body: { order_ref?: string; order_date?: string }): Promise<OrderRow> {
+  return request(`/api/orders/${id}/confirm`, jsonBody("POST", body));
+}
+export interface OrderPlanView {
+  plan_id: number | null;
+  plan?: string;
+  order: PlanOrder | null;
+  shipped?: Record<string, number>;
+}
+export function getOrderDeliveries(id: number, signal?: AbortSignal): Promise<OrderPlanView> {
+  return request(`/api/orders/${id}/deliveries`, { signal });
 }

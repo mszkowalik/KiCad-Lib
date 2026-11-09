@@ -25,6 +25,9 @@ lives here instead. **Say which one you mean.**
 | JLC order | `jlc_imports` | A purchase from JLCPCB, staged before its money is assigned to a run | `/stock/jlc` | "order", "JLC invoice" |
 | Device | `device_units` | One physical unit, identified by the MAC read out of its chip | `/production/devices/:id` | "device", "unit", "serial", "dongle" |
 | Project | `projects` | A KiCad design tracked from a git repository | `/projects/:id` | "project", "product" |
+| Plan | `plans` | One contract scheduled ahead of today: it owns draft orders, planned batches, lots, purchases and reservations (decision [0107](../decisions/0107-a-plan-owns-its-drafts-and-a-date-is-fixed-or-follows-its-anchor.md), [planning.md](planning.md)) | `/sales/plans/:id` | "plan", "harmonogram" |
+| Draft order | `sales_orders` with `draft = true` | A planned order the customer has not placed. It counts in no figure until it is confirmed | `/sales/orders/:id` | "draft", "planned order" |
+| Purchase order | `purchase_orders` | A purchase before its invoice: draft, ordered, received, cancelled | `/stock/purchase-orders/:id` | "purchase order", "PO" |
 
 ## The quantities on a production run, and what each one means
 

@@ -1,5 +1,42 @@
 # Changelog
 
+## 2026-11-09 (plans: a contract's schedule in Henry)
+
+- **Sales → Plans schedules a contract before the customer orders** (decision 0107). A plan holds draft
+  orders with their deliveries, planned batches, machining lots, milestones, supplier closures and the
+  parts the customer supplies. Every date is fixed or follows another date with a lag in days, working
+  days, weeks or months, so a moved order date moves what follows it and a confirmed date stays.
+  Polish public holidays count. A late task of ours counts from today; a customer date in the past is a
+  blocker. A late advance moves the deliveries that follow it.
+- **The plan computes what the sheet did by hand.** Advance and final invoices with their due days, the
+  advances per due date against the weekly limit, the deliveries per week, the customer's payments per
+  month, and the funding check: purchases within the advances received. The contract checks are the two
+  months from the advance to the first delivery, one calendar month per order, the limit, closures,
+  boards for every build and parts for every need.
+- **Every part the plan needs has a balance over time.** Needs come from the BOM of the plan's chosen
+  snapshot for each planned batch and from the process steps for every unit delivered; supply is stock
+  reserved for the plan, free stock, purchases on their arrival day and machining lots. A shortage is a
+  blocker with a chart on the plan's Parts tab. A part covered only by JLC's public stock is a risk.
+- **Purchase proposals are computed, and a click makes them draft purchase orders.** A proposal takes the
+  source that can send at once first, then the source with a lead time. A supplier link of a part now
+  holds a lead time, a quantity at once and where the figure came from. A JLCPCB part with no typed lead
+  time uses the measured one from JLC's inventory ledger. A draft that no longer matches the plan says so.
+- **Stock → Purchase orders** lists purchases before their invoice: draft, ordered, received, cancelled.
+- **Stock can be reserved for a plan**, by part or position by position from a purchase document such as
+  a JLC parts order. A reservation moves no stock and no money; a reservation JLC took for another order
+  shows as a blocker.
+- **A plan chooses the design of each project**: a fixed snapshot, or the newest snapshot of a branch. A
+  planned batch follows it until it is ordered, then keeps its pins. A changed BOM or process shows its
+  difference on the plan until somebody marks it reviewed.
+- **A draft order counts in no figure.** Demand, Home, shipments, allocations and order invoices leave it
+  out; "Confirm order" on the order page makes it real. The order page shows the planned deliveries of an
+  order in a plan.
+- **Home shows** overdue sales invoices, orders shipped but not invoiced, and each plan's blockers,
+  purchases to place this week, late advances, conflicts, shortages and broken reservations.
+- **Deleting a plan** lists what goes and what stays first. It removes its drafts, lots, reservations and
+  dates in one write batch that History → Write batches undoes, and lets confirmed orders, batches with
+  units and ordered purchases go free.
+
 ## 2026-11-09 (dongle labels, JLC `COB` orders and alert clean-up)
 
 - **The 362 dongle label steps that drew no label now draw one.** Henry knew one roll of 500 DYMO

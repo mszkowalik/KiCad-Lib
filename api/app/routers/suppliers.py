@@ -8,7 +8,7 @@ open to any signed-in user. The rules live in `services/suppliers.py`.
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
@@ -177,6 +177,8 @@ def list_price_points(comp_id: int, db: Session = Depends(get_db)):
             {"id": ln.id, "supplier_id": ln.supplier_id, "supplier": ln.supplier.name,
              "connector": ln.supplier.connector, "part_number": ln.part_number, "url": ln.url,
              "note": ln.note, "position": ln.position, "origin": ln.origin,
+             "lead_days": ln.lead_days, "qty_at_once": ln.qty_at_once, "lead_source": ln.lead_source,
+             "lead_as_of": ln.lead_as_of,
              "has_prices": ln.supplier.name in priced}
             for ln in links
         ],
@@ -214,6 +216,13 @@ class LinkPatch(BaseModel):
     part_number: str | None = None
     url: str | None = None
     note: str | None = None
+    # Decision 0107 item 15: the source's lead time and quantity at once. An
+    # empty value clears it; `lead_source` says where the figure came from.
+    lead_days: int | None = None
+    qty_at_once: int | None = None
+    lead_source: str | None = Field(default=None, max_length=300)
+    lead_as_of: str | None = Field(default=None, max_length=10)
+    clear_lead: bool = False
 
 
 class TierIn(BaseModel):
@@ -253,6 +262,27 @@ def update_link(comp_id: int, link_id: int, body: LinkPatch, db: Session = Depen
     if row.supplier.connector and body.part_number is not None and body.part_number != row.part_number:
         raise HTTPException(422, f"the {row.supplier.name} part number follows the LCSC Part property")
     suppliers.link(db, comp_id, row.supplier, body.part_number, body.url, body.note)
+    sent = body.model_dump(exclude_unset=True)
+    if body.clear_lead:
+        row.lead_days = row.qty_at_once = None
+        row.lead_source = row.lead_as_of = ""
+    for k in ("lead_days", "qty_at_once"):
+        if k in sent:
+            v = sent[k]
+            if v is not None and v < 0:
+                raise HTTPException(422, f"{k} must be 0 or more")
+            setattr(row, k, v)
+    for k in ("lead_source", "lead_as_of"):
+        if k in sent and sent[k] is not None:
+            v = sent[k].strip()
+            if k == "lead_as_of" and v:
+                from datetime import date as _date
+
+                try:
+                    _date.fromisoformat(v)
+                except ValueError:
+                    raise HTTPException(422, f"lead_as_of is not a date (YYYY-MM-DD): {v}") from None
+            setattr(row, k, v)
     db.commit()
     return list_price_points(comp_id, db)
 

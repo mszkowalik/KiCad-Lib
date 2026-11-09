@@ -1526,6 +1526,12 @@ class ComponentSupplier(Base):
     note: Mapped[str] = mapped_column(Text, default="", server_default="")
     position: Mapped[int | None] = mapped_column(Integer, nullable=True)
     origin: Mapped[str] = mapped_column(String(20), default="user", server_default="user")
+    # Decision 0107 item 15: how long this supplier takes, and how many it can
+    # send at once, with where the figure came from and when it was read.
+    lead_days: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    qty_at_once: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    lead_source: Mapped[str] = mapped_column(String(300), default="", server_default="")
+    lead_as_of: Mapped[str] = mapped_column(String(10), default="", server_default="")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     created_by: Mapped[str] = mapped_column(String(100), default="user")
 
@@ -2281,6 +2287,9 @@ class ProductionRun(Base):
     #: `closed_cost_usd / closed_units` is the per-device cost as it stood.
     closed_cost_usd: Mapped[float | None] = mapped_column(Float, nullable=True)
     closed_units: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Decision 0107: the plan a planned batch belongs to. While `status` is
+    # `planned`, the plan decides its snapshot and the batch's nodes its dates.
+    plan_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
     attachments: Mapped[list["RunAttachment"]] = relationship(
@@ -4072,6 +4081,14 @@ class SalesOrder(Base):
     # Decision 0063: the company that sold it (the seller on its invoices).
     company_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     notes: Mapped[str] = mapped_column(Text, default="")
+    # Decision 0107. A DRAFT is a planned order the customer has not placed: it
+    # counts in no demand, revenue or Home figure, and takes no shipment,
+    # allocation or invoice. `plan_key` is the plan's own name for it ("V3-3").
+    # `advance_due` overrides the plan's "order date + advance_days".
+    draft: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    plan_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    plan_key: Mapped[str] = mapped_column(String(40), default="", server_default="")
+    advance_due: Mapped[str] = mapped_column(String(10), default="", server_default="")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
     customer: Mapped[Customer] = relationship()
@@ -4517,3 +4534,227 @@ class RecordFile(Base):
     uploaded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
     __table_args__ = (Index("ix_record_files_owner", "owner_kind", "owner_id"),)
+
+
+# ------------------------------------------------------------------ planning
+# Decision 0107. A plan owns drafts of real records (a draft sales order, a
+# planned batch, a draft purchase order) and dates them with nodes. Everything
+# a plan shows is computed on read by `services/planning.py`; these tables hold
+# only what a person typed or accepted.
+
+
+class Plan(Base):
+    """One contract's plan: the group its drafts join with `plan_id`, and the
+    contract's parameters. `reviewed` is the inputs a person last looked at:
+    `{project id: {"snapshot_id": n, "process_version_id": n}}`."""
+
+    __tablename__ = "plans"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(200))
+    company_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    customer_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    status: Mapped[str] = mapped_column(String(20), default="draft")          # draft|sent|agreed
+    sent_on: Mapped[str] = mapped_column(String(10), default="")
+    agreed_on: Mapped[str] = mapped_column(String(10), default="")
+    currency: Mapped[str] = mapped_column(String(3), default="PLN")
+    vat_pct: Mapped[float] = mapped_column(Float, default=23.0)
+    advance_pct: Mapped[float] = mapped_column(Float, default=60.0)
+    advance_days: Mapped[int] = mapped_column(Integer, default=14)            # advance due = order date + this
+    final_days: Mapped[int] = mapped_column(Integer, default=14)              # final due = last delivery + this
+    min_lead_months: Mapped[int] = mapped_column(Integer, default=2)          # advance due -> first delivery
+    advance_limit_net: Mapped[float | None] = mapped_column(Float, nullable=True)
+    delivery_weekday: Mapped[int | None] = mapped_column(Integer, nullable=True)  # 0 = Monday
+    build_lead_days: Mapped[int] = mapped_column(Integer, default=7)          # a unit leaves the line this early
+    attrition_pct: Mapped[float] = mapped_column(Float, default=2.0)
+    reviewed: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    notes: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    created_by: Mapped[str] = mapped_column(String(100), default="")
+
+    projects: Mapped[list["PlanProject"]] = relationship(
+        back_populates="plan", cascade="all, delete-orphan", order_by="PlanProject.id")
+
+
+class PlanProject(Base):
+    """Which design a plan builds a project from (decision 0107 item 10): one
+    fixed snapshot, or the newest ready snapshot of a branch."""
+
+    __tablename__ = "plan_projects"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    plan_id: Mapped[int] = mapped_column(ForeignKey("plans.id"))
+    project_id: Mapped[int] = mapped_column(Integer)
+    board: Mapped[str] = mapped_column(String(200), default="")
+    variant: Mapped[str] = mapped_column(String(100), default="")
+    snapshot_mode: Mapped[str] = mapped_column(String(10), default="fixed")   # fixed|branch
+    snapshot_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    branch: Mapped[str] = mapped_column(String(100), default="")
+    line_rate_week: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+    plan: Mapped[Plan] = relationship(back_populates="projects")
+
+    __table_args__ = (UniqueConstraint("plan_id", "project_id", name="uq_plan_project"),)
+
+
+class PlanNode(Base):
+    """One planned date (decision 0107 item 5). `fixed` holds `day`; `after`
+    follows the latest of `after` (refs: "n:<node id>", "order:<order id>",
+    "advance:<order id>") plus `lag` in `lag_unit`, then snaps forward to
+    `snap_weekday`. `done_on` is the fact: once set, the node is that day.
+    `amount` is money the node pays out (net, `currency`), for the funding
+    check. `subject_id` is the record the node dates, by `kind`."""
+
+    __tablename__ = "plan_nodes"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    plan_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    kind: Mapped[str] = mapped_column(String(20))  # delivery|batch_order|batch_arrival|po_order|po_arrival|lot|milestone|closure
+    subject_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    label: Mapped[str] = mapped_column(String(300), default="")
+    mode: Mapped[str] = mapped_column(String(10), default="fixed")            # fixed|after
+    day: Mapped[str] = mapped_column(String(10), default="")
+    after: Mapped[list | None] = mapped_column(JSONB, nullable=True)
+    lag: Mapped[int] = mapped_column(Integer, default=0)
+    lag_unit: Mapped[str] = mapped_column(String(10), default="days")         # days|workdays|weeks|months
+    snap_weekday: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    end_day: Mapped[str] = mapped_column(String(10), default="")              # a closure's last day
+    duration_days: Mapped[int | None] = mapped_column(Integer, nullable=True)  # a milestone that takes time
+    source: Mapped[str] = mapped_column(String(20), default="")               # estimate|measured|confirmed
+    source_text: Mapped[str] = mapped_column(String(300), default="")
+    party: Mapped[str] = mapped_column(String(10), default="ours")            # ours|customer|supplier
+    done_on: Mapped[str] = mapped_column(String(10), default="")
+    amount: Mapped[float | None] = mapped_column(Float, nullable=True)
+    currency: Mapped[str] = mapped_column(String(3), default="PLN")
+    position: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    __table_args__ = (Index("ix_plan_nodes_plan", "plan_id"),
+                      Index("ix_plan_nodes_subject", "kind", "subject_id"))
+
+
+class SalesOrderDelivery(Base):
+    """One planned delivery of an order line: a quantity on a date node
+    (decision 0107 item 3). Shipments are compared with it; nothing ships
+    because of it."""
+
+    __tablename__ = "sales_order_deliveries"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    order_line_id: Mapped[int] = mapped_column(ForeignKey("sales_order_lines.id"))
+    qty: Mapped[int] = mapped_column(Integer, default=0)
+    node_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    position: Mapped[int] = mapped_column(Integer, default=0)
+
+    __table_args__ = (Index("ix_order_deliveries_line", "order_line_id"),)
+
+
+class PurchaseOrder(Base):
+    """A purchase before its invoice (decision 0107 item 17): `draft` (a person
+    accepted a plan's proposal or wrote it), `ordered` (placed with the
+    supplier), `received`, `cancelled`. In a plan its dates are the nodes
+    `order_node_id` / `arrival_node_id`; outside one, `ordered_on` and
+    `expected_on`. `proposal` is the proposal as it was accepted, so a later
+    proposal can be compared with it."""
+
+    __tablename__ = "purchase_orders"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    company_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    plan_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    supplier_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    supplier: Mapped[str] = mapped_column(String(200), default="")
+    status: Mapped[str] = mapped_column(String(20), default="draft")
+    reference: Mapped[str] = mapped_column(String(200), default="")
+    currency: Mapped[str] = mapped_column(String(3), default="PLN")
+    order_node_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    arrival_node_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    ordered_on: Mapped[str] = mapped_column(String(10), default="")
+    expected_on: Mapped[str] = mapped_column(String(10), default="")
+    received_on: Mapped[str] = mapped_column(String(10), default="")
+    proposal_key: Mapped[str] = mapped_column(String(300), default="")
+    proposal: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    document_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    notes: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    created_by: Mapped[str] = mapped_column(String(100), default="")
+
+    lines: Mapped[list["PurchaseOrderLine"]] = relationship(
+        back_populates="order", cascade="all, delete-orphan", order_by="PurchaseOrderLine.position")
+
+    __table_args__ = (Index("ix_purchase_orders_plan", "plan_id"),)
+
+
+class PurchaseOrderLine(Base):
+    __tablename__ = "purchase_order_lines"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    po_id: Mapped[int] = mapped_column(ForeignKey("purchase_orders.id"))
+    component_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    mpn: Mapped[str] = mapped_column(String(200), default="")
+    lcsc: Mapped[str] = mapped_column(String(50), default="")
+    name: Mapped[str] = mapped_column(String(300), default="")
+    qty: Mapped[float] = mapped_column(Float, default=0.0)
+    unit_price: Mapped[float | None] = mapped_column(Float, nullable=True)   # in the order's currency
+    position: Mapped[int] = mapped_column(Integer, default=0)
+
+    order: Mapped[PurchaseOrder] = relationship(back_populates="lines")
+
+
+class PlanLot(Base):
+    """A machining lot of a prepared-part recipe (decision 0107 item 13): the
+    recipe of the project's current process, a quantity, a start node, and a
+    rate in units per working day (else the recipe's `rate_per_day`) or a
+    fixed duration in working days."""
+
+    __tablename__ = "plan_lots"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    plan_id: Mapped[int] = mapped_column(ForeignKey("plans.id"))
+    project_id: Mapped[int] = mapped_column(Integer)
+    recipe_key: Mapped[str] = mapped_column(String(80))
+    label: Mapped[str] = mapped_column(String(200), default="")
+    qty: Mapped[float] = mapped_column(Float, default=0.0)
+    rate_per_day: Mapped[float | None] = mapped_column(Float, nullable=True)
+    duration_days: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    start_node_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    position: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class PlanReservation(Base):
+    """Stock set aside for a plan (decision 0107 item 18). It moves no stock and
+    no money. `source_line_id` names the purchase position it came from, when
+    it came from one (a JLC lot is a position)."""
+
+    __tablename__ = "plan_reservations"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    plan_id: Mapped[int] = mapped_column(ForeignKey("plans.id"))
+    company_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    component_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    mpn: Mapped[str] = mapped_column(String(200), default="")
+    lcsc: Mapped[str] = mapped_column(String(50), default="")
+    qty: Mapped[float] = mapped_column(Float, default=0.0)
+    source_line_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    note: Mapped[str] = mapped_column(String(500), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    created_by: Mapped[str] = mapped_column(String(100), default="")
+
+    __table_args__ = (Index("ix_plan_reservations_plan", "plan_id"),)
+
+
+class PlanCustomerPart(Base):
+    """A part the customer supplies for each unit (the SIM cards of CE 2027):
+    the plan computes how many are needed by which day; nothing is drawn."""
+
+    __tablename__ = "plan_customer_parts"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    plan_id: Mapped[int] = mapped_column(ForeignKey("plans.id"))
+    project_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    name: Mapped[str] = mapped_column(String(200))
+    per_unit: Mapped[float] = mapped_column(Float, default=1.0)
+    received: Mapped[float] = mapped_column(Float, default=0.0)
+    confirmed: Mapped[bool] = mapped_column(Boolean, default=False)
+    note: Mapped[str] = mapped_column(String(500), default="")

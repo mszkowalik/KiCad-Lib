@@ -1,4 +1,5 @@
 import { Fragment, useCallback, useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import {
   applyJlcDocument,
   applyJlcParts,
@@ -15,6 +16,8 @@ import {
 import DataTable from "../DataTable";
 import { useDialog } from "../Dialog";
 import { CheckField } from "../Field";
+import FoldSection from "../FoldSection";
+import ReserveDialog from "../plan/ReserveDialog";
 import { ErrorBanner, Spinner } from "../Ui";
 
 /**
@@ -48,6 +51,9 @@ export default function JlcStagedPanel({ onImported }: { onImported?: () => void
   // Parts orders are fetched LIVE — sync stages assembly batches only.
   const [parts, setParts] = useState<JlcPartsOrder[] | null>(null);
   const [partsErr, setPartsErr] = useState("");
+  // Decision 0107 item 18: an imported parts order can be reserved for a plan.
+  const [reserving, setReserving] = useState<JlcPartsOrder | null>(null);
+  const [reserved, setReserved] = useState<{ pob: string; plan: string; planId: number } | null>(null);
 
   const load = useCallback((signal?: AbortSignal) => {
     setLoading(true);
@@ -432,7 +438,61 @@ export default function JlcStagedPanel({ onImported }: { onImported?: () => void
           )}
         </div>
       )}
+      {reserved ? (
+        <div className="banner-ok">
+          Reserved lots of {reserved.pob} for{" "}
+          <Link className="comp-link" to={`/sales/plans/${reserved.planId}`}>{reserved.plan}</Link>. The plan&apos;s page
+          lists each reservation and removes it.
+        </div>
+      ) : null}
+      {parts && parts.some((o) => o.document_id) ? (
+        <ImportedPartsOrders orders={parts.filter((o) => o.document_id)} onReserve={setReserving} />
+      ) : null}
+      {reserving?.document_id ? (
+        <ReserveDialog
+          documentId={reserving.document_id}
+          onClose={() => setReserving(null)}
+          onDone={(full) => setReserved({ pob: reserving.pob, plan: full.plan.name, planId: full.plan.id })}
+        />
+      ) : null}
     </div>
+  );
+}
+
+/** Every imported parts order, for "reserve for a plan" (decision 0107 item
+ *  18). The table above lists only the orders that wait for an import or a
+ *  refresh, so an imported one would have no button anywhere else. An order
+ *  awaiting a refresh is in both lists, and its button is here only. */
+function ImportedPartsOrders({ orders, onReserve }: {
+  orders: JlcPartsOrder[];
+  onReserve: (o: JlcPartsOrder) => void;
+}) {
+  return (
+    <FoldSection bare title="Imported parts orders" count={orders.length} foldKey="jlc:imported-parts">
+      <p className="muted dim">
+        Reserve the lots a plan bought, so other demand sees only the rest. A reservation moves no stock and no money.
+      </p>
+      <DataTable
+        rows={orders}
+        rowKey={(o) => o.pob}
+        defaultSort={{ key: "order", dir: "desc" }}
+        columns={[
+          { key: "order", label: "Order", width: 40, className: "mono", get: (o) => o.pob },
+          { key: "lots", label: "Lots", width: 16, numeric: true, get: (o) => o.lots },
+          { key: "paid", label: "Paid", width: 22, numeric: true, get: (o) => o.paid_usd, render: (o) => money(o.paid_usd) },
+          { key: "doc", label: "Document", width: 22, get: (o) => o.document_id ?? "",
+            render: (o) => (
+              <Link className="comp-link" to={`/finance/invoices?doc=${o.document_id}`}>document {o.document_id}</Link>
+            ) },
+          // A button may not be cut, so its column takes a length.
+          { key: "act", label: "", width: "104px", interactive: false, get: () => "", title: () => undefined,
+            render: (o) => (
+              <button type="button" className="btn btn-sm" title="Reserve these lots for a plan"
+                onClick={() => onReserve(o)}>Reserve…</button>
+            ) },
+        ]}
+      />
+    </FoldSection>
   );
 }
 

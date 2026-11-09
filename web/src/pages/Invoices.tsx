@@ -44,6 +44,7 @@ import InvoiceLinesTable, { blankDraft, draftToLineIn, toDraft, type LineDraft }
 import SplitLineDialog from "../components/invoices/SplitLineDialog";
 import DocumentKindDialog from "../components/invoices/DocumentKindDialog";
 import TranscribeDialog from "../components/invoices/TranscribeDialog";
+import ReserveDialog from "../components/plan/ReserveDialog";
 import RowChangesCard from "../components/RowChangesCard";
 import DataTable, { type Column } from "../components/DataTable";
 import { StatChip, NarrowChip } from "../components/FoldSection";
@@ -155,6 +156,9 @@ export default function Invoices() {
     { enabled: expanded != null, keep: true },
   );
   const [splitting, setSplitting] = useState<RunCostLineRow | null>(null);
+  // Decision 0107 item 18: reserve this document's part positions for a plan.
+  const [reserving, setReserving] = useState<number | null>(null);
+  const [reservedFor, setReservedFor] = useState<{ docId: number; plan: string; planId: number } | null>(null);
   // The open document's lines as editable drafts. Rebuilt whenever the document
   // is (re)loaded; the table stages edits on this copy and writes them as one
   // batch, so an abandoned edit costs nothing.
@@ -546,6 +550,13 @@ export default function Invoices() {
                   </div>
                 ) : null}
                 <CorrectionLinks doc={doc} onOpen={setExpanded} />
+                {reservedFor?.docId === d.id ? (
+                  <div className="banner-ok">
+                    Reserved for{" "}
+                    <Link className="comp-link" to={`/sales/plans/${reservedFor.planId}`}>{reservedFor.plan}</Link>. The
+                    plan&apos;s page lists each reservation and removes it.
+                  </div>
+                ) : null}
                 <div className="btn-row">
                   <AccountantMark companyId={doc.company_id} kind="document" id={d.id} state={doc.accountant}
                                   onChange={() => { load(); loadDoc(); }} />
@@ -560,6 +571,13 @@ export default function Invoices() {
                   >
                     Resolve parts
                   </button>
+                  {liveLines.some((li) => li.kind === "part" && !li.run_id) ? (
+                    <button type="button" className="btn btn-sm" disabled={busy}
+                      title="Count part positions of this document as a plan's own stock. It moves no stock and no money."
+                      onClick={() => setReserving(d.id)}>
+                      Reserve for a plan…
+                    </button>
+                  ) : null}
                   {doc.doc_type === "transfer" ? (
                     <>
                       <CheckField checked={false} disabled onChange={() => {}}>
@@ -750,6 +768,13 @@ export default function Invoices() {
               load();
             }
           }}
+        />
+      ) : null}
+      {reserving != null ? (
+        <ReserveDialog
+          documentId={reserving}
+          onClose={() => setReserving(null)}
+          onDone={(full) => setReservedFor({ docId: reserving, plan: full.plan.name, planId: full.plan.id })}
         />
       ) : null}
       {kindOf ? (

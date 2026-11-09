@@ -6,6 +6,12 @@
  *  shipment takes SERIALS ONLY, because a number with no device behind it is a
  *  guess (decisions 0032, 0049). Returns, repairs and disposals live on the
  *  device page, because they are events in a device's history.
+ *
+ *  A DRAFT is a plan's order the customer has not placed (decision 0107). It
+ *  takes no invoice, shipment or reservation: the API refuses them with 409, so
+ *  the page does not offer them, and "Confirm order" is the one way forward. An
+ *  order of a plan shows its planned deliveries, with the dates the plan
+ *  computed, beside what has shipped.
  */
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
@@ -13,6 +19,8 @@ import {
   addOrderInvoice,
   addOrderLine,
   allocateOrderDevices,
+  confirmOrder,
+  getOrderDeliveries,
   releaseOrderDevices,
   openShipment,
   reverseShipment,
@@ -30,6 +38,7 @@ import {
   type InvoiceIn,
   type OrderInvoiceRow,
   type OrderLineRow,
+  type OrderPlanView,
   type OrderPatchBody,
   type OrderRow,
   type ProjectInfo,
@@ -66,11 +75,17 @@ export default function OrderDetail() {
   const projects = useLoad(getProjects, [orderId], { keep: true }).data ?? NO_PROJECTS;
   const dialog = useDialog();
   const navigate = useNavigate();
+  const planId = order?.plan_id ?? null;
+  // The plan's view of this order: its delivery dates, its computed invoices.
+  const plan = useLoad((signal) => getOrderDeliveries(orderId, signal), [orderId, planId],
+    { enabled: planId != null, keep: true });
+  const [confirming, setConfirming] = useState(false);
 
   const apply = async (work: () => Promise<OrderRow>) => {
     try {
       setOrder(await work());
       setError(null);
+      if (planId != null) void plan.reload();
     } catch (err) {
       await dialog.alert(errorMessage(err), { title: "That did not work" });
     }
@@ -79,6 +94,7 @@ export default function OrderDetail() {
   if (!order) return <PageLoading error={error} label="Loading order…" />;
   const cur = order.currency;
   const eco = order.economics;
+  const draft = !!order.draft;
 
   return (
     <PageShell>
@@ -96,8 +112,9 @@ export default function OrderDetail() {
         <button
           type="button"
           className="btn btn-sm"
-          disabled={order.cancelled}
-          title="Open a shipment for this order and scan devices into it as they are packed"
+          disabled={order.cancelled || draft}
+          title={draft ? "A draft takes no shipment: confirm the order first"
+            : "Open a shipment for this order and scan devices into it as they are packed"}
           onClick={async () => {
             try {
               const sh = await openShipment({ order_id: order.id });
@@ -111,15 +128,31 @@ export default function OrderDetail() {
         </button>
       </div>
       {error ? <ErrorBanner message={error} /> : null}
+      {draft ? (
+        <div className="banner-warn">
+          Draft of plan{" "}
+          <Link to={`/sales/plans/${order.plan_id}`}>{plan.data?.plan || order.plan_key || "the plan"}</Link>: the
+          customer has not placed this order. It takes no invoice, shipment or reservation until you confirm it.{" "}
+          <button type="button" className="btn btn-primary btn-sm" onClick={() => setConfirming(true)}>
+            Confirm order…
+          </button>
+        </div>
+      ) : null}
 
       <div className="detail-page order-page">
         <div className="detail-left">
           <LinesCard order={order} projects={projects} apply={apply} />
+          {planId != null ? (
+            <PlannedDeliveriesCard order={order} view={plan.data} error={plan.error} />
+          ) : null}
           <InvoicesCard order={order} apply={apply} />
           <ShipmentsCard order={order} apply={apply} />
           <RowChangesCard table="sales_orders" id={order.id} />
         </div>
         <div className="detail-right">
+          {/* A draft is out of the order economics (decision 0107): its revenue
+              would be a figure nobody earned. */}
+          {draft ? null : (
           <div className="card pad">
             <h2 className="card-title">Did this order make money?</h2>
             {eco ? (
@@ -184,10 +217,153 @@ export default function OrderDetail() {
               that cost. Revenue converts per invoice at the invoice date.
             </p>
           </div>
+          )}
           <HeaderCard order={order} apply={apply} />
         </div>
       </div>
+      {confirming ? (
+        <ConfirmOrderDialog order={order} planned={plan.data?.order?.order_date ?? order.order_date}
+          onClose={() => setConfirming(false)}
+          onConfirm={async (ref, date) => {
+            setConfirming(false);
+            await apply(() => confirmOrder(order.id, { order_ref: ref, order_date: date }));
+          }} />
+      ) : null}
     </PageShell>
+  );
+}
+
+/** The customer placed a draft (decision 0107 item 2): the draft mark goes,
+ *  the order reference goes in, and the order date becomes a fact. */
+function ConfirmOrderDialog({ order, planned, onClose, onConfirm }: {
+  order: OrderRow;
+  planned: string;
+  onClose: () => void;
+  onConfirm: (ref: string, date: string) => Promise<void>;
+}) {
+  const modal = useModal(onClose);
+  const [ref, setRef] = useState(order.order_ref);
+  const [date, setDate] = useState(today);
+  return (
+    <div className="modal-backdrop" {...modal.backdropProps}>
+      <div className="card pad modal-card" {...modal.cardProps}>
+        <h2 className="card-title">Confirm order{order.plan_key ? ` ${order.plan_key}` : ""}</h2>
+        <p className="muted dim">
+          The customer placed this order. From now on it counts as demand and revenue, and it takes invoices and
+          shipments. The plan&apos;s dates that follow the order date move with the date you give.
+        </p>
+        <FieldGrid>
+          <Field label="Order reference" hint="The customer's PO number">
+            <input className="text" value={ref} autoFocus onChange={(e) => setRef(e.target.value)} />
+          </Field>
+          <Field label="Order date" hint={planned ? `The plan had ${planned}` : undefined}>
+            <input className="text" type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+          </Field>
+        </FieldGrid>
+        <div className="btn-row modal-actions">
+          <button type="button" className="btn" onClick={onClose}>Cancel</button>
+          <button type="button" className="btn btn-primary" disabled={!date} onClick={() => void onConfirm(ref.trim(), date)}>
+            Confirm order
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const MODE_WORD: Record<string, string> = { fixed: "fixed", after: "follows" };
+
+/** An order's planned deliveries, with the dates its plan computed (decision
+ *  0107 items 3 and 4). A date that follows another moves with it, and a fixed
+ *  one never moves by itself, so the mode says which a row is. The advance and
+ *  the final invoice are computed until a real invoice replaces them. */
+function PlannedDeliveriesCard({ order, view, error }: {
+  order: OrderRow;
+  view: OrderPlanView | null;
+  error: string | null;
+}) {
+  const po = view?.order ?? null;
+  const rows = (po?.lines ?? []).flatMap((li) => li.deliveries.map((d) => ({ ...d, line: li })));
+  type Row = (typeof rows)[number];
+  const late = rows.filter((d) => !d.done && d.late_days > 0).length;
+  const conflicts = rows.filter((d) => d.conflict).length;
+  const cols: Column<Row>[] = [
+    { key: "day", label: "Day", width: "104px", className: "mono", get: (d) => d.day || "—",
+      title: (d) => (d.planned && d.planned !== d.day ? `planned ${d.planned}` : undefined) },
+    { key: "product", label: "Product", width: 30, get: (d) => d.line.product || d.line.project },
+    { key: "qty", label: "Qty", width: 14, numeric: true, get: (d) => d.qty, render: (d) => <>{d.qty.toLocaleString()}</> },
+    { key: "mode", label: "Date", width: 18, get: (d) => MODE_WORD[d.mode] ?? (d.mode || "—"),
+      title: (d) => (d.mode === "after" ? "moves with the dates it follows" : d.mode === "fixed" ? "a set date: it never moves by itself" : undefined) },
+    {
+      key: "state", label: "State", width: 38,
+      get: (d) => (d.conflict ? "conflict" : d.done ? "done" : d.late_days > 0 ? "late" : "planned"),
+      title: (d) => d.conflict || (d.late_days > 0 && d.planned ? `planned ${d.planned}, now ${d.day}` : undefined),
+      render: (d) => (d.conflict ? <span className="pill err">conflict</span>
+        : d.done ? <span className="pill ok">done</span>
+          : d.late_days > 0 ? <span className="pill warn">{plural(d.late_days, "day")} late</span>
+            : <span className="muted">planned</span>),
+    },
+  ];
+  const advanceTone = po?.advance_state === "paid" ? "ok" : po?.advance_state === "late" ? "err" : "neutral";
+  return (
+    <FoldSection
+      title="Planned deliveries"
+      count={view ? rows.length : null}
+      foldKey={`order:${order.id}:deliveries`}
+      chips={
+        <>
+          {late ? <StatChip n={late} tone="warn">late</StatChip> : null}
+          {conflicts ? <StatChip n={conflicts} tone="err">in conflict</StatChip> : null}
+          {po?.advance_state === "late" ? <StatChip tone="err">advance late</StatChip> : null}
+        </>
+      }
+      actions={view?.plan_id ? <Link className="btn btn-sm" to={`/sales/plans/${view.plan_id}`}>Open the plan</Link> : null}
+    >
+      <ErrorBanner message={error} />
+      {!view ? <Spinner label="Loading the plan…" /> : !po ? (
+        <p className="muted">The plan does not list this order.</p>
+      ) : (
+        <>
+          {po.flags.map((f) => <div key={f.code} className="banner-warn">{f.text}</div>)}
+          <dl className="kv">
+            <dt>Plan</dt>
+            <dd>{view.plan}{po.key ? <span className="muted"> · {po.key}</span> : null}</dd>
+            <dt>Advance</dt>
+            <dd>
+              {amount(po.advance_net, order.currency)} net
+              <span className="muted"> · {amount(po.advance_gross, order.currency)} gross</span>
+              {" · "}due <span className="mono">{po.advance_due || "—"}</span>{" "}
+              <span className={`pill ${advanceTone}`}>
+                {po.advance_state === "paid" ? `paid ${po.advance_paid_on}` : po.advance_state}
+              </span>
+              {po.real_invoices.advance.length ? (
+                <span className="muted"> · {po.real_invoices.advance.map((i) => i.number).join(", ")}</span>
+              ) : <span className="muted"> · computed</span>}
+            </dd>
+            <dt>Final invoice</dt>
+            <dd>
+              {amount(po.final_net, order.currency)} net
+              <span className="muted"> · {amount(po.final_gross, order.currency)} gross</span>
+              {" · "}on <span className="mono">{po.final_day || "—"}</span>, due <span className="mono">{po.final_due || "—"}</span>
+              {po.real_invoices.final.length ? (
+                <span className="muted"> · {po.real_invoices.final.map((i) => i.number).join(", ")}</span>
+              ) : <span className="muted"> · computed</span>}
+            </dd>
+          </dl>
+          <DataTable rows={rows} rowKey={(d) => d.id} columns={cols} defaultSort={{ key: "day", dir: "asc" }}
+            empty="No delivery is planned for this order yet." />
+          {po.lines.map((li) => {
+            const shipped = view.shipped?.[String(li.id)] ?? 0;
+            return (
+              <p key={li.id} className={li.mismatch ? "warn-text" : "muted"}>
+                {li.product || li.project}: {shipped.toLocaleString()} of {li.qty.toLocaleString()} shipped
+                {" · "}{li.planned_qty.toLocaleString()} in the planned deliveries
+              </p>
+            );
+          })}
+        </>
+      )}
+    </FoldSection>
   );
 }
 
@@ -543,7 +719,8 @@ function LinesCard({
       numeric: true,
       get: (li) => li.qty_open,
       title: () => undefined,
-      render: (li) => <span className={li.qty_open ? "warn-text" : undefined}>{li.qty_open.toLocaleString()}</span>,
+      // A draft's open quantity is no work yet: the customer has not ordered.
+      render: (li) => <span className={li.qty_open && !order.draft ? "warn-text" : undefined}>{li.qty_open.toLocaleString()}</span>,
     },
     {
       key: "back",
@@ -568,8 +745,8 @@ function LinesCard({
           <button
             type="button"
             className="btn btn-sm"
-            disabled={order.cancelled}
-            title="Reserve devices from the shelf for this line"
+            disabled={order.cancelled || !!order.draft}
+            title={order.draft ? "A draft takes no reservation: confirm the order first" : "Reserve devices from the shelf for this line"}
             onClick={() => setReserving(li)}
           >
             Reserve…
@@ -769,12 +946,16 @@ function InvoicesCard({ order, apply }: { order: OrderRow; apply: (w: () => Prom
     <div className="card pad">
       <div className="toolbar">
         <h2 className="card-title">Invoices</h2>
-        <span className="toolbar-total">
-          {plain(order.invoiced_net)} of {plain(order.total_net)} {order.currency} invoiced
-        </span>
-        <button type="button" className="btn btn-sm" onClick={() => setAdding((v) => !v)}>
-          {adding ? "Close" : "Add an invoice"}
-        </button>
+        {order.draft ? null : (
+          <span className="toolbar-total">
+            {plain(order.invoiced_net)} of {plain(order.total_net)} {order.currency} invoiced
+          </span>
+        )}
+        {order.draft ? null : (
+          <button type="button" className="btn btn-sm" onClick={() => setAdding((v) => !v)}>
+            {adding ? "Close" : "Add an invoice"}
+          </button>
+        )}
       </div>
       {Math.abs(gap) >= 0.01 && invoices.some((i) => i.kind !== "proforma") ? (
         <div className="banner-warn">
@@ -784,7 +965,11 @@ function InvoicesCard({ order, apply }: { order: OrderRow; apply: (w: () => Prom
         </div>
       ) : null}
       {invoices.length === 0 ? (
-        <p className="muted">Nothing issued yet.</p>
+        <p className="muted">
+          {order.draft
+            ? "A draft takes no invoice. The plan computes its advance and its final invoice until the customer orders."
+            : "Nothing issued yet."}
+        </p>
       ) : (
         <DataTable
           rows={invoices}

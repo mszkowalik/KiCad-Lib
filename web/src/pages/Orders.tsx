@@ -4,9 +4,14 @@
  *  dongle on one order), is closed by invoices, and is fulfilled by shipments
  *  whose content is a set of devices. Its status is derived from shipments
  *  and never set by hand. What the shelf holds is on Stock → Finished devices.
+ *
+ *  A DRAFT is a plan's order the customer has not placed (decision 0107). It is a
+ *  row here with a draft pill and its plan key, dimmed, and no figure on this page
+ *  counts it: its status is `draft`, so it is none of open, partial or fulfilled,
+ *  it takes no invoice, and the demand card leaves it out on the server.
  */
 import { useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import {
   createOrder,
   errorMessage,
@@ -24,7 +29,7 @@ import DataTable, { type Column } from "../components/DataTable";
 import Field, { FieldGrid } from "../components/Field";
 import DemandCard from "../components/DemandCard";
 import { NarrowChip } from "../components/FoldSection";
-import { ErrorBanner, Spinner, StatusPill } from "../components/Ui";
+import { ErrorBanner, Spinner, StatusPill, shippedNotInvoiced } from "../components/Ui";
 import { useAuth } from "../auth";
 import { amount, plain, today, plural } from "../format";
 import { useLoad } from "../components/useLoad";
@@ -33,6 +38,15 @@ import PageShell from "../components/PageShell";
 /** One identity, because the new-order form has `projects` in its deps. */
 const NO_PROJECTS: ProjectInfo[] = [];
 
+type Narrow = "" | "open" | "partial" | "fulfilled" | "unpaid" | "uninvoiced" | "draft";
+
+function narrowed(o: OrderRow, narrow: Narrow): boolean {
+  if (!narrow) return true;
+  if (narrow === "unpaid") return o.unpaid_count > 0;
+  if (narrow === "uninvoiced") return shippedNotInvoiced(o);
+  return o.status === narrow;
+}
+
 export default function Orders() {
   const { data: orders, error: ordersError } = useLoad(listOrders, []);
   const { data: demand, error: demandError } = useLoad((signal) => getDemand(undefined, signal), []);
@@ -40,8 +54,13 @@ export default function Orders() {
   const customers = useLoad(listCustomers, []).data ?? [];
   const projects = useLoad(getProjects, []).data ?? NO_PROJECTS;
   const [creating, setCreating] = useState(false);
-  const [narrow, setNarrow] = useState<"" | "open" | "partial" | "fulfilled" | "unpaid">("");
+  // `?narrow=uninvoiced` arrives from Home's line, so its count opens these rows.
+  const [searchParams] = useSearchParams();
+  const [narrow, setNarrow] = useState<Narrow>(() => (searchParams.get("narrow") as Narrow | null) ?? "");
   const navigate = useNavigate();
+
+  const drafts = (orders ?? []).filter((o) => o.draft).length;
+  const uninvoiced = (orders ?? []).filter(shippedNotInvoiced).length;
 
   const { companyName } = useAuth();
   const columns = useMemo<Column<OrderRow>[]>(
@@ -52,7 +71,20 @@ export default function Orders() {
       { key: "order_date", label: "Date", width: "104px", get: (o) => o.order_date, className: "mono" },
       { key: "customer", label: "Customer", width: 9, get: (o) => o.customer },
       { key: "company", label: "Company", width: 7, get: (o) => companyName(o.company_id) },
-      { key: "order_ref", label: "Reference", width: 10, get: (o) => o.order_ref || "—", className: "mono" },
+      {
+        key: "order_ref",
+        label: "Reference",
+        width: 10,
+        className: "mono",
+        // A plan's order carries its plan key too; a draft has only that.
+        get: (o) => [o.order_ref, o.plan_key ? `plan ${o.plan_key}` : ""].filter(Boolean).join(" · ") || "—",
+        render: (o) => (
+          <>
+            {o.order_ref || (o.plan_key ? null : "—")}
+            {o.plan_key ? <span className="muted">{o.order_ref ? " · " : ""}plan {o.plan_key}</span> : null}
+          </>
+        ),
+      },
       {
         key: "products",
         // A concatenated list with no maximum — it truncates by design and the
@@ -69,7 +101,7 @@ export default function Orders() {
         numeric: true,
         get: (o) => o.qty_shipped,
         render: (o) => (
-          <span className={o.qty_shipped < o.qty_ordered ? "warn-text" : undefined}>
+          <span className={o.qty_shipped < o.qty_ordered && !o.draft ? "warn-text" : undefined}>
             {o.qty_shipped.toLocaleString()} / {o.qty_ordered.toLocaleString()}
           </span>
         ),
@@ -90,12 +122,13 @@ export default function Orders() {
         width: 20,
         numeric: true,
         get: (o) => o.invoiced_net ?? "",
+        // A draft takes no invoice, so its gap is no warning.
         title: (o) =>
-          o.invoice_gap && Math.abs(o.invoice_gap) >= 0.01
+          !o.draft && o.invoice_gap && Math.abs(o.invoice_gap) >= 0.01
             ? `${amount(o.invoice_gap, o.currency)} of the order total is not yet invoiced`
             : undefined,
         render: (o) => (
-          <span className={o.invoice_gap && Math.abs(o.invoice_gap) >= 0.01 ? "warn-text" : undefined}>
+          <span className={!o.draft && o.invoice_gap && Math.abs(o.invoice_gap) >= 0.01 ? "warn-text" : undefined}>
             {o.invoice_count ? plain(o.invoiced_net) : "—"}
             {o.unpaid_count ? <span className="muted"> · {o.unpaid_count} unpaid</span> : null}
           </span>
@@ -118,7 +151,8 @@ export default function Orders() {
       <div className="toolbar">
         <h1>Orders</h1>
         <span className="toolbar-total">
-          {orders ? `${plural(orders.length, "order")}` : ""}
+          {orders ? plural(orders.length, "order") : ""}
+          {drafts ? ` · ${plural(drafts, "draft")} of a plan, not placed` : ""}
         </span>
         <button type="button" className="btn btn-primary btn-sm" onClick={() => setCreating((v) => !v)}>
           {creating ? "Close" : "New order"}
@@ -142,8 +176,8 @@ export default function Orders() {
       <div className="card pad">
         <h2 className="card-title">Customer orders</h2>
         <p className="muted dim">
-          Status follows the shipments: open, partial, fulfilled. Click a row for its lines,
-          invoices and shipments.
+          Status follows the shipments: open, partial, fulfilled. A draft is a plan&apos;s order the customer has
+          not placed. Click a row for its lines, invoices and shipments.
         </p>
         {orders === null ? (
           <Spinner label="Loading orders…" />
@@ -154,11 +188,20 @@ export default function Orders() {
             <NarrowChip n={orders.filter((o) => o.status === "partial").length} tone="warn" value="partial" current={narrow} onNarrow={setNarrow}>partly shipped</NarrowChip>
             <NarrowChip n={orders.filter((o) => o.status === "fulfilled").length} tone="ok" value="fulfilled" current={narrow} onNarrow={setNarrow}>fulfilled</NarrowChip>
             <NarrowChip n={orders.filter((o) => o.unpaid_count > 0).length} tone={orders.some((o) => o.unpaid_count > 0) ? "warn" : undefined} value="unpaid" current={narrow} onNarrow={setNarrow}>with unpaid invoices</NarrowChip>
+            {uninvoiced || narrow === "uninvoiced" ? (
+              <NarrowChip n={uninvoiced} tone="warn" value="uninvoiced" current={narrow} onNarrow={setNarrow}
+                title="Shipped units are worth more than the money invoices of the order">shipped, not invoiced</NarrowChip>
+            ) : null}
+            {drafts || narrow === "draft" ? (
+              <NarrowChip n={drafts} value="draft" current={narrow} onNarrow={setNarrow}
+                title="A plan's order the customer has not placed. No figure on this page counts it.">draft</NarrowChip>
+            ) : null}
           </div>
           <DataTable
-            rows={orders.filter((o) => !narrow || (narrow === "unpaid" ? o.unpaid_count > 0 : o.status === narrow))}
+            rows={orders.filter((o) => narrowed(o, narrow))}
             columns={columns}
             rowKey={(o) => o.id}
+            rowClass={(o) => (o.draft ? "dim" : "")}
             defaultSort={{ key: "order_date", dir: "desc" }}
             onRowClick={(o) => navigate(`/sales/orders/${o.id}`)}
             persistKey="orders"

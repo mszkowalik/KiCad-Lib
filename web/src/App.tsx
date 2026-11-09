@@ -35,6 +35,10 @@ import SalesInvoices from "./pages/SalesInvoices";
 import KsefInbox from "./pages/KsefInbox";
 import CompanyBooks from "./pages/CompanyBooks";
 import Customers from "./pages/Customers";
+import Plans from "./pages/Plans";
+import PlanDetail from "./pages/PlanDetail";
+import PurchaseOrders from "./pages/PurchaseOrders";
+import PurchaseOrderDetail from "./pages/PurchaseOrderDetail";
 import NewComponent from "./pages/NewComponent";
 import Orders from "./pages/Orders";
 import Organizers from "./pages/Organizers";
@@ -142,6 +146,7 @@ const STOCK_LINKS: TabLink[] = [
   { to: "/stock/finished", label: "Finished devices" },
   { to: "/stock/transfers", label: "Transfers" },
   { to: "/stock/suppliers", label: "Suppliers" },
+  { to: "/stock/purchase-orders", label: "Purchase orders" },
   { to: "/stock/jlc", label: "JLCPCB" },
 ];
 
@@ -150,6 +155,7 @@ const SALES_LINKS: TabLink[] = [
   { to: "/sales/shipments", label: "Shipments" },
   { to: "/sales/invoices", label: "Sales invoices" },
   { to: "/sales/customers", label: "Customers" },
+  { to: "/sales/plans", label: "Plans" },
 ];
 
 const FINANCE_LINKS: TabLink[] = [
@@ -344,6 +350,8 @@ function Shell() {
             <Route path="/stock/finished" element={<FinishedDevices />} />
             <Route path="/stock/transfers" element={<Transfers />} />
             <Route path="/stock/suppliers" element={<Suppliers />} />
+            <Route path="/stock/purchase-orders" element={<PurchaseOrders />} />
+            <Route path="/stock/purchase-orders/:id" element={<PurchaseOrderDetail />} />
             <Route path="/stock/jlc" element={<ProductionJlc />} />
           </Route>
 
@@ -356,6 +364,8 @@ function Shell() {
             <Route path="/sales/shipments/:id" element={<ShipmentDetail />} />
             <Route path="/sales/invoices" element={<SalesInvoices />} />
             <Route path="/sales/customers" element={<Customers />} />
+            <Route path="/sales/plans" element={<Plans />} />
+            <Route path="/sales/plans/:id" element={<PlanDetail />} />
           </Route>
 
           {/* Finance: what it all cost, and the books */}

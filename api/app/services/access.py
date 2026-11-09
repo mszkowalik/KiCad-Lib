@@ -376,6 +376,14 @@ _add(["/api/sales-invoices/{invoice_id}/files/"], "file_id", _via(M.RecordFile, 
 _add(["/api/companies/{company_id}/tax-entries/"], "entry_id", _via(M.CompanyTaxEntry, "company_id", _company))
 _add(["/api/companies/{company_id}/tax-periods/"], "period_id", _via(M.CompanyTaxPeriod, "company_id", _company))
 _add(["/api/companies/{company_id}/tax-entries/{entry_id}/files/"], "file_id", _via(M.RecordFile, "company_id", _company))
+# Decision 0107: a plan, and the records that join it, are their company's data.
+_plan = _via(M.Plan, "company_id", _company)
+_add(["/api/plans/"], "plan_id", _plan)
+_add(["/api/plan-nodes/"], "node_id", _via(M.PlanNode, "plan_id", _plan))
+_add(["/api/plan-lots/"], "lot_id", _via(M.PlanLot, "plan_id", _plan))
+_add(["/api/plan-reservations/"], "res_id", _via(M.PlanReservation, "plan_id", _plan))
+_add(["/api/plan-customer-parts/"], "cp_id", _via(M.PlanCustomerPart, "plan_id", _plan))
+_add(["/api/purchase-orders/"], "po_id", _via(M.PurchaseOrder, "company_id", _company))
 _add(["/api/consumption/"], "cons_id", _stock_row(M.Draw))
 _add(["/api/stock-adjustments/"], "adj_id", _stock_row(M.Adjustment))
 
@@ -446,6 +454,9 @@ FIELD_RESOLVERS: dict[tuple[str, str], Callable[[Session, str], set[int]]] = {
     ("*", "param_set_id"): _via(M.ParamSet, "project_id", _project),
     ("*", "deployment_version_id"): _deployment_version,
     ("*", "programming_run_id"): _programming_run,
+    # decision 0107: the plan a record joins, the purchase position a reservation came from
+    ("*", "plan_id"): _via(M.Plan, "company_id", _company),
+    ("*", "source_line_id"): _line,
     # an in-house transfer names both companies, so its author must see both
     ("/api/transfers", "sender_id"): _company,
     ("/api/transfers", "receiver_id"): _company,
@@ -502,6 +513,9 @@ NOT_COMPANY_LISTS: set[str] = {
     "notes",
     # the advance invoices a recorded settlement names, by NUMBER (decision 0077)
     "advance_numbers",
+    # a plan node's references and the keys of computed proposals (decision
+    # 0107): `services/plans.check_refs` refuses a reference outside the plan
+    "after", "keys",
 }
 
 

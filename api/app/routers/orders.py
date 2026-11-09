@@ -297,6 +297,37 @@ def update_order(order_id: int, body: OrderPatch, request: Request, db: Session 
     return svc.order_json(db, o, with_detail=True)
 
 
+class ConfirmIn(BaseModel):
+    order_ref: str = Field(default="", max_length=200)
+    order_date: str = Field(default="", max_length=20)
+
+
+@router.post("/orders/{order_id}/confirm")
+def confirm_order(order_id: int, body: ConfirmIn, request: Request, db: Session = Depends(get_db)):
+    """The customer placed a draft order (decision 0107 item 2): the flag goes
+    off and the order counts from now on. The plan's nodes that follow the
+    order keep following it."""
+    o = _order(db, order_id)
+    if not o.draft:
+        raise HTTPException(409, "the order is not a draft")
+    before = {"order_ref": o.order_ref, "order_date": o.order_date, "draft": True}
+    if body.order_ref.strip():
+        o.order_ref = body.order_ref.strip()
+    if body.order_date.strip():
+        from datetime import date as _date
+
+        try:
+            _date.fromisoformat(body.order_date.strip())
+        except ValueError:
+            raise HTTPException(422, f"order_date is not a date (YYYY-MM-DD): {body.order_date.strip()}") from None
+        o.order_date = body.order_date.strip()
+    o.draft = False
+    svc.refresh_order_status(o)
+    audit(db, "order.confirm", "sales_order", o.id, before, actor=actor_of(request))
+    db.commit()
+    return svc.order_json(db, o, with_detail=True)
+
+
 @router.delete("/orders/{order_id}")
 def delete_order(order_id: int, request: Request, db: Session = Depends(get_db)):
     o = _order(db, order_id)
@@ -305,6 +336,9 @@ def delete_order(order_id: int, request: Request, db: Session = Depends(get_db))
     if n:
         raise HTTPException(409, f"{n} device events name this order; it cannot be deleted")
     audit(db, "order.delete", "sales_order", o.id, {"order_ref": o.order_ref}, actor=actor_of(request))
+    from ..services import plans as plan_svc
+
+    plan_svc.delete_order_plan_rows(db, o)
     db.delete(o)
     db.commit()
     return {"deleted": order_id}
@@ -359,6 +393,12 @@ def delete_line(line_id: int, request: Request, db: Session = Depends(get_db)):
         raise HTTPException(409, "device events name this line, and a device's history stays")
     o = li.order
     audit(db, "order.line.delete", "sales_order", o.id, {"line_id": li.id}, actor=actor_of(request))
+    for d in db.query(M.SalesOrderDelivery).filter(M.SalesOrderDelivery.order_line_id == li.id).all():
+        node = db.get(M.PlanNode, d.node_id) if d.node_id else None
+        db.delete(d)
+        if node is not None:
+            db.delete(node)
+    db.flush()
     db.delete(li)
     db.flush()
     db.expire(o, ["lines"])
@@ -396,6 +436,8 @@ class InvoicePatch(BaseModel):
 @router.post("/orders/{order_id}/invoices")
 def add_invoice(order_id: int, body: InvoiceIn, request: Request, db: Session = Depends(get_db)):
     o = _order(db, order_id)
+    if o.draft:
+        raise HTTPException(409, "the order is a draft: confirm it when the customer places it")
     if body.kind not in svc.INVOICE_KINDS:
         raise HTTPException(422, f"kind must be one of {', '.join(svc.INVOICE_KINDS)}")
     if not body.number.strip():

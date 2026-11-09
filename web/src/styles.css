@@ -3387,10 +3387,13 @@ label.sim-runbar-pick {
 /* The two supplier tables (decision 0055). ORDER is their meaning, so they are
    plain tables rather than DataTables (the StackupTable exception), and they
    follow the table rule by hand: fixed layout, one line per row, widths here. */
-.data.supplier-links-table th:nth-child(1), .data.supplier-links-table td:nth-child(1) { width: 30%; }
-.data.supplier-links-table th:nth-child(2), .data.supplier-links-table td:nth-child(2) { width: 24%; }
-.data.supplier-links-table th:nth-child(3), .data.supplier-links-table td:nth-child(3) { width: 30%; }
-.data.supplier-links-table th:nth-child(4), .data.supplier-links-table td:nth-child(4) { width: 16%; }
+/* Five columns since the lead time (decision 0107 item 15). Measured at 1280 and
+   1440: the supplier name and its BOM pill fit, and the price ladder truncates. */
+.data.supplier-links-table th:nth-child(1), .data.supplier-links-table td:nth-child(1) { width: 29%; }
+.data.supplier-links-table th:nth-child(2), .data.supplier-links-table td:nth-child(2) { width: 20%; }
+.data.supplier-links-table th:nth-child(3), .data.supplier-links-table td:nth-child(3) { width: 22%; }
+.data.supplier-links-table th:nth-child(4), .data.supplier-links-table td:nth-child(4) { width: 12%; }
+.data.supplier-links-table th:nth-child(5), .data.supplier-links-table td:nth-child(5) { width: 17%; }
 .data.supplier-links-table td.expand-cell { white-space: normal; overflow: visible; }
 .data.supplier-register-table th:nth-child(1), .data.supplier-register-table td:nth-child(1) { width: 5%; }
 .data.supplier-register-table th:nth-child(2), .data.supplier-register-table td:nth-child(2) { width: 20%; }
@@ -6245,3 +6248,166 @@ button.fold-toggle { cursor: pointer; }
 .scan-last.err { background: var(--err-soft); color: var(--err); }
 .scan-steps { display: flex; flex-direction: column; gap: 4px; margin-top: 10px; }
 .scan-preview { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; padding: 10px 12px; border: 1px dashed var(--muted); border-radius: var(--radius-sm); }
+
+/* ---- plans (decision 0107) ----------------------------------------------
+   The plan page (pages/PlanDetail.tsx, components/plan/). The timeline is a
+   diagram, so it scrolls sideways inside `.plan-gantt` and the label column
+   stays put; the page itself never scrolls sideways. A mark takes its
+   project's colour from `--pc`, set inline from a theme token. */
+.plan-blockers { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr)); gap: 12px; align-items: start; }
+.plan-blk-col { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.plan-blk-col h3 { margin: 0; font-size: 12px; text-transform: uppercase; letter-spacing: 0.07em; display: flex; gap: 8px; align-items: baseline; }
+.plan-blk-col.block h3 { color: var(--err); }
+.plan-blk-col.risk h3 { color: var(--warn); }
+.plan-blk-col.decide h3 { color: var(--accent); }
+.plan-blk-col > .btn { align-self: flex-start; }
+.plan-blk { min-width: 0; padding: 9px 11px; font-size: 12.5px; background: var(--bg); border: 1px solid var(--line); border-left: 3px solid var(--muted); border-radius: var(--radius-sm); overflow-wrap: anywhere; }
+.plan-blk.block { border-left-color: var(--err); }
+.plan-blk.risk { border-left-color: var(--warn); }
+.plan-blk.decide { border-left-color: var(--accent); }
+.plan-blk p { margin: 4px 0 0; }
+.plan-blk-head { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; font-size: 13.5px; font-weight: 600; }
+.plan-blk-foot { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 8px; margin-top: 6px; font-size: 11.5px; }
+.plan-by { flex: none; font-size: 11.5px; font-weight: 500; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.plan-by.over { color: var(--err); }
+.plan-by.soon { color: var(--warn); }
+.plan-by.later { color: var(--muted); }
+
+.plan-gantt { overflow-x: auto; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--bg); }
+.plan-g { --plan-label: 220px; position: relative; }
+.plan-g-head,
+.plan-g-row { display: grid; grid-template-columns: var(--plan-label) minmax(0, 1fr); }
+.plan-g-head { height: 40px; background: var(--surface); border-bottom: 1px solid var(--line); }
+.plan-g-label { position: sticky; left: 0; z-index: 2; display: flex; align-items: center; gap: 6px; min-width: 0; padding: 0 10px; overflow: hidden; background: var(--bg); border-right: 1px solid var(--line); }
+.plan-g-head .plan-g-label { background: var(--surface); font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.07em; }
+.plan-g-track { position: relative; min-width: 0; }
+.plan-g-month { position: absolute; top: 5px; padding-left: 4px; font-size: 11px; color: var(--muted); white-space: nowrap; }
+.plan-g-flag { position: absolute; bottom: 3px; padding: 0 4px; font-size: 10.5px; white-space: nowrap; background: var(--surface); border-radius: var(--radius-xs); transform: translateX(-50%); }
+.plan-g-flag.today { color: var(--accent); }
+.plan-g-flag.closure { color: var(--err); }
+.plan-g-group { position: relative; z-index: 3; display: flex; align-items: center; gap: 8px; width: 100%; padding: 5px 10px; font: inherit; font-size: 12.5px; font-weight: 600; text-align: left; color: var(--text); background: var(--surface-2); border: 0; border-bottom: 1px solid var(--line); cursor: pointer; }
+.plan-g-row { height: 28px; border-bottom: 1px solid color-mix(in oklab, var(--line) 60%, transparent); }
+.plan-g-key { flex: none; max-width: 60%; overflow: hidden; text-overflow: ellipsis; font-size: 12.5px; font-weight: 600; white-space: nowrap; color: var(--text); }
+button.plan-g-key { align-self: center; color: var(--accent); }
+.plan-g-row.err .plan-g-key { color: var(--err); }
+.plan-g-sub { min-width: 0; overflow: hidden; text-overflow: ellipsis; font-size: 11.5px; white-space: nowrap; color: var(--muted); }
+.plan-g-flagdot { flex: none; display: inline-grid; place-items: center; width: 15px; height: 15px; font-size: 10px; font-weight: 800; color: var(--bg); background: var(--warn); border-radius: 50%; }
+.plan-g-row.err .plan-g-flagdot { background: var(--err); }
+.plan-g-lines { position: absolute; top: 40px; bottom: 0; left: var(--plan-label); right: 0; pointer-events: none; }
+.plan-g-vl { position: absolute; top: 0; bottom: 0; width: 0; border-left: 1px solid color-mix(in oklab, var(--line) 70%, transparent); }
+.plan-g-vl.today { border-left: 2px solid var(--accent); }
+.plan-g-vl.closure { border-left: 2px dashed var(--err); }
+@media (max-width: 700px) {
+  .plan-g { --plan-label: 120px; }
+  .plan-g-sub { display: none; }
+}
+
+/* the marks of the timeline */
+.plan-mk { position: absolute; top: 50%; }
+.plan-mk.dot, .plan-mk.del, .plan-mk.fin, .plan-mk.tick, .plan-mk.need { transform: translate(-50%, -50%); }
+.plan-mk.dia, .plan-mk.ms, .plan-mk.ghost { transform: translate(-50%, -50%) rotate(45deg); }
+.plan-mk.bar, .plan-mk.wait, .plan-mk.lot, .plan-mk.closure, .plan-mk.span, .plan-mk.unk {
+  height: 14px; padding: 0 4px; overflow: hidden; font-size: 10.5px; font-weight: 600; line-height: 14px;
+  white-space: nowrap; text-overflow: clip; border-radius: 3px; transform: translateY(-50%);
+}
+.plan-mk.bar { color: var(--bg); background: var(--pc, var(--accent)); }
+.plan-mk.bar.soft { color: var(--text); background: var(--accent-soft); border: 1px solid var(--accent); line-height: 12px; }
+.plan-mk.bar.prop { color: var(--muted); background: transparent; border: 1px dashed var(--muted); line-height: 12px; }
+.plan-mk.bar.filled { color: var(--text); background: color-mix(in oklab, var(--muted) 45%, transparent); }
+.plan-mk.lot { color: var(--bg); background: var(--ok); }
+.plan-mk.wait { font-weight: 500; color: var(--muted); border: 1px solid color-mix(in oklab, var(--muted) 45%, transparent); line-height: 12px;
+  background: repeating-linear-gradient(135deg, color-mix(in oklab, var(--muted) 35%, transparent) 0 4px, transparent 4px 8px); }
+.plan-mk.closure { color: var(--err); border: 1px solid var(--err); line-height: 12px;
+  background: repeating-linear-gradient(135deg, var(--err-soft) 0 5px, transparent 5px 10px); }
+.plan-mk.span { height: 2px; padding: 0; background: var(--line); border-radius: 0; }
+.plan-mk.unk { height: 0; padding: 0; border-top: 2px dashed var(--muted); border-radius: 0; }
+.plan-mk.dot { width: 11px; height: 11px; background: var(--bg); border: 2px solid var(--pc, var(--muted)); border-radius: 50%; }
+.plan-mk.dot.filled { background: var(--pc, var(--muted)); }
+.plan-mk.dot.late { border-color: var(--err); box-shadow: 0 0 0 3px var(--err-soft); }
+.plan-mk.dia { width: 9px; height: 9px; background: var(--bg); border: 2px solid var(--ok); }
+.plan-mk.dia.done { background: var(--ok); }
+.plan-mk.dia.late { background: var(--err-soft); border-color: var(--err); }
+.plan-mk.del { min-width: 24px; height: 16px; padding: 0 3px; font-size: 10px; font-weight: 700; line-height: 16px; text-align: center;
+  color: var(--bg); background: var(--pc, var(--accent)); border-radius: 3px; }
+.plan-mk.del.bad { outline: 2px solid var(--err); outline-offset: 1px; }
+.plan-mk.fin { width: 8px; height: 8px; background: var(--bg); border: 2px solid var(--ok); }
+.plan-mk.tick { width: 2px; height: 16px; background: var(--muted); opacity: 0.6; }
+.plan-mk.need { width: 3px; height: 20px; background: var(--muted); border-radius: 1px; }
+.plan-mk.need.late { background: var(--err); }
+.plan-mk.ms { width: 12px; height: 12px; background: var(--copper); }
+.plan-mk.ms.late { background: var(--err); }
+.plan-mk.ms.done { background: var(--ok); }
+.plan-mk.ghost { width: 10px; height: 10px; background: transparent; border: 1.5px dashed var(--muted); }
+.plan-tip { white-space: pre-line; pointer-events: none; }
+/* a chart label that crosses a line keeps a ring of the card's colour */
+.plan-halo { paint-order: stroke; stroke: var(--surface); stroke-width: 4px; stroke-linejoin: round; }
+.plan-legend { display: flex; flex-wrap: wrap; gap: 6px 16px; margin-top: 10px; font-size: 12px; color: var(--muted); }
+.plan-legend > span { display: inline-flex; align-items: center; gap: 6px; }
+.plan-lg { position: relative; display: inline-block; flex: none; width: 14px; height: 16px; }
+.plan-lg.wide { width: 28px; }
+.plan-lg .plan-mk { left: 50%; }
+.plan-lg .plan-mk.wait, .plan-lg .plan-mk.unk { left: 0; width: 100%; }
+.plan-sw { display: inline-block; flex: none; width: 10px; height: 10px; border-radius: 2px; }
+.plan-sw.ok { background: var(--ok); }
+.plan-sw.acc { background: var(--accent); }
+.plan-sw.short { background: var(--err-soft); outline: 1px solid var(--err); }
+.plan-sw.dash { width: 16px; height: 0; border-top: 2px dashed; border-radius: 0; }
+
+/* the week-by-week agenda */
+.plan-week { padding: 8px 0 4px; border-top: 1px solid var(--line); }
+.plan-week-head { display: flex; gap: 8px; align-items: center; margin: 0 0 4px; font-size: 12px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; }
+.plan-week-head .stat-chip { text-transform: none; letter-spacing: 0; }
+.plan-ev { display: grid; grid-template-columns: 84px 96px minmax(0, 1fr) auto auto; gap: 4px 10px; align-items: baseline; padding: 3px 0; font-size: 13px; }
+.plan-ev.past { opacity: 0.8; }
+.plan-ev-day { font-size: 12.5px; white-space: nowrap; font-variant-numeric: tabular-nums; color: var(--muted); }
+.plan-party { justify-self: start; padding: 1px 7px; font-size: 11px; white-space: nowrap; color: var(--muted); background: var(--surface-2); border-radius: 9px; }
+.plan-party.ours { color: var(--accent); background: var(--accent-soft); }
+.plan-party.customer { color: var(--ok); background: var(--ok-soft); }
+.plan-party.supplier { color: var(--copper); background: var(--copper-soft); }
+.plan-ev-text { min-width: 0; overflow-wrap: anywhere; }
+.plan-ptag { margin-right: 6px; padding: 0 5px; font-size: 10.5px; font-weight: 700; color: var(--pc); background: color-mix(in oklab, var(--pc) 16%, transparent); border-radius: var(--radius-xs); }
+.plan-ev-amt { font-size: 12.5px; text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; color: var(--muted); }
+.plan-ev-st { display: inline-flex; gap: 8px; align-items: center; justify-self: end; }
+@media (max-width: 700px) {
+  .plan-ev { grid-template-columns: 76px minmax(0, 1fr) auto; }
+  .plan-ev-st { order: 1; }
+  .plan-ev-text { order: 2; grid-column: 1 / -1; }
+  .plan-ev-amt { order: 3; grid-column: 1 / -1; text-align: left; }
+}
+
+/* forms and lists of the setup */
+.plan-two { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 440px), 1fr)); gap: 0 16px; align-items: start; }
+.plan-sub { margin: 14px 0 6px; font-size: 13px; font-weight: 600; }
+.plan-actions { margin-left: auto; }
+.btn-row.plan-actions { margin: 0 0 0 auto; }
+.plan-refs { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.plan-refs select.text { flex: 1 1 220px; width: auto; min-width: 0; }
+.plan-dels { display: flex; flex-direction: column; gap: 8px; }
+.plan-del-row { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: flex-end; padding-bottom: 8px; border-bottom: 1px solid var(--line); }
+.plan-del-row > .field { flex: 1 1 120px; min-width: 0; }
+.plan-del-row > .field:first-child { flex: 0 0 90px; }
+.plan-del-refs { flex-basis: 100%; }
+.plan-line { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 6px 10px; padding: 4px 0; border-bottom: 1px solid var(--line); }
+.plan-design-row { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: flex-end; padding: 8px 0; border-bottom: 1px solid var(--line); }
+.plan-design-row > .field { flex: 1 1 150px; min-width: 0; }
+.plan-design-sum { display: flex; flex-wrap: wrap; gap: 4px 14px; align-items: baseline; padding: 4px 0; font-size: 13px; }
+.plan-change { margin-top: 8px; padding-top: 4px; border-top: 1px solid var(--line); }
+.plan-change p { margin: 4px 0; }
+.plan-change-list { margin: 4px 0 0; padding-left: 18px; font-family: var(--mono); font-size: 12px; }
+.plan-checks { display: flex; flex-direction: column; gap: 6px; margin: 0; padding: 0; list-style: none; font-size: 13px; }
+.plan-checks li { display: flex; gap: 8px; align-items: baseline; }
+.plan-notice { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+
+/* ---- purchase orders and plan links (decision 0107) ---- */
+/* The line editor of an order and of a purchase order (`.order-lines-edit-table`,
+   widths above). On a phone the 14 % and 16 % number columns left their boxes
+   4 and 11 px wide, so a quantity could not be read: there the number boxes take
+   the room the names take on a desk. */
+@media (max-width: 600px) {
+  .order-lines-edit-table th, .order-lines-edit-table td { padding-left: 4px; padding-right: 4px; }
+  .order-lines-edit-table th:nth-child(1), .order-lines-edit-table td:nth-child(1) { width: 22%; }
+  .order-lines-edit-table th:nth-child(2), .order-lines-edit-table td:nth-child(2) { width: 24%; }
+  .order-lines-edit-table th:nth-child(3), .order-lines-edit-table td:nth-child(3) { width: 20%; }
+  .order-lines-edit-table th:nth-child(4), .order-lines-edit-table td:nth-child(4) { width: 24%; }
+  .order-lines-edit-table th:nth-child(5), .order-lines-edit-table td:nth-child(5) { width: 10%; }
+}
