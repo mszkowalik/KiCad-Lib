@@ -26,6 +26,10 @@
 - **A JLC ledger sync that reads no part while the balance holds some is an error.** The syncs of
   2026-10-20 and 2026-11-06 read 0 parts and said nothing, so Stock compared against a ledger six weeks old.
   "Sync stock count" also showed no ledger error at all. Both now say that the ledger was not read.
+- **The ledger item of `TS3625A` names `TS3625A` and `C398053`.** It carried the MPN and LCSC code of the
+  KH button, and the organizer views showed them.
+- **The enclosure adjustments A and B say how to correct them.** Their notes told the reader to edit them,
+  which the platform cannot do. They now say to write a new adjustment that names the device.
 
 ## 2026-11-08 (Batch 8 of CE_Dongle_V2 and the dongle carton count, data corrections)
 
