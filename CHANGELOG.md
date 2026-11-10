@@ -1,5 +1,17 @@
 # Changelog
 
+## 2026-11-09 (the demand and shelf cards follow the company switcher)
+
+- **The Demand card on Orders follows the company switcher.** It counted both companies whatever the
+  header said, so the 7Sigma view showed 9Sigma's 474 open dongles and its 5,600 planned ones. An order
+  now counts for the company that sold it, a batch for its own company, and a device for its batch's
+  company, else its project's current owner. The project's Orders tab and the `get_demand` agent tool
+  use the same rule.
+- **Stock → Finished devices follows it too:** the per-product card (`/api/finished-products`), the
+  per-batch card and its totals (`/api/finished-stock`).
+- **So does the Stock page's adjustments list** (`/api/stock-adjustments`) and its totals: 7Sigma reads
+  its 42 adjustments, 9Sigma its 13.
+
 ## 2026-11-09 (JLC resale listings, COB buyers, parts the process fits)
 
 - **A part can have approved alternates** (decision 0108). The component page has an "Approved alternates"

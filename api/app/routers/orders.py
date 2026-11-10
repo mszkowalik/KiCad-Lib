@@ -1007,25 +1007,36 @@ def rebatch(run_id: int, body: RebatchIn, request: Request, db: Session = Depend
 
 
 @router.get("/demand", openapi_extra={"x-agent-tool": "get_demand"})
-def demand(project_id: int | None = None, db: Session = Depends(get_db)):
+def demand(request: Request = None, project_id: int | None = None, db: Session = Depends(get_db)):
     """Open order quantity against shelf stock, the batches in work and the
-    planned batches, per project."""
-    return svc.project_demand(db, project_id)
+    planned batches, per project, in the caller's company scope."""
+    return svc.project_demand(db, project_id, company_svc.scope_ids(db, request))
+
+
+def _scoped_companies(db: Session, request: Request | None) -> list[int] | None:
+    """The header's companies, or None when the scope holds every company."""
+    scope = company_svc.scope_ids(db, request)
+    return scope if company_svc.narrows(db, scope) else None
 
 
 @router.get("/finished-products", openapi_extra={"x-agent-tool": "get_finished_products"})
-def finished_products(db: Session = Depends(get_db)):
+def finished_products(request: Request = None, db: Session = Depends(get_db)):
     """The shelf per PRODUCT, counted from the device records — including the
-    devices that name no batch, which every per-batch figure is blind to."""
-    return {"products": svc.product_stock(db)}
+    devices that name no batch, which every per-batch figure is blind to. In
+    the caller's company scope: a device is its batch's company's, else its
+    project owner's (`companies.device_scope`)."""
+    where = company_svc.device_scope(db, _scoped_companies(db, request))
+    return {"products": svc.product_stock(db, where=where)}
 
 
 @router.get("/finished-stock", openapi_extra={"x-agent-tool": "get_finished_stock"})
-def finished_stock(project_id: int | None = None, db: Session = Depends(get_db)):
-    """The shelf per BATCH: built, shipped, in stock and value at cost."""
+def finished_stock(request: Request = None, project_id: int | None = None, db: Session = Depends(get_db)):
+    """The shelf per BATCH: built, shipped, in stock and value at cost, for the
+    batches in the caller's company scope."""
     from ..services import twins as _twins
 
-    rows = svc.run_stock(db, project_id)
+    companies = _scoped_companies(db, request)
+    rows = svc.run_stock(db, project_id, companies)
     unit_cost = svc.per_device_cost_usd(db)
     twin_cost = _twins.device_costs(db)
     # Each unit at what it cost: its twin's price, nothing for a gap, else the
@@ -1055,7 +1066,7 @@ def finished_stock(project_id: int | None = None, db: Session = Depends(get_db))
     # state, so the shipped and the missing reconcile too (51 CE_Dongle_V2
     # devices, 2026-11-07).
     no_batch_states: dict[str, int] = defaultdict(int)
-    for p in svc.product_stock(db, unit_cost, twin_cost):
+    for p in svc.product_stock(db, unit_cost, twin_cost, where=company_svc.device_scope(db, companies)):
         if project_id is None or p["project_id"] == project_id:
             for state, n in p["no_batch_states"].items():
                 no_batch_states[state] += n

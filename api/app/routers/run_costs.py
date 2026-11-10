@@ -2149,7 +2149,7 @@ def _adjustment_json(a: M.Adjustment) -> dict:
 
 
 @router.get("/stock-adjustments", openapi_extra={"x-agent-tool": "list_stock_adjustments"})
-def list_all_adjustments(reason: str = "", db: Session = Depends(get_db)):
+def list_all_adjustments(request: Request = None, reason: str = "", db: Session = Depends(get_db)):
     """EVERY adjustment, including the ones belonging to no project.
 
     The per-project listing cannot show those, and an adjustment with a NULL
@@ -2158,8 +2158,14 @@ def list_all_adjustments(reason: str = "", db: Session = Depends(get_db)):
     invisible until the quantities were compared against JLC's own by hand
     (2026-07-28). An adjustment moves stock without an invoice behind it, so it is
     the least evidenced write in the system and must be the easiest to audit.
+
+    In the caller's company scope (the header switcher, decision 0063): the
+    adjustments of the selected company, plus those naming none.
     """
     q = db.query(M.Adjustment)
+    scope = company_svc.scope_ids(db, request)
+    if company_svc.narrows(db, scope):
+        q = q.filter(M.Adjustment.company_id.in_(scope) | M.Adjustment.company_id.is_(None))
     if reason:
         q = q.filter(M.Adjustment.reason == reason)
     rows = q.order_by(M.Adjustment.id.desc()).all()

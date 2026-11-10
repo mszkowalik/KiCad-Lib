@@ -44,10 +44,16 @@ project's Settings tab. No route edits or deletes a period.
   company_id IS NULL`, so a row nobody assigned yet stays visible. Today these
   are `GET /api/projects` (by the current owner), `/api/runs`, `/api/orders`,
   `/api/transfers`, `/api/shipments` (by the order's seller),
-  `/api/flasher/devices` (by the batch's company, else the project's owner) and
+  `/api/flasher/devices` (by the batch's company, else the project's owner),
   `/api/invoices` (the documents billed to the company, the transfers it sent,
-  and the ones naming no company). `companies.narrows` skips the filter when
-  the scope holds every company.
+  and the ones naming no company), `/api/stock-adjustments`, and the shelf and
+  demand figures: `/api/finished-stock` (by the batch's company),
+  `/api/finished-products` and `/api/demand` (a device by
+  `companies.device_scope`: its batch's company, else its project's current
+  owner; an order by its seller; a batch by its own company).
+  `companies.narrows` skips the filter when the scope holds every company.
+  `/api/demand` ignored the scope until 2026-11-09, and the 7Sigma view showed
+  9Sigma's open orders and planned batches.
 * **The register's batch costs (`by_run_usd`) list the scope's batches, each at
   its WHOLE cost**: every document and every draw that charges it, whoever was
   billed. A batch's cost is one figure, which its devices carry onto orders

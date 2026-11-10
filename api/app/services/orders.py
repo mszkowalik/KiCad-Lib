@@ -233,11 +233,16 @@ def _run_basis_qty(run: M.ProductionRun) -> int:
     return int(run.qty_good or run.plan_qty or run.qty or 0)
 
 
-def run_stock(db: Session, project_id: int | None = None) -> list[dict]:
-    """Finished devices per batch. ONE counting path: the device records (§8)."""
+def run_stock(db: Session, project_id: int | None = None, companies: list[int] | None = None) -> list[dict]:
+    """Finished devices per batch. ONE counting path: the device records (§8).
+
+    `companies` narrows it to the batches of those companies, plus a batch
+    naming none (the header scope, decision 0063). None counts every batch."""
     q = db.query(M.ProductionRun)
     if project_id:
         q = q.filter(M.ProductionRun.project_id == project_id)
+    if companies is not None:
+        q = q.filter(M.ProductionRun.company_id.in_(companies) | M.ProductionRun.company_id.is_(None))
     runs = q.order_by(M.ProductionRun.project_id, M.ProductionRun.run_date, M.ProductionRun.id).all()
     if not runs:
         return []
@@ -337,7 +342,8 @@ def device_cost_usd(device_id: int, run_id: int | None, unit_cost: dict[int, flo
 
 
 def shelf_values(db: Session, unit_cost: dict[int, float] | None = None,
-                 twin_cost: dict[int, float] | None = None) -> dict[tuple[int | None, int | None], dict]:
+                 twin_cost: dict[int, float] | None = None,
+                 where=None) -> dict[tuple[int | None, int | None], dict]:
     """The devices on the shelf (`in_stock`, any condition) at cost, by
     (project, batch): `{n, usd, pln, uncosted}`. Each device is priced by
     `device_cost_usd`, in PLN at its own batch's rate (decision 0103).
@@ -354,8 +360,11 @@ def shelf_values(db: Session, unit_cost: dict[int, float] | None = None,
     crafted = crafted_runs(db)
     rates: dict[int | None, float] = {}
     out: dict[tuple[int | None, int | None], dict] = {}
-    for did, pid, rid in (db.query(M.DeviceUnit.id, M.DeviceUnit.project_id, M.DeviceUnit.production_run_id)
-                          .filter(M.DeviceUnit.state == "in_stock").all()):
+    q = (db.query(M.DeviceUnit.id, M.DeviceUnit.project_id, M.DeviceUnit.production_run_id)
+         .filter(M.DeviceUnit.state == "in_stock"))
+    if where is not None:   # `companies.device_scope`: the header's company
+        q = q.filter(where)
+    for did, pid, rid in q.all():
         g = out.setdefault((pid, rid), {"n": 0, "usd": 0.0, "pln": 0.0, "uncosted": 0})
         g["n"] += 1
         cost = device_cost_usd(did, rid, unit_cost, twin_cost, crafted)
@@ -370,7 +379,7 @@ def shelf_values(db: Session, unit_cost: dict[int, float] | None = None,
 
 
 def product_stock(db: Session, unit_cost: dict[int, float] | None = None,
-                  twin_cost: dict[int, float] | None = None) -> list[dict]:
+                  twin_cost: dict[int, float] | None = None, where=None) -> list[dict]:
     """The shelf per PRODUCT, counted from the DEVICE RECORDS.
 
     `run_stock` counts per BATCH, which means it can only see a device that
@@ -393,13 +402,17 @@ def product_stock(db: Session, unit_cost: dict[int, float] | None = None,
     from sqlalchemy import func
 
     projects = {p.id: p.name for p in db.query(M.Project).all()}
-    values = shelf_values(db, unit_cost, twin_cost)
+    values = shelf_values(db, unit_cost, twin_cost, where=where)
 
-    rows = (db.query(M.DeviceUnit.project_id, M.DeviceUnit.state,
-                     M.DeviceUnit.condition, M.DeviceUnit.production_run_id,
-                     func.count(M.DeviceUnit.id))
-            .group_by(M.DeviceUnit.project_id, M.DeviceUnit.state,
-                      M.DeviceUnit.condition, M.DeviceUnit.production_run_id).all())
+    # `where` is `companies.device_scope`: the devices the header's company
+    # holds. None counts every device, which is what an unscoped caller wants.
+    q = db.query(M.DeviceUnit.project_id, M.DeviceUnit.state,
+                 M.DeviceUnit.condition, M.DeviceUnit.production_run_id,
+                 func.count(M.DeviceUnit.id))
+    if where is not None:
+        q = q.filter(where)
+    rows = q.group_by(M.DeviceUnit.project_id, M.DeviceUnit.state,
+                      M.DeviceUnit.condition, M.DeviceUnit.production_run_id).all()
 
     out: dict[int, dict] = {}
     for pid, state, cond, run_id, n in rows:
@@ -431,7 +444,7 @@ def product_stock(db: Session, unit_cost: dict[int, float] | None = None,
             # Not on the shelf, so in no stock figure — but never invisible.
             p["missing"] += n
 
-    for pid, _rid, why, n in _twin_holds(db):
+    for pid, _rid, why, n in _twin_holds(db, where=where):
         if pid in out:
             out[pid]["available"] -= n
             out[pid]["held"][why] = out[pid]["held"].get(why, 0) + n
@@ -454,7 +467,8 @@ def product_stock(db: Session, unit_cost: dict[int, float] | None = None,
 #: Why a unit on the shelf in `ok` condition is still not for sale (decision
 #: 0074): its twin is in work, its twin was scrapped, or it is a gap of a
 #: crafted batch. Shown as HELD, beside the conditions.
-def _twin_holds(db: Session, rids: list[int] | None = None) -> list[tuple[int, int | None, str, int]]:
+def _twin_holds(db: Session, rids: list[int] | None = None,
+                where=None) -> list[tuple[int, int | None, str, int]]:
     """(project, run, reason, n) for in-stock `ok` units held by their twin."""
     from sqlalchemy import func
 
@@ -465,6 +479,8 @@ def _twin_holds(db: Session, rids: list[int] | None = None) -> list[tuple[int, i
          .filter(M.DeviceUnit.state == "in_stock", func.coalesce(M.DeviceUnit.condition, "ok") == "ok"))
     if rids is not None:
         q = q.filter(M.DeviceUnit.production_run_id.in_(rids or [-1]))
+    if where is not None:
+        q = q.filter(where)
     out = []
     for pid, rid, status, n in q.group_by(M.DeviceUnit.project_id, M.DeviceUnit.production_run_id,
                                           M.Unit.status).all():
@@ -1654,7 +1670,8 @@ def run_sales_json(db: Session, run: M.ProductionRun) -> dict:
 IN_WORK_STATUSES = ("ordered", "in production")
 
 
-def _in_work(db: Session, project_id: int | None = None) -> tuple[dict[int, int], dict[int, list[dict]]]:
+def _in_work(db: Session, project_id: int | None = None,
+             companies: list[int] | None = None) -> tuple[dict[int, int], dict[int, list[dict]]]:
     """What the batches in work will still turn into devices, per project, and
     per batch. A batch is in work when its status is in `IN_WORK_STATUSES` and
     its books are open.
@@ -1678,6 +1695,8 @@ def _in_work(db: Session, project_id: int | None = None) -> tuple[dict[int, int]
                                           M.ProductionRun.closed_at.is_(None))
     if project_id:
         rq = rq.filter(M.ProductionRun.project_id == project_id)
+    if companies is not None:   # the header's company; a batch naming none counts everywhere
+        rq = rq.filter(M.ProductionRun.company_id.in_(companies) | M.ProductionRun.company_id.is_(None))
     runs = rq.all()
     rids = [r.id for r in runs]
     active: dict[int, int] = defaultdict(int)
@@ -1706,7 +1725,8 @@ def _in_work(db: Session, project_id: int | None = None) -> tuple[dict[int, int]
     return total, by_run
 
 
-def project_demand(db: Session, project_id: int | None = None) -> list[dict]:
+def project_demand(db: Session, project_id: int | None = None,
+                   scope: list[int] | None = None) -> list[dict]:
     """Open demand against supply, per project — the number the project window
     and the Orders page both ask for. Open demand is the unshipped part of
     every non-cancelled order line; supply is what is on the shelf AND CAN BE
@@ -1719,12 +1739,26 @@ def project_demand(db: Session, project_id: int | None = None) -> list[dict]:
     never draw it (decision 0032) — so counting it as supply says an order can
     be filled by devices that cannot leave the building. It read 34 dongles of
     supply against 0 sellable ones.
+
+    `scope` is the header's companies (`companies.scope_ids`, decision 0063).
+    An order counts for the company that sold it, a batch for its own company,
+    and a device for its batch's company, else its project's current owner
+    (`companies.device_scope`). A row naming no company counts in every scope.
+    None, or a scope holding every company, counts everything. It ignored the
+    switcher until 2026-11-09, so the 7Sigma view showed 9Sigma's open orders
+    and its 5,600 planned dongles.
     """
+    from . import companies as _companies
+
+    companies = scope if scope is not None and _companies.narrows(db, scope) else None
+    dev_scope = _companies.device_scope(db, companies)
     q = (db.query(M.SalesOrderLine, M.SalesOrder)
          .join(M.SalesOrder)
          .filter(M.SalesOrder.cancelled.is_(False), M.SalesOrder.draft.is_(False)))
     if project_id:
         q = q.filter(M.SalesOrderLine.project_id == project_id)
+    if companies is not None:
+        q = q.filter(M.SalesOrder.company_id.in_(companies) | M.SalesOrder.company_id.is_(None))
     open_qty: dict[int, int] = defaultdict(int)
     open_orders: dict[int, set[int]] = defaultdict(set)
     open_lines: set[int] = set()
@@ -1740,7 +1774,7 @@ def project_demand(db: Session, project_id: int | None = None) -> list[dict]:
     # From `product_stock`, not `run_stock`: the latter counts per BATCH and so
     # cannot see a device that names none, and 13 such devices were on the real
     # shelf when this changed.
-    for p in product_stock(db):
+    for p in product_stock(db, where=dev_scope):
         if project_id and p["project_id"] != project_id:
             continue
         shelf[p["project_id"]] += p["available"]
@@ -1750,18 +1784,23 @@ def project_demand(db: Session, project_id: int | None = None) -> list[dict]:
     # device reads as one to build. Only allocations against the lines this
     # demand is measuring count; an allocation to a line already fulfilled is
     # neither demand nor supply here.
-    for d in db.query(M.DeviceUnit).filter(M.DeviceUnit.state == "allocated").all():
+    aq = db.query(M.DeviceUnit).filter(M.DeviceUnit.state == "allocated")
+    if dev_scope is not None:
+        aq = aq.filter(dev_scope)
+    for d in aq.all():
         ev = last_event(d, "allocated")
         if ev is not None and ev.order_line_id in open_lines:
             shelf[d.project_id] += 1
     rq = db.query(M.ProductionRun).filter(M.ProductionRun.status == "planned")
     if project_id:
         rq = rq.filter(M.ProductionRun.project_id == project_id)
+    if companies is not None:
+        rq = rq.filter(M.ProductionRun.company_id.in_(companies) | M.ProductionRun.company_id.is_(None))
     for r in rq.all():
         planned[r.project_id] += r.qty or 0
         planned_runs[r.project_id].append({"run_id": r.id, "label": r.label, "qty": r.qty or 0,
                                            "run_date": r.run_date or ""})
-    in_work, in_work_runs = _in_work(db, project_id)
+    in_work, in_work_runs = _in_work(db, project_id, companies)
     projects = {p.id: p.name for p in db.query(M.Project).all()}
     ids = set(open_qty) | set(shelf) | set(planned) | set(in_work)
     if project_id:

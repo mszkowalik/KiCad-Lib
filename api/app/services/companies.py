@@ -170,6 +170,22 @@ def projects_owned_by(db: Session, scope: list[int], on: str | None = None) -> s
     return out
 
 
+def device_scope(db: Session, scope: list[int] | None):
+    """The SQL condition on `DeviceUnit` for the devices a scope shows, or None
+    when the scope holds every company (no filter).
+
+    A device is its batch's company's; a device no batch claims is its
+    project's current owner's. The same rule as `GET /api/flasher/devices`,
+    except that a batch naming no company stays visible, as on every list."""
+    if scope is None or not narrows(db, scope):
+        return None
+    runs = [rid for (rid,) in db.query(M.ProductionRun.id).filter(
+        M.ProductionRun.company_id.in_(scope) | M.ProductionRun.company_id.is_(None)).all()]
+    owned = projects_owned_by(db, scope)
+    return (M.DeviceUnit.production_run_id.in_(runs or [0])
+            | (M.DeviceUnit.production_run_id.is_(None) & M.DeviceUnit.project_id.in_(owned or [0])))
+
+
 def set_memberships(db: Session, user: M.User, company_ids: list[int]) -> list[int]:
     known = {c.id for c in all_companies(db)}
     bad = [cid for cid in company_ids if cid not in known]
