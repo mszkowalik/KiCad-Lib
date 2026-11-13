@@ -15,6 +15,10 @@
 - **Agents can measure a correction** with `measure_jlc_placement`: give it JLC's land for the part
   (easyeda2kicad writes one) and it proposes both values. A value is a proposal until a JLC placement
   preview confirms it. It reads easyeda2kicad's unquoted pad numbers (`(pad 1 …)`) as well as ours.
+- **Writing a JLC rotation no longer costs a part its review state.** The rotation does not count as an
+  electrical value (it made `cmp.electrical` apply to 10 parts with none), and a version that changes only
+  the JLC fields keeps the part's standing exceptions (4 had lapsed).
+- **A generated CPL places a through-hole part at the centre of its pads**, as the Fabrication Toolkit does.
 
 ## 2026-11-09 (the demand and shelf cards follow the company switcher)
 

@@ -147,6 +147,36 @@ def grant(db: Session, kind: str, parent, key: str, *, reason: str, note: str,
     return exc
 
 
+def repin_property_sha(db: Session, comp, old_cv, new_cv, actor: str, why: str) -> int:
+    """Carry each live exception pinned to the component's data digest across a
+    publish whose change the decision was not about. Caller owns the transaction.
+
+    `$property_sha` digests EVERY property, so an edit that keeps the
+    verification still changes it, and the exception lapses with nothing having
+    changed about the decision. Two edits re-pin: the supplier migration
+    (decision 0055) and a publish that changes only the JLC placement keys
+    (decision 0110). Exceptions are append-only: the old row is revoked with a
+    reason that names `why`, and the new one keeps its key, variant, reason,
+    note, evidence and actor type. An exception that had ALREADY lapsed stays
+    lapsed. Returns how many were re-pinned."""
+    from .checklists import _property_sha
+
+    old_sha, new_sha = _property_sha(old_cv), _property_sha(new_cv)
+    if old_sha == new_sha:
+        return 0
+    n = 0
+    for exc in live_for(db, "component", comp.id).values():
+        if (exc.depends_on or {}).get("$property_sha") != old_sha:
+            continue
+        revoke(db, exc, actor, f"Re-pinned: {why}, which changed the component's data digest")
+        grant(db, "component", comp, exc.key, reason=exc.reason, note=exc.note,
+              actor=actor, actor_type=exc.actor_type, variant=exc.variant,
+              evidence=exc.evidence,
+              depends_on={**exc.depends_on, "$property_sha": new_sha})
+        n += 1
+    return n
+
+
 def revoke(db: Session, exc: M.ReviewException, actor: str, reason: str) -> M.ReviewException:
     check_length(reason, "revoke_reason")
     exc.revoked_at = _utcnow()

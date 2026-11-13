@@ -122,6 +122,7 @@ def publish_component_version(db: Session, comp: M.Component, cv: M.ComponentVer
                       details={"component": comp.name, "version_no": cv.version_no}))
     carried = signoff.carry_on_publish(db, comp, old_cv, cv, rename)
     review_carry = review.carry_component(db, comp, old_cv, cv, rename)
+    _repin_for_placement_edit(db, comp, old_cv, cv, actor)
     # Conformance is COMPUTED, not recorded (decision 0017). Nothing is written
     # here any more: the machine tier is a pure function of the version and the
     # resolved checklist, and `services/conformance.py` caches it against a
@@ -133,6 +134,30 @@ def publish_component_version(db: Session, comp: M.Component, cv: M.ComponentVer
     if old_cv is not None:
         tops.add(top_level_of(old_cv.category).name)
     return {"old_cv": old_cv, "tops": tops, "signoff": carried, "review_carry": review_carry}
+
+
+def _repin_for_placement_edit(db: Session, comp: M.Component, old_cv, new_cv, actor: str) -> int:
+    """A version that changes ONLY the JLC placement keys keeps the part's
+    standing exceptions (decision 0110). The review record and the sign-off
+    carry anyway, because both keys are non-material; an exception pinned to
+    `$property_sha` would lapse without this, and writing the rotation on the
+    project parts cost four of them on 2026-11-13."""
+    if old_cv is None or new_cv is None or old_cv.id == new_cv.id:
+        return 0
+    from . import exceptions
+    from .jlc_placement import PLACEMENT_KEYS
+
+    def _props(cv):
+        return {p.key: (None if p.is_null else p.value) for p in cv.properties}
+
+    a, b = _props(old_cv), _props(new_cv)
+    changed = {k for k in set(a) | set(b) if a.get(k) != b.get(k)}
+    if not changed or not changed <= PLACEMENT_KEYS:
+        return 0
+    if old_cv.base_component != new_cv.base_component or old_cv.category_id != new_cv.category_id:
+        return 0
+    return exceptions.repin_property_sha(
+        db, comp, old_cv, new_cv, actor, "a JLC placement correction (decision 0110)")
 
 
 def refresh_mirror_for_component(db: Session, settings: Settings, comp: M.Component,

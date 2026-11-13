@@ -477,6 +477,13 @@ review axis records who verified each version against its documentation.
   grant "always", in the card, where the scope is asked. The machine tier is
   untouched: `services/validator.py` answers `na` in a dozen places ("no SMD
   pads", "no vias") and those are computed, not recorded.
+  **A component exception pinned to `$property_sha` lapses on ANY field
+  change**, a non-material one included. Two edits re-pin it instead, through
+  ONE function, `exceptions.repin_property_sha`: the supplier migration
+  (decision 0055) and a publish that changes only the JLC placement keys
+  (`publish._repin_for_placement_edit`, decision 0110 — writing the rotation on
+  the project parts cost four exceptions before it existed). The old row is
+  revoked with a reason, the new one keeps everything but the digest.
 - **Every written explanation has a length limit, enforced at the WRITE.**
   `review.TEXT_LIMITS` (item note 400, custom item text 200, pass note 300,
   revoke reason 300), `exceptions.TEXT_LIMITS` (note 400, evidence 600, revoke

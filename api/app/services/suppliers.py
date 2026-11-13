@@ -416,34 +416,12 @@ def _republish_without_supplier_keys(db: Session, comp: M.Component,
 def _repin_exceptions(db: Session, comp: M.Component, old_cv: M.ComponentVersion,
                       new_cv: M.ComponentVersion) -> int:
     """Carry each standing exception pinned to the component's data across the
-    migration.
-
-    `$property_sha` digests EVERY property, so removing the `Supplier` keys
-    changes it and every exception pinned to it would lapse — measured on the
-    production copy: four parts fell from `checked` to `partial` or lost an
-    excused finding. The decision was about data that did not change, so it is
-    re-granted against the new digest. Exceptions are append-only: the old row
-    is revoked with a reason naming this migration, and the new one keeps its
-    key, variant, reason, note, evidence and actor type. An exception that had
-    ALREADY lapsed stays lapsed."""
+    migration. Measured on the production copy: without it four parts fell from
+    `checked` to `partial` or lost an excused finding. The rule is
+    `exceptions.repin_property_sha`."""
     from . import exceptions
-    from .checklists import _property_sha
 
-    old_sha, new_sha = _property_sha(old_cv), _property_sha(new_cv)
-    if old_sha == new_sha:
-        return 0
-    n = 0
-    for exc in exceptions.live_for(db, "component", comp.id).values():
-        if (exc.depends_on or {}).get("$property_sha") != old_sha:
-            continue
-        exceptions.revoke(db, exc, MIGRATION_ACTOR,
-                          f"Re-pinned: {MIGRATION_COMMENT}, which changed the component's data digest")
-        exceptions.grant(db, "component", comp, exc.key, reason=exc.reason, note=exc.note,
-                         actor=MIGRATION_ACTOR, actor_type=exc.actor_type, variant=exc.variant,
-                         evidence=exc.evidence,
-                         depends_on={**exc.depends_on, "$property_sha": new_sha})
-        n += 1
-    return n
+    return exceptions.repin_property_sha(db, comp, old_cv, new_cv, MIGRATION_ACTOR, MIGRATION_COMMENT)
 
 
 def migrate(db: Session) -> dict:

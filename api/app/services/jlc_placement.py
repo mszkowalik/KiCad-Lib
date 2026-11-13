@@ -34,6 +34,9 @@ from ..util.sexpr import _norm, find_node, iter_nodes, parse_sexpr
 
 ROTATION_KEY = "FT Rotation Offset"
 POSITION_KEY = "FT Position Offset"
+#: The keys an edit may change and still keep the part's standing exceptions
+#: (`publish._repin_for_placement_edit`).
+PLACEMENT_KEYS = frozenset({ROTATION_KEY, POSITION_KEY})
 
 
 @dataclass

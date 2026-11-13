@@ -1162,7 +1162,11 @@ def _derived_providers(db: Session, cv: M.ComponentVersion) -> dict:
     #: UCC27538DBVR's ROUTH=2.5 against its OUTH pull-up) and excluding `Sim.`
     #: put both out of the question's reach. `Sim.Device` and `Sim.Type` are
     #: wiring, not values, so they are named individually instead.
-    HOUSEKEEPING_PREFIXES = ("Manufacturer", "Supplier", "LCSC")
+    #: `FT ` is the JLC pick-and-place correction (decision 0110): how the
+    #: assembler turns ITS model, not a value of the part. Counted as electrical
+    #: it put `cmp.electrical` on every resistor that got one (measured
+    #: 2026-11-13: 10 project parts fell to `partial`).
+    HOUSEKEEPING_PREFIXES = ("Manufacturer", "Supplier", "LCSC", "FT ")
     HOUSEKEEPING = HOUSEKEEPING | {"Sim.Device", "Sim.Type", "Sim.Pins", "Sim.Library"}
 
     def longest_property():
