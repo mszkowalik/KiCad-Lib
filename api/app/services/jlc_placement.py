@@ -72,10 +72,26 @@ def board_placements(pcb_text: str) -> dict[str, Placement]:
         attrs: set[str] = set()
         for node in iter_nodes(fp, "attr"):
             attrs.update(_norm(a) for a in node[1:])
+        x, y = float(at[1]), float(at[2])
+        angle = float(at[3]) if len(at) > 3 else 0.0
+        smd = "smd" in attrs
+        if not smd:
+            # The Fabrication Toolkit places a non-SMD part at the centre of its
+            # pads' bounding box, not at the anchor. Do the same, so this CPL and
+            # the plugin's agree and one `FT Position Offset` means one thing.
+            pts = []
+            for pad in iter_nodes(fp, "pad"):
+                pat = find_node(pad, "at")
+                if pat is not None and len(pat) >= 3:
+                    pts.append((float(pat[1]), float(pat[2])))
+            if pts:
+                cx = (min(p[0] for p in pts) + max(p[0] for p in pts)) / 2
+                cy = (min(p[1] for p in pts) + max(p[1] for p in pts)) / 2
+                dx, dy = _rot(cx, cy, angle)
+                x, y = x + dx, y + dy
         out[ref] = Placement(
-            ref=ref, x=float(at[1]), y=float(at[2]),
-            angle=float(at[3]) if len(at) > 3 else 0.0, side=side,
-            smd="smd" in attrs, dnp="dnp" in attrs,
+            ref=ref, x=x, y=y, angle=angle, side=side,
+            smd=smd, dnp="dnp" in attrs,
             excluded="exclude_from_pos_files" in attrs,
         )
     return out
@@ -275,6 +291,18 @@ def check_cpl(expected: dict, cpl_bytes: bytes) -> dict:
 
 
 # ------------------------------------------------- measuring a correction
+def _pad_number(raw) -> str:
+    """A pad number as text. easyeda2kicad writes `(pad 1 …)` unquoted, which
+    the parser reads as the NUMBER 1.0, while our footprints say `(pad "1" …)`.
+    Without this, no pad of a JLC land matched ours (found 2026-11-13)."""
+    s = "" if raw is None else str(raw).strip().strip('"')
+    try:
+        f = float(s)
+    except ValueError:
+        return s
+    return str(int(f)) if f.is_integer() else s
+
+
 def _pad_centres(kicad_mod_text: str) -> dict[str, tuple[float, float]]:
     """Numbered pad centres of a footprint, one point per number (the mean
     when a number repeats, as an exposed pad split into parts does)."""
@@ -282,7 +310,7 @@ def _pad_centres(kicad_mod_text: str) -> dict[str, tuple[float, float]]:
 
     acc: dict[str, list[tuple[float, float]]] = {}
     for pad in footprint_material(kicad_mod_text)["pads"]:
-        num = pad.get("number") or ""
+        num = _pad_number(pad.get("number"))
         at = pad.get("at") or []
         if not num or len(at) < 2:
             continue

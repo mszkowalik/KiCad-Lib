@@ -816,7 +816,9 @@ guard reads one company's stock is in [companies.md](companies.md).
   would each autoscale and misalign.
 - **A generated set carries a JLC BOM and CPL with the per-part rotation**
   (decision 0110, `services/jlc_placement.py`). The placements come from the
-  `.kicad_pcb` itself (angle, side, `dnp`, `exclude_from_pos_files`), the
+  `.kicad_pcb` itself (angle, side, `dnp`, `exclude_from_pos_files`; a non-SMD
+  part at the centre of its pads' bounding box, as the Fabrication Toolkit
+  places it, so one `FT Position Offset` means one thing in both exports), the
   correction from each part's live `FT Rotation Offset` / `FT Position Offset`,
   and the formula is `top = angle + offset`, `bottom = 180 - angle + offset`,
   confirmed in JLC's preview. kicad-cli's `position.csv` inside the zip has no

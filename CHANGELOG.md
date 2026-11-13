@@ -14,7 +14,7 @@
   to the component that holds the correction. A check that passes draws nothing.
 - **Agents can measure a correction** with `measure_jlc_placement`: give it JLC's land for the part
   (easyeda2kicad writes one) and it proposes both values. A value is a proposal until a JLC placement
-  preview confirms it.
+  preview confirms it. It reads easyeda2kicad's unquoted pad numbers (`(pad 1 …)`) as well as ours.
 
 ## 2026-11-09 (the demand and shelf cards follow the company switcher)
 

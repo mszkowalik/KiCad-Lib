@@ -67,6 +67,23 @@ def test_board_placements_reads_side_angle_and_attrs():
     assert pl["J1"].excluded and not pl["J1"].smd
 
 
+def test_a_through_hole_part_is_placed_at_the_centre_of_its_pads():
+    # Pads at local x 0 and 5.08: the centre is 2.54 along the part's own x.
+    pcb = """(kicad_pcb
+      (footprint "7Sigma:TB" (layer "F.Cu") (at 100 50)
+        (property "Reference" "J2") (attr through_hole)
+        (pad "1" thru_hole circle (at 0 0) (size 2 2))
+        (pad "2" thru_hole circle (at 5.08 0) (size 2 2)))
+      (footprint "7Sigma:TB" (layer "F.Cu") (at 100 50 90)
+        (property "Reference" "J3") (attr through_hole)
+        (pad "1" thru_hole circle (at 0 0 90) (size 2 2))
+        (pad "2" thru_hole circle (at 5.08 0 90) (size 2 2))))"""
+    pl = J.board_placements(pcb)
+    assert (pl["J2"].x, pl["J2"].y) == (102.54, 50.0)
+    # Turned 90 deg counter-clockwise, the part's +x points UP (y down in KiCad).
+    assert (round(pl["J3"].x, 3), round(pl["J3"].y, 3)) == (100.0, 47.46)
+
+
 def _fp(pads):
     body = "".join(f'(pad "{n}" smd roundrect (at {x} {y}) (size 1 0.6) (layers "F.Cu"))'
                    for n, x, y in pads)
@@ -86,6 +103,13 @@ def test_measure_bl_land_needs_270():
     res = J.measure(_fp(OURS), _fp(_turn(OURS, 90)))
     assert res["rotation_offset"] == 270 and res["confidence"] == "high"
     assert res["position_offset"] == [0.0, 0.0]
+
+
+def test_measure_reads_easyeda2kicad_unquoted_pad_numbers():
+    # easyeda2kicad writes (pad 1 smd …) without quotes; ours says (pad "1" …).
+    jlc = _fp(_turn(OURS, 90)).replace('(pad "', "(pad ").replace('" smd', " smd")
+    assert "(pad 1 smd" in jlc
+    assert J.measure(_fp(OURS), jlc)["rotation_offset"] == 270
 
 
 def test_measure_br_land_needs_180():
