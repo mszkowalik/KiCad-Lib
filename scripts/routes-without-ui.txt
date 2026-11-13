@@ -10,6 +10,7 @@ POST /api/agent/tools/{name}  The MCP server runs a tool.
 GET /api/kicad/pcm/repository.json  KiCad's Plugin and Content Manager reads it. The Account page shows the address.
 GET /api/kicad/pcm/{filename}  KiCad's Plugin and Content Manager downloads packages.
 POST /api/kicad/pcm/models-delta  The KiCad sync plugin.
+POST /api/components/{comp_id}/jlc-placement/measure  An agent over MCP (measure_jlc_placement): it supplies JLC's land from easyeda2kicad, which the browser cannot fetch.
 
 # The UI reaches the same function through another route
 PATCH /api/run-documents/{doc_id}  The invoice page saves the header with its lines, through PATCH .../lines. The MCP server uses this one.

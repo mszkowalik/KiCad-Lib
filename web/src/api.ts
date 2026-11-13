@@ -4059,6 +4059,24 @@ export interface ProductionInfo {
   repo_available: boolean;
   jlc_bom: { rows: JlcBomRow[]; designators: string[] } | null;
   jlc_designators: string[];
+  /** The CPL of the current set against the per-part JLC rotation (decision 0110). */
+  cpl_check: CplCheck | null;
+}
+
+export interface CplMismatch {
+  ref: string;
+  file: number;
+  expected: number;
+  lcsc: string;
+  component_id: number | null;
+}
+
+export interface CplCheck {
+  file: string;
+  checked: number;
+  mismatches: CplMismatch[];
+  no_offset: string[];
+  error?: string;
 }
 
 export function getRunProduction(runId: number, signal?: AbortSignal): Promise<ProductionInfo> {

@@ -68,6 +68,13 @@ NON_MATERIAL_KEYS = frozenset({
     "ki_locked",
     "Datasheet",        # injected from the datasheets table, not authored here
     "Footprint_Name",   # the package's display name; belongs to the footprint
+    # JLC pick-and-place correction (decision 0110). It says how the assembler
+    # turns ITS model, not which part this is or what copper it sits on, and it
+    # is confirmed in JLC's preview rather than against the datasheet. Writing
+    # it must not cost the sign-off or the verification: 52 project parts need
+    # one, and every one of them would otherwise lose both.
+    "FT Rotation Offset",
+    "FT Position Offset",
 })
 
 

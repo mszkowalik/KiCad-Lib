@@ -26,6 +26,7 @@ in one document. Open the document before you change the module.
 | Sign-off, verification, the review record | `signoff.py`, `review.py`, `material.py` | [docs/reference/review-axis.md](../../../docs/reference/review-axis.md) |
 | Renaming a footprint or a base symbol | `rename.py` | [docs/decisions/0012](../../../docs/decisions/0012-rename-a-footprint-or-base-symbol-in-place.md) |
 | Projects, git mirrors, snapshots, exports | `gitrepo.py`, `project_ops.py`, `git_credential_migrate.py` | [docs/reference/projects-module.md](../../../docs/reference/projects-module.md) |
+| The JLC pick-and-place correction: per-part rotation, the platform's JLC BOM/CPL, the CPL check | `jlc_placement.py` | [docs/decisions/0110](../../../docs/decisions/0110-the-jlc-rotation-belongs-to-the-part.md) |
 | Simulation models and composition | `simmodel.py`, `sim_store.py`, `simcompose.py` | [docs/reference/simulation-models.md](../../../docs/reference/simulation-models.md) |
 | SPICE runs, netlists, harnesses, the live sketch | `sim_spice.py`, `project_ops.py`, `sch_lib.py`, `sim_scenario.py` | [docs/reference/spice-runs.md](../../../docs/reference/spice-runs.md) |
 | What a publish CORRECTS for you, before it parses | `geometry_proposals.py` | [docs/reference/publish-sanitization.md](../../../docs/reference/publish-sanitization.md) |

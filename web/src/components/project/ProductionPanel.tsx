@@ -11,8 +11,10 @@ import {
   productionFileUrl,
   renderGerbers,
   uploadProductionFiles,
+  type CplCheck,
   type ProductionSet,
 } from "../../api";
+import { Link } from "react-router-dom";
 import DataTable from "../DataTable";
 import { useDialog } from "../Dialog";
 import FilePick from "../FilePick";
@@ -22,6 +24,48 @@ import { ErrorBanner, Spinner } from "../Ui";
 import { LAYER_COLORS } from "./BoardTab";
 import { localWhen } from "../../format";
 import { useLoad } from "../useLoad";
+
+/** The CPL against the per-part JLC rotation (decision 0110). A check that
+ *  passes draws nothing; a wrong rotation links to the part whose
+ *  `FT Rotation Offset` says what JLC needs. */
+function CplCheckCard({ runId, check }: { runId: number; check: CplCheck }) {
+  if (check.error) {
+    return <div className="banner-warn">Could not check the rotations in {check.file}: {check.error}</div>;
+  }
+  if (check.mismatches.length === 0) return null;
+  return (
+    <>
+      <div className="banner-warn">
+        {check.mismatches.length} of {check.checked} checked placement(s) in {check.file} have a rotation JLCPCB
+        will place wrong. Export again with Fabrication Toolkit's Auto Translate off, after "Update Symbols from
+        Library", or use a generated set, which applies the correction itself.
+      </div>
+      <FoldSection
+        bare
+        title="Wrong rotations"
+        count={check.mismatches.length}
+        foldKey={`run:${runId}:cpl-check`}
+        chips={<StatChip n={check.mismatches.length} tone="warn">wrong rotation</StatChip>}
+      >
+        <div className="table-wrap">
+          <DataTable
+            rows={check.mismatches}
+            rowKey={(r) => r.ref}
+            columns={[
+              { key: "ref", label: "Designator", width: 18, className: "mono", get: (r) => r.ref },
+              { key: "lcsc", label: "Part", width: 34, className: "mono", get: (r) => r.lcsc,
+                render: (r) => r.component_id
+                  ? <Link className="comp-link" to={`/library/components/${r.component_id}`}>{r.lcsc}</Link>
+                  : r.lcsc },
+              { key: "file", label: "In the file", width: 24, numeric: true, get: (r) => r.file, render: (r) => `${r.file}°` },
+              { key: "expected", label: "JLC needs", width: 24, numeric: true, get: (r) => r.expected, render: (r) => `${r.expected}°` },
+            ]}
+          />
+        </div>
+      </FoldSection>
+    </>
+  );
+}
 
 /** Which layer a Gerber file holds, by its name, for the board's own colours. */
 const GERBER_LAYERS: [RegExp, string][] = [
@@ -242,6 +286,8 @@ export default function ProductionPanel({ runId }: { runId: number }) {
                   </FoldSection>
                 </>
               ) : null}
+
+              {info.cpl_check ? <CplCheckCard runId={runId} check={info.cpl_check} /> : null}
 
               {gerberFiles.length > 0 ? (
                 <>

@@ -41,6 +41,15 @@ Full reasoning in [docs/decisions/0006](../decisions/0006-sync-button-owns-libra
 
 ## The catalog and field visibility, in the backend
 
+- **`FT Rotation Offset` and `FT Position Offset` are component properties, and
+  reach the board through the symbol** (decision 0110). Like every property they
+  are emitted as hidden symbol fields; "Update PCB from Schematic" copies them to
+  the footprint, where the Fabrication Toolkit reads them. The value is the FULL
+  correction, so the plugin must run with "Auto Translate" OFF (it adds its own
+  name-keyed table otherwise). No footprint file carries the field any more: a
+  value on a footprint applied to every part on that land, and the correction
+  belongs to the part. Both keys are non-material, so writing one keeps the
+  sign-off and the verification.
 - **The KiCad HTTP catalog is on the symbol chooser's critical path — never
   load the whole library per request.** `EnumerateSymbolLib` walks every
   category and calls `parts/category/{id}.json` once each, so one slow handler

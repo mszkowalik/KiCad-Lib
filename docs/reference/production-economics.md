@@ -814,6 +814,17 @@ guard reads one company's stock is in [companies.md](companies.md).
   Gerber zips are stored extracted so the viewer can address layers; the
   viewer composites via `gerbv` (render image) in ONE call — per-file exports
   would each autoscale and misalign.
+- **A generated set carries a JLC BOM and CPL with the per-part rotation**
+  (decision 0110, `services/jlc_placement.py`). The placements come from the
+  `.kicad_pcb` itself (angle, side, `dnp`, `exclude_from_pos_files`), the
+  correction from each part's live `FT Rotation Offset` / `FT Position Offset`,
+  and the formula is `top = angle + offset`, `bottom = 180 - angle + offset`,
+  confirmed in JLC's preview. kicad-cli's `position.csv` inside the zip has no
+  correction and KiCad's column names: never hand it to JLC. `production_info`
+  checks the CPL of the CURRENT set (a repo export included) against the same
+  expectation and returns `cpl_check`; it compares rotation only, because a
+  position needs the board origin the file does not state. It warns, never
+  blocks, and never raises: a board that cannot be read gives no check.
 
 - **JLC private stock** (`services/jlc.py`): official OpenAPI at
   `open.jlcpcb.com`, endpoint `/overseas/openapi/component/getPrivateComponentLibrary`

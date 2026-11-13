@@ -139,6 +139,7 @@ is `NNNN-title-with-dashes.md`, four digits, no gaps skipped on purpose.
 | [0107](0107-a-plan-owns-its-drafts-and-a-date-is-fixed-or-follows-its-anchor.md) | Plan a contract with drafts the plan owns: a draft sales order, a planned batch and a draft purchase order carry `plan_id`, every planned date is a node that is fixed or follows an anchor, every part has a balance over time from the plan's chosen snapshot, a purchase proposal is computed and never stored, stock can be reserved for a plan, deleting a plan deletes its drafts and reservations in one undoable write batch | Backend, frontend, sales, production, stock |
 | [0108](0108-an-approved-alternate-stands-in-for-a-part-and-the-schematic-stays.md) | Approve an alternate on the part once, and let planning and buying follow it while the schematic stays (overrides item 7 of [0038](0038-a-substitution-belongs-to-the-batch.md) for an approved alternate) | Backend, frontend, library, production, planning |
 | [0109](0109-comp-type-is-the-discriminator-and-categories-stay-flat.md) | Keep `comp_type` as the discriminator inside a category, and keep the category tree flat | Library, review axis |
+| [0110](0110-the-jlc-rotation-belongs-to-the-part.md) | Store the JLC rotation on the component as the full correction, with Auto Translate off, and keep the footprints as they are | Backend, frontend, library, production, KiCad output |
 
 ## Proposed
 

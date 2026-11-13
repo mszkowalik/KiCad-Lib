@@ -17,6 +17,7 @@ from .routers import (
     activity,
     agent,
     alternates as alternates_router,
+    jlc_placement as jlc_placement_router,
     auth as auth_router,
     categories,
     changes,
@@ -148,6 +149,7 @@ app.include_router(view.router)
 app.include_router(projects.router)
 app.include_router(suppliers.router)
 app.include_router(alternates_router.router)
+app.include_router(jlc_placement_router.router)
 app.include_router(overhead_router.router)
 app.include_router(git_credentials.router)
 app.include_router(account.router)

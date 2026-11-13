@@ -1,5 +1,21 @@
 # Changelog
 
+## 2026-11-13 (JLC rotation per part)
+
+- **A component can carry its JLC pick-and-place correction** (decision 0110): `FT Rotation Offset`, the
+  full rotation in degrees, and `FT Position Offset` ("x,y" mm, y up) when its origin differs from JLC's.
+  Writing either keeps the part's production sign-off and its verification. The library emits both as
+  symbol fields, which the Fabrication Toolkit reads; run it with "Auto Translate" off, or its own table
+  is added on top.
+- **A generated production set now holds a JLC BOM and CPL** (`<board>-jlc-bom.csv`, `<board>-jlc-cpl.csv`)
+  next to the gerbers, with every part's correction applied, top and bottom. Before, the set held only
+  kicad-cli's position file, which JLC rotates wrong for about one part in five.
+- **A batch's Production tab warns when its CPL has a rotation JLC will place wrong**, and links each part
+  to the component that holds the correction. A check that passes draws nothing.
+- **Agents can measure a correction** with `measure_jlc_placement`: give it JLC's land for the part
+  (easyeda2kicad writes one) and it proposes both values. A value is a proposal until a JLC placement
+  preview confirms it.
+
 ## 2026-11-09 (the demand and shelf cards follow the company switcher)
 
 - **The Demand card on Orders follows the company switcher.** It counted both companies whatever the

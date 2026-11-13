@@ -27,7 +27,7 @@ from sqlalchemy.orm import Session
 
 from .. import models as M
 from ..config import settings
-from . import gitrepo, project_render, storage
+from . import gitrepo, jlc_placement, project_render, storage
 
 log = logging.getLogger(__name__)
 
@@ -159,8 +159,33 @@ def generate_fab(db: Session, run: M.ProductionRun, snapshot: M.ProjectSnapshot,
     rel = project_render.rel_checkout(snapshot.project_id, snapshot.sha, board["pcb"])
     key = project_render.render_key(snapshot.project_id, snapshot.sha, board["name"], "fab.zip")
     data, _media = project_render.cached_op(key, "fab", rel)
-    return create_set(db, run, "generated", [(f"{board['name']}-fab.zip", data)],
-                      comment=f"kicad-cli fab at {snapshot.ref_name or snapshot.sha[:10]}")
+    files = [(f"{board['name']}-fab.zip", data)]
+    comment = f"kicad-cli fab at {snapshot.ref_name or snapshot.sha[:10]}"
+    # The JLC BOM and CPL with the per-part rotation correction (decision 0110).
+    # kicad-cli's own position.csv inside the zip carries no correction and
+    # KiCad's column names; these two are what JLC is given.
+    expected = _expected_for(db, run, snapshot, board)
+    if expected is not None:
+        bom, cpl = jlc_placement.jlc_files(expected)
+        files += [(f"{board['name']}-jlc-bom.csv", bom), (f"{board['name']}-jlc-cpl.csv", cpl)]
+        if expected["no_offset"]:
+            comment += f"; {len(expected['no_offset'])} placed parts have no FT Rotation Offset yet"
+    return create_set(db, run, "generated", files, comment=comment)
+
+
+def _expected_for(db: Session, run: M.ProductionRun, snapshot: M.ProjectSnapshot,
+                  board: dict) -> dict | None:
+    """What a correct JLC export of this run's board says, or None when the
+    board file cannot be read. Never raises: a missing correction must not
+    stop a file set from being made or a run page from opening."""
+    if not board.get("pcb"):
+        return None
+    try:
+        pcb = gitrepo.show_file(snapshot.project_id, snapshot.sha, board["pcb"]).decode("utf-8", "replace")
+        return jlc_placement.expected_placements(db, snapshot.id, board["name"], run.variant or "", pcb)
+    except Exception as e:  # noqa: BLE001 — reported, never fatal
+        log.warning(f"jlc placement for run {run.id}: {e}")
+        return None
 
 
 def current_set(db: Session, run_id: int) -> M.ProductionFileSet | None:
@@ -266,7 +291,22 @@ def production_info(db: Session, run: M.ProductionRun, snapshot: M.ProjectSnapsh
         snapshot is not None and board is not None
         and repo_production_paths(snapshot.project_id, snapshot.sha, board)
     )
+    # Rotation check (decision 0110): the CPL in the current set against what a
+    # correct export says. It WARNS and never blocks, like the review gate. It
+    # catches a Fabrication Toolkit export made with Auto Translate on, a board
+    # whose symbols were not updated from the library, and a stale offset.
+    cpl_check = None
+    if cur is not None and snapshot is not None and board is not None:
+        cpl_file = next((f for f in cur.files if f.kind == "jlc_cpl"), None)
+        if cpl_file is not None:
+            expected = _expected_for(db, run, snapshot, board)
+            data = storage.get_bytes(cpl_file.minio_key) if expected is not None else None
+            if expected is not None and data:
+                cpl_check = jlc_placement.check_cpl(expected, data)
+                cpl_check["file"] = cpl_file.filename
+                cpl_check["no_offset"] = expected["no_offset"]
     return {
+        "cpl_check": cpl_check,
         "sets": [set_json(s) for s in sets],
         "current_set_id": cur.id if cur else None,
         "repo_available": repo_available,
