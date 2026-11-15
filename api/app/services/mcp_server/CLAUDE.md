@@ -28,7 +28,8 @@ reaches an agent only after the prompt downloads it again.
   [0101](../../../../docs/decisions/0101-the-platform-is-henry-on-its-own-hostname.md)).
   `server.py` still reads the old file when the new one is missing. Keep that
   fallback: a copy installed before the move has only the old file.
-- **The server is named `henry`, so its tools are `mcp__henry__*`.** It was
+- **The server is named `henry`, so its tools are `mcp__henry__*`** (through the
+  claude.ai connector, `mcp__claude_ai_Henry__*`, same names after the prefix). It was
   `kicad-library` before 2026-11-01. A copy registered under the old name keeps
   working only while its `KICAD_API_URL` answers without a redirect, and the
   old address now answers a 308 that `httpx` does not follow. Such an install

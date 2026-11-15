@@ -2,7 +2,7 @@
 name: kicad-platform-workflow
 description: "How changes become library: every write publishes immediately (no draft gate, no Proposals view), a publish regenerates the KiCad libraries and file mirror with no manual build, geometry publishes repoint the components on them, which changes carry a verification across a new version and which strip it, what mirror warnings mean, where the retired YAML pipeline went, and who handles platform setup. Use when asked how to publish, rebuild or regenerate."
 ---
-<!-- platform-skill: platform-workflow v12 — source of truth is the platform; check with list_skills, refresh with get_skill -->
+<!-- platform-skill: platform-workflow v13 — source of truth is the platform; check with list_skills, refresh with get_skill -->
 # Platform workflow — how changes become library
 
 Postgres is the source of truth. Every symbol, footprint, component and skill is
@@ -259,8 +259,10 @@ built from it — a personal KiCad URL, a PCM link, a datasheet link. Quote it t
 users. Never hand out the old `/lib` address, and never point an MCP server or
 a script at it: the MCP server uses `httpx`, which does not follow the
 redirect, so every call fails. The LAN IP `192.168.200.28` no longer serves the
-platform either: it only answers the old `/lib` redirect. The MCP server is now
-named `henry`, so its tools are `mcp__henry__*`.
+platform either: it only answers the old `/lib` redirect. The MCP server is named
+`henry`. Installed locally (stdio) its tools are `mcp__henry__*`; added as the
+claude.ai connector (`https://henry.disfunction.cc/mcp`, decision 0111) they are
+`mcp__claude_ai_Henry__*`. The tool names after the prefix are the same.
 
 **It is on the internet, so the access rules are not optional.** This document
 said "reachable from the local network only" until 2026-08-27, which was wrong
