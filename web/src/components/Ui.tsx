@@ -150,6 +150,9 @@ const STATUS_TONES: Record<string, string> = {
   // balance. `planned`, `fixed`, `proposal` and `sent` keep their tones.
   agreed: "ok",
   done: "ok",
+  // A feedback report the administrator accepted, or turned down.
+  planned: "warn",
+  declined: "neutral",
   late: "err",
   blocked: "err",
   short: "err",

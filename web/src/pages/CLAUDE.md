@@ -55,7 +55,7 @@ Where a new function goes is in [ui-map.md](../../../docs/reference/ui-map.md).
 The top bar has two groups. Engineering: Library, Projects, Simulator, Reviews.
 Operations, one section per job: Production (`/production/...`, making), Stock
 (`/stock...`), Sales (`/sales/...`), Finance (`/finance...`). `/` is Home. The user
-menu holds Account, History and Admin. Second-level navigation is `SectionNav` in
+menu holds Account, History, Feedback and Admin. Second-level navigation is `SectionNav` in
 `App.tsx`, and a section link opens the tab last used there. Every older address
 redirects with its parameters (`Moved` in `App.tsx`), so use the new paths in new
 code, and keep the redirects: saved links depend on them.

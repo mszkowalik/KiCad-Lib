@@ -24,6 +24,7 @@ import Deployments from "./pages/Deployments";
 import Bench from "./pages/Bench";
 import FlasherAdmin from "./pages/FlasherAdmin";
 import History, { Everyone } from "./pages/History";
+import Feedback from "./pages/Feedback";
 import Home from "./pages/Home";
 import Parameters from "./pages/Parameters";
 import FlashRunDetail from "./pages/FlashRunDetail";
@@ -243,6 +244,12 @@ function UserMenu() {
     <>
       <Link className="topbar-link" to="/account">Account</Link>
       <Link className="topbar-link" to="/history">History</Link>
+      <Link
+        className="topbar-link"
+        to={`/feedback?from=${encodeURIComponent(pathname)}`}
+      >
+        Feedback
+      </Link>
       <Link className="topbar-link" to="/admin">Admin</Link>
     </>
   );
@@ -388,6 +395,7 @@ function Shell() {
             <Route path="/history/writes" element={<ProductionWrites />} />
             <Route path="/history/all" element={<Everyone />} />
           </Route>
+          <Route path="/feedback" element={<Feedback />} />
           <Route path="/admin" element={<Admin />} />
           <Route path="/account" element={<Account />} />
           <Route path="/view" element={<FileViewer />} />

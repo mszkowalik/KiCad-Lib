@@ -11681,3 +11681,41 @@ export function blockAlternate(
 export function unblockAlternate(projectId: number, blockId: number): Promise<ComponentAlternates> {
   return request(`/api/projects/${projectId}/alternate-blocks/${blockId}`, { method: "DELETE" });
 }
+
+
+// ---------------------------------------------------------------- feedback
+/** A bug report or feature request about the platform (`routers/feedback.py`). */
+export interface FeedbackReport {
+  id: number;
+  kind: "bug" | "feature";
+  title: string;
+  body: string;
+  page: string;
+  status: "open" | "planned" | "done" | "declined";
+  response: string;
+  created_by: string;
+  /** How it was filed: browser, mcp or token. */
+  client: string;
+  created_at: string | null;
+  updated_at: string | null;
+}
+
+export function getFeedback(signal?: AbortSignal): Promise<FeedbackReport[]> {
+  return request("/api/feedback", { signal });
+}
+
+export function reportFeedback(body: {
+  kind: "bug" | "feature";
+  title: string;
+  body: string;
+  page: string;
+}): Promise<FeedbackReport> {
+  return request("/api/feedback", { method: "POST", headers: JSON_HEADERS, body: JSON.stringify(body) });
+}
+
+export function triageFeedback(
+  id: number,
+  body: { status?: FeedbackReport["status"]; response?: string },
+): Promise<FeedbackReport> {
+  return request(`/api/feedback/${id}`, { method: "PATCH", headers: JSON_HEADERS, body: JSON.stringify(body) });
+}

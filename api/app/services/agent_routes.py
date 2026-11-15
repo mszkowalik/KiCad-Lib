@@ -53,7 +53,18 @@ def _resolve(spec: dict, node, seen: tuple[str, ...] = ()):
         for part in ref.removeprefix("#/").split("/"):
             target = target[part]
         return _resolve(spec, target, (*seen, ref))
-    return {k: _resolve(spec, v, seen) for k, v in node.items() if k != "title"}
+    out = {}
+    for k, v in node.items():
+        if k == "title":
+            continue
+        if k == "properties" and isinstance(v, dict):
+            # The keys of `properties` are FIELD NAMES, not schema keywords: a
+            # body field called `title` must survive (it did not until
+            # 2026-11-15, and `report_feedback` lost its title).
+            out[k] = {name: _resolve(spec, sub, seen) for name, sub in v.items()}
+        else:
+            out[k] = _resolve(spec, v, seen)
+    return out
 
 
 def _tool(spec: dict, name: str, method: str, path: str, op: dict) -> RouteTool:

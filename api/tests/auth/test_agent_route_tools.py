@@ -144,3 +144,17 @@ def test_a_long_answer_is_cut(gated):
     who["user"] = ADMIN
     text = client.post("/api/agent/tools/get_settings", json={"max_chars": 20}, headers=AUTH).json()["result"]
     assert "cut at 20 of" in text
+
+
+def test_a_body_field_named_title_survives_the_schema_cleanup():
+    """`_resolve` drops the `title` KEYWORD; a field called `title` is data."""
+    from app.services import agent_routes
+
+    spec = {"components": {"schemas": {"In": {
+        "title": "In", "type": "object", "required": ["title"],
+        "properties": {"title": {"title": "Title", "type": "string"}, "kind": {"title": "Kind", "type": "string"}},
+    }}}}
+    out = agent_routes._resolve(spec, {"$ref": "#/components/schemas/In"})
+    assert "title" not in out
+    assert set(out["properties"]) == {"title", "kind"}
+    assert out["properties"]["title"] == {"type": "string"}

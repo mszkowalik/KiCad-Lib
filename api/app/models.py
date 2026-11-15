@@ -4066,6 +4066,29 @@ class UserSession(Base):
     __table_args__ = (Index("ix_user_session_user", "user_id"),)
 
 
+# --------------------------------------------------------------- feedback
+class FeedbackReport(Base):
+    """A bug report or a feature request about the platform itself, filed by a
+    person in the web app or by their agent over MCP. Shared by everyone who
+    signs in; an administrator sets the status and answers."""
+
+    __tablename__ = "feedback_reports"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    kind: Mapped[str] = mapped_column(String(10))  # bug | feature
+    title: Mapped[str] = mapped_column(String(200))
+    body: Mapped[str] = mapped_column(Text, default="")
+    # Where it happened: a page address, a tool name. Free text.
+    page: Mapped[str] = mapped_column(String(300), default="")
+    status: Mapped[str] = mapped_column(String(12), default="open")  # open | planned | done | declined
+    response: Mapped[str] = mapped_column(Text, default="")
+    created_by: Mapped[str] = mapped_column(String(120), default="")
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    # browser | mcp | token: how it was filed (`tracking.current().client`)
+    client: Mapped[str] = mapped_column(String(20), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
 # ------------------------------------------------- remote MCP OAuth (decision 0111)
 class OAuthClient(Base):
     """A client that registered itself (RFC 7591), e.g. a Claude connector.

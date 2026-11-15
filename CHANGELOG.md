@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-11-15 (report a bug or ask for a feature)
+
+- **User menu → Feedback** files a bug report or a feature request about the platform, and lists every report
+  with its status (open, planned, done, declined) and the administrator's answer. The link fills in the page
+  you came from. An administrator sets the status and answers in the open row.
+- **Agents file and read the same reports** with `report_feedback` and `list_feedback`, under your name.
+- **Fixed: an agent route tool lost a body field named `title`.** The schema cleanup dropped every `title`
+  key, the field name as well as the JSON-schema label. Only `report_feedback` had such a field.
+
 ## 2026-11-15 (Henry's agent tools from a phone)
 
 - **Claude on a phone can use Henry's agent tools** (decision 0111). Add `https://henry.disfunction.cc/mcp`

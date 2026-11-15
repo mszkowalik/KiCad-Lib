@@ -71,6 +71,8 @@ EXPECTED = {
     ("PUT", "/api/settings/{key}"),
     ("DELETE", "/api/settings/{key}"),
     # Other people's accounts.
+    # Triage of a bug report or feature request.
+    ("PATCH", "/api/feedback/{report_id}"),
     ("GET", "/api/users"),
     ("POST", "/api/users"),
     ("GET", "/api/users/{user_id}"),

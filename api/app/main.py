@@ -54,6 +54,7 @@ from .routers import (
     transfers as transfers_router,
     undo as undo_router,
     plans as plans_router,
+    feedback as feedback_router,
     users,
     view,
     orders,
@@ -172,6 +173,7 @@ app.include_router(organizers.router)
 app.include_router(activity.router)
 app.include_router(undo_router.router)
 app.include_router(plans_router.router)
+app.include_router(feedback_router.router)
 
 
 # Decision 0111: the remote MCP endpoint and its OAuth sign-in. Each of its

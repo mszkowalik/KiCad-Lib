@@ -22,6 +22,7 @@ do, so a function goes under the job it serves.
 | Operations | Finance | Know what it cost | Cost overview, Purchase invoices, KSeF, Company books, Exchange rates |
 | User menu | Account | One person's settings | Tokens, git accounts, KiCad setup, theme |
 | User menu | History | What changed, and undo | My changes, Write batches, Everyone |
+| User menu | Feedback | Report a bug, ask for a feature | One page: the form and every report |
 | User menu | Admin | The deployment | Configuration, Users, Companies, Fleet broker, Data jobs, System |
 
 `/` is Home: what waits for a person, across all sections.

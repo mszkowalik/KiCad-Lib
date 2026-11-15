@@ -12,7 +12,11 @@ tools over MCP.
   `routers/agent.py` calls the route through the whole app with the caller's
   credentials. The docstring is the tool's description, so write it for an agent.
   Write a tool here only when the answer must be shaped, or the part is named by
-  something the route does not take.
+  something the route does not take. The schema cleanup drops the `title`
+  KEYWORD only; a body field called `title` stays (`report_feedback` has one).
+- **Feedback** (`routers/feedback.py`): `report_feedback` files a bug report
+  or a feature request under the caller's name, `list_feedback` reads them. The
+  status and the answer are an admin's `PATCH`, reached with `api_request`.
 - **Every other route is reached through `api_routes` and `api_request`**, two local
   tools in the MCP server (decision 0088). They are not in `TOOLS` and are not
   counted by `GET /api/agent/tools`.

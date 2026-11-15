@@ -411,6 +411,8 @@ NOT_COMPANY_DATA: set[str] = {
     # a recorded change is reached by whose request it was, not by company:
     # your own, or anybody's for an administrator (decision 0089)
     "table@/api/undo/rows/",
+    # a bug report or feature request about the platform, shared by everyone
+    "report_id",
 }
 
 
