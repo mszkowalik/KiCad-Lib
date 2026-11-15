@@ -1,6 +1,6 @@
 # /// script
 # requires-python = ">=3.11"
-# dependencies = ["mcp>=1.2,<2", "httpx>=0.27", "anyio>=4"]
+# dependencies = ["mcp>=2.3,<3", "httpx>=0.27", "anyio>=4"]
 # ///
 """Henry MCP server — the agent tools of the Henry platform.
 
@@ -28,12 +28,13 @@ the platform side the API would have to call itself.
 
 Transport: stdio (Claude Code spawns this process).
 
-**`mcp` is pinned below 2.0 on purpose.** 2.0.0 removed the low-level
-``Server.list_tools()`` / ``Server.call_tool()`` decorators this file is built
-on, so an unpinned ``mcp>=1.2`` resolves to a version where the server dies at
-import with ``'Server' object has no attribute 'list_tools'`` — and uv resolves
-fresh on any cold start, so it breaks with no local change. Lift the pin only
-together with a port to the 2.x API.
+**`mcp` is pinned to the 2.x line (``>=2.3,<3``).** 2.x speaks protocol
+revision 2026-07-28 and still serves every 2025-era client from the same
+server. The handlers are passed to the low-level ``Server`` constructor
+(``on_list_tools`` / ``on_call_tool``); the 1.x decorators no longer exist.
+The upper bound is load-bearing: uv resolves fresh on any cold start, and a
+major release that changes this API again would break every install with no
+local change — as 2.0.0 did to the 1.x version of this file.
 
 **The token is read from a FILE when the environment does not carry one.**
 The setup prompt on the Account page registers this server with no secret in
@@ -67,8 +68,7 @@ from pathlib import Path
 import anyio
 import httpx
 from mcp import types
-from mcp.server.lowlevel import NotificationOptions, Server
-from mcp.server.models import InitializationOptions
+from mcp.server.lowlevel import Server
 from mcp.server.stdio import stdio_server
 
 API_URL = os.environ.get("KICAD_API_URL", "http://localhost:8020").rstrip("/")
@@ -95,7 +95,9 @@ def _read_token() -> tuple[str, str]:
 
 TOKEN, TOKEN_SOURCE = _read_token()
 
-server = Server("henry")
+# The script's own version, reported as serverInfo.version. Raise it when this
+# file changes, so a stale install can be told from a current one.
+SERVER_VERSION = "2.0.0"
 
 
 def _log(msg: str) -> None:
@@ -423,8 +425,7 @@ LOCAL_TOOLS = {UPLOAD_MODEL3D.name: (UPLOAD_MODEL3D, lambda a: _upload_model3d(a
                API_REQUEST.name: (API_REQUEST, lambda a: _api_request(a))}
 
 
-@server.list_tools()
-async def list_tools() -> list[types.Tool]:
+async def list_tools(_ctx, _params) -> types.ListToolsResult:
     try:
         catalog = await _get("/api/agent/tools")
     except httpx.HTTPStatusError as e:
@@ -439,14 +440,14 @@ async def list_tools() -> list[types.Tool]:
         _log(f"could not fetch tool catalog from {API_URL}: {e!r} "
              f"— is the platform API running?")
         raise
-    return [
+    return types.ListToolsResult(tools=[
         types.Tool(
             name=t["name"],
             description=t.get("description") or "",
             inputSchema=t["input_schema"],
         )
         for t in catalog
-    ] + [tool for tool, _fn in LOCAL_TOOLS.values()]
+    ] + [tool for tool, _fn in LOCAL_TOOLS.values()])
 
 
 def _to_content(result) -> list[types.ContentBlock]:
@@ -478,30 +479,33 @@ def _to_content(result) -> list[types.ContentBlock]:
     return [types.TextContent(type="text", text=json.dumps(result))]
 
 
-@server.call_tool()
-async def call_tool(name: str, arguments: dict | None) -> list[types.ContentBlock]:
+def _error(text: str) -> types.CallToolResult:
+    # isError marks a failed call as a tool error the agent can read and act
+    # on, not a protocol error.
+    return types.CallToolResult(content=[types.TextContent(type="text", text=text)], isError=True)
+
+
+async def call_tool(_ctx, params: types.CallToolRequestParams) -> types.CallToolResult:
+    name, arguments = params.name, params.arguments or {}
     if name in LOCAL_TOOLS:
         _tool, fn = LOCAL_TOOLS[name]
         try:
-            return [types.TextContent(type="text", text=await fn(arguments or {}))]
+            return types.CallToolResult(content=[types.TextContent(type="text", text=await fn(arguments))])
         except Exception as e:  # noqa: BLE001 — unreadable file, API down, …
-            return [types.TextContent(type="text", text=f"Error calling {name!r}: {e!r}")]
+            return _error(f"Error calling {name!r}: {e!r}")
     try:
-        data = await _post(f"/api/agent/tools/{name}", arguments or {})
+        data = await _post(f"/api/agent/tools/{name}", arguments)
     except httpx.HTTPStatusError as e:
         detail = e.response.text[:500]
         if e.response.status_code == 401:
             detail += f" — {_TOKEN_HELP}"
-        return [types.TextContent(
-            type="text",
-            text=f"Error calling {name!r}: HTTP {e.response.status_code} — {detail}",
-        )]
+        return _error(f"Error calling {name!r}: HTTP {e.response.status_code} — {detail}")
     except Exception as e:  # noqa: BLE001 — connection refused, timeout, etc.
-        return [types.TextContent(
-            type="text",
-            text=f"Error calling {name!r}: {e!r}. Is the platform API running at {API_URL}?",
-        )]
-    return _to_content(data.get("result"))
+        return _error(f"Error calling {name!r}: {e!r}. Is the platform API running at {API_URL}?")
+    return types.CallToolResult(content=_to_content(data.get("result")))
+
+
+server = Server("henry", version=SERVER_VERSION, on_list_tools=list_tools, on_call_tool=call_tool)
 
 
 async def _main() -> None:
@@ -509,18 +513,7 @@ async def _main() -> None:
     if not TOKEN:
         _log(f"no token — {_TOKEN_HELP}")
     async with stdio_server() as (read, write):
-        await server.run(
-            read,
-            write,
-            InitializationOptions(
-                server_name="henry",
-                server_version="0.1.0",
-                capabilities=server.get_capabilities(
-                    notification_options=NotificationOptions(),
-                    experimental_capabilities={},
-                ),
-            ),
-        )
+        await server.run(read, write, server.create_initialization_options())
 
 
 if __name__ == "__main__":

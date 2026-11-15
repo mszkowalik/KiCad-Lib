@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-11-15 (the MCP server speaks the 2026-07-28 protocol)
+
+- **The `henry` MCP server runs on the MCP Python SDK 2.x** (`mcp>=2.3,<3`) and speaks protocol revision
+  2026-07-28. It still serves a client that only speaks 2025-11-25. The 1.x SDK it used before gets
+  security fixes only. An agent picks the new copy up when the Account page prompt downloads it again.
+- **A failed tool call is now marked as an error** (`isError`) instead of reading as an ordinary result.
+- **The server reports its own version** (`2.0.0`) to the agent. Every earlier copy reported `0.1.0`.
+
 ## 2026-11-13 (JLC rotation per part)
 
 - **A component can carry its JLC pick-and-place correction** (decision 0110): `FT Rotation Offset`, the

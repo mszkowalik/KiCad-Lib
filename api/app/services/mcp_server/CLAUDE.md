@@ -106,12 +106,21 @@ token file (`KICAD_MCP_TOKEN_FILE` moves it).
 `read_datasheet`'s list-of-content-blocks return (text + base64 PNG pages) is
 converted to MCP image content; every other tool returns a JSON string as text.
 
-- **`mcp` is pinned `>=1.2,<2`, and the pin is load-bearing.** mcp 2.0.0
-  removed the low-level `Server.list_tools()` / `Server.call_tool()`
-  decorators this file is built on, so the unpinned spec resolved to a version
-  that died at import with `'Server' object has no attribute 'list_tools'`.
-  `uv` resolves fresh on a cold start, so it would have broken with no local
-  change (caught 2026-08-24). Lift the pin only with a port to the 2.x API.
+- **`mcp` is pinned `>=2.3,<3`, and the upper bound is load-bearing.** `uv`
+  resolves fresh on a cold start, so a major release that changes the API
+  breaks every install with no local change. That happened once: mcp 2.0.0
+  removed the 1.x `Server.list_tools()` / `Server.call_tool()` decorators, and
+  the unpinned 1.x file died at import (caught 2026-08-24). The port to 2.x
+  (2026-11-15) passes the handlers to the constructor instead
+  (`Server(on_list_tools=…, on_call_tool=…)`). 2.x speaks protocol 2026-07-28
+  and still serves a 2025-era client from the same process — both were run
+  against production before the port shipped. Port before you raise the bound.
+- **`SERVER_VERSION` is the script's own version**, reported to the client as
+  `serverInfo.version`. Raise it when `server.py` changes, so a stale install
+  can be told from a current one. It was `0.1.0` for every copy before 2.0.0.
+- **A failed proxied call returns `isError: true`** with the HTTP status and
+  detail as text, so the agent reads it as a tool error. The local tools still
+  return their refusals ("No file at …") as plain results.
 - **Two tools are LOCAL, not proxied: `upload_model3d`, and
   `attach_invoice_file`, which files an invoice original from this disk with its
   supplier document (`/api/run-documents/{id}/attachment`).** `upload_model3d` (`LOCAL_TOOLS`, merged
