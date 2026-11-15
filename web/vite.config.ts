@@ -6,7 +6,10 @@ import { defineConfig } from "vite";
 // needs no VITE_API_URL. Override for an API on another host or port.
 const apiTarget = process.env.VITE_API_PROXY ?? "http://localhost:8020";
 
-const apiPaths = ["/api", "/kicad", "/files", "/docs", "/redoc", "/openapi.json"];
+// The last seven are the remote MCP endpoint and its OAuth server (decision
+// 0111), kept in step with `services/mcp_remote.PATHS`.
+const apiPaths = ["/api", "/kicad", "/files", "/docs", "/redoc", "/openapi.json",
+  "/mcp", "/authorize", "/token", "/register", "/revoke", "/.well-known/oauth-", "/oauth/"];
 
 export default defineConfig(({ command }) => ({
   // Relative asset urls on build, so the <base href> injected into index.html

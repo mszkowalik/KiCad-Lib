@@ -62,6 +62,12 @@ _OPEN_PATHS = (
 # versions only, and the handler enforces that.
 _OPEN_PREFIXES = (
     "/api/flasher/files/",
+    # Decision 0111: the remote MCP endpoint and its OAuth server. The SDK
+    # refuses /mcp without a valid token itself, with the RFC 9728
+    # `WWW-Authenticate` a client needs to find the sign-in; this gate's bare
+    # 401 would leave a connector nowhere to go. The OAuth routes must be
+    # reachable signed out, because they ARE the sign-in.
+    "/mcp", "/.well-known/oauth-", "/authorize", "/token", "/register", "/revoke", "/oauth/",
 )
 
 # Paths where `?t=<token>` is accepted, because the client cannot send headers.

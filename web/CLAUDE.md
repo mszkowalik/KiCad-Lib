@@ -442,8 +442,8 @@ self-contained — never leave a fact only in a sibling key.
 ### The API is same-origin — `API_URL` defaults to `""`
 
 `API_URL` in `src/api.ts` is a **path prefix**, and its default is the empty
-string. In the deployed image nginx serves the SPA and proxies `/api`, `/kicad`
-and `/files` to the api container (`web/default.conf.template`, whose
+string. In the deployed image nginx serves the SPA and proxies `/api`, `/kicad`,
+`/files` and the remote MCP paths (decision 0111) to the api container (`web/default.conf.template`, whose
 `${API_UPSTREAM}` is substituted at container start so a stack sharing a docker
 network can point at a prefixed service name); `npm run dev` proxies the
 same paths (`vite.config.ts`, target `VITE_API_PROXY`). Vite inlines

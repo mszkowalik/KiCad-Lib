@@ -17,7 +17,8 @@ headers. That is a deliberate, scoped exception — see `main.py::_QUERY_TOKEN_P
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from .. import models as M
@@ -80,6 +81,8 @@ def user_json(db: Session, user: M.User, *, reveal: bool = False) -> dict:
         "id": user.id,
         "username": user.username,
         "display_name": user.display_name,
+        # Decision 0111: the Google account a remote MCP sign-in must come from.
+        "email": user.email or "",
         "role": user.role,
         # Decision 0063: the companies the user belongs to (an admin sees all).
         "company_ids": sorted(cid for (cid,) in db.query(M.UserCompany.company_id).filter_by(user_id=user.id)),
@@ -114,7 +117,23 @@ class UserIn(BaseModel):
     username: str
     password: str
     display_name: str = ""
+    email: str = Field(default="", max_length=254)
     role: str = "user"
+
+
+def _email(db: Session, raw: str, user_id: int | None) -> str | None:
+    """A cleaned e-mail, or None for empty. Refuses a malformed one and one
+    another account already carries (decision 0111)."""
+    email = (raw or "").strip().lower()
+    if not email:
+        return None
+    local, at, domain = email.partition("@")
+    if not (local and at and "." in domain) or " " in email:
+        raise HTTPException(422, f"{email!r} is not an e-mail address")
+    clash = db.query(M.User).filter(func.lower(M.User.email) == email, M.User.id != (user_id or 0)).first()
+    if clash is not None:
+        raise HTTPException(409, f"user {clash.username!r} already has this e-mail")
+    return email
 
 
 @router.post("")
@@ -134,6 +153,7 @@ def create_user(body: UserIn, db: Session = Depends(get_db),
         username=username,
         password_hash=auth.hash_password(body.password),
         display_name=body.display_name.strip(),
+        email=_email(db, body.email, None),
         role=body.role,
     )
     db.add(user)
@@ -151,6 +171,8 @@ def create_user(body: UserIn, db: Session = Depends(get_db),
 class UserPatch(BaseModel):
     username: str | None = None
     display_name: str | None = None
+    # Empty clears it. A change ends the remote MCP sign-ins made with the old one.
+    email: str | None = Field(default=None, max_length=254)
     role: str | None = None
     active: bool | None = None
     password: str | None = None
@@ -188,6 +210,15 @@ def update_user(user_id: int, body: UserPatch, db: Session = Depends(get_db),
     if body.display_name is not None:
         user.display_name = body.display_name.strip()
         changed["display_name"] = user.display_name
+    if body.email is not None:
+        email = _email(db, body.email, user.id)
+        if email != user.email:
+            # A token was issued to the Google account that matched the OLD
+            # e-mail; it must not outlive the link that justified it.
+            db.query(M.OAuthToken).filter(M.OAuthToken.user_id == user.id,
+                                          M.OAuthToken.revoked_at.is_(None)).update({"revoked_at": auth.utcnow()})
+            changed["email"] = email or ""
+            user.email = email
     if body.role is not None and body.role != user.role:
         if body.role not in ("admin", "user"):
             raise HTTPException(422, "role must be 'admin' or 'user'")

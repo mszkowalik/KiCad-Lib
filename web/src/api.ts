@@ -1324,6 +1324,8 @@ export interface PlatformUser {
   id: number;
   username: string;
   display_name: string;
+  /** The Google account a remote MCP sign-in must come from (decision 0111). "" = none. */
+  email: string;
   role: string;
   active: boolean;
   created_at: string | null;
@@ -1370,6 +1372,7 @@ export function createUser(body: {
   username: string;
   password: string;
   display_name?: string;
+  email?: string;
   role?: string;
 }): Promise<PlatformUser> {
   return request("/api/users", {
@@ -1384,6 +1387,7 @@ export function updateUser(
   body: {
     username?: string;
     display_name?: string;
+    email?: string;
     role?: string;
     active?: boolean;
     password?: string;

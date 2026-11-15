@@ -60,6 +60,7 @@ Run standalone:  uv run --script api/app/services/mcp_server/server.py
 """
 from __future__ import annotations
 
+import contextvars
 import json
 import os
 import sys
@@ -97,7 +98,7 @@ TOKEN, TOKEN_SOURCE = _read_token()
 
 # The script's own version, reported as serverInfo.version. Raise it when this
 # file changes, so a stale install can be told from a current one.
-SERVER_VERSION = "2.0.0"
+SERVER_VERSION = "2.1.0"
 
 
 def _log(msg: str) -> None:
@@ -109,25 +110,42 @@ _TOKEN_HELP = (f"save a live token from the platform's Account page in {TOKEN_FI
                "(or set KICAD_MCP_TOKEN), then restart the MCP server")
 
 
+# The remote endpoint in henry-api (decision 0111, `services/mcp_remote.py`)
+# runs these same handlers in process: it sets this to the signed-in caller's
+# (token, httpx transport) for one request. Unset, every call goes over the
+# network to API_URL with TOKEN, which is the stdio case.
+CALLER: contextvars.ContextVar[tuple[str, httpx.AsyncBaseTransport] | None] = contextvars.ContextVar(
+    "henry_mcp_caller", default=None)
+
+
+def _client(timeout: float) -> httpx.AsyncClient:
+    caller = CALLER.get()
+    if caller is None:
+        return httpx.AsyncClient(timeout=timeout, base_url=API_URL)
+    return httpx.AsyncClient(timeout=timeout, base_url="http://henry-api", transport=caller[1])
+
+
 def _headers() -> dict[str, str]:
     # The platform files an agent's changes under client "mcp" (decision 0089).
     h = {"accept": "application/json", "x-kicad-client": "mcp"}
-    if TOKEN:
-        h["authorization"] = f"Bearer {TOKEN}"
+    caller = CALLER.get()
+    token = caller[0] if caller is not None else TOKEN
+    if token:
+        h["authorization"] = f"Bearer {token}"
     return h
 
 
 async def _get(path: str):
-    async with httpx.AsyncClient(timeout=120.0) as client:
-        r = await client.get(API_URL + path, headers=_headers())
+    async with _client(120.0) as client:
+        r = await client.get(path, headers=_headers())
         r.raise_for_status()
         return r.json()
 
 
 async def _post(path: str, body: dict):
-    async with httpx.AsyncClient(timeout=300.0) as client:
+    async with _client(300.0) as client:
         r = await client.post(
-            API_URL + path,
+            path,
             headers={**_headers(), "content-type": "application/json"},
             json=body,
         )
@@ -392,8 +410,8 @@ async def _api_request(args: dict) -> str:
         return ("A DELETE needs confirm=true. Say what it removes, ask the user, and repeat "
                 "the call with confirm=true only after they agree.")
     body = args.get("body")
-    async with httpx.AsyncClient(timeout=300.0) as client:
-        r = await client.request(method, API_URL + path, params=args.get("query") or None,
+    async with _client(300.0) as client:
+        r = await client.request(method, path, params=args.get("query") or None,
                                  headers=_headers(), json=body if body is not None else None)
     head = f"HTTP {r.status_code} {method} {path}"
     if r.status_code == 401:

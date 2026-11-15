@@ -3993,6 +3993,10 @@ class User(Base):
     # the answer, because the choice has to be applied before the first paint
     # and `/api/auth/me` has not answered yet then (`web/src/theme.ts`).
     theme: Mapped[str] = mapped_column(String(10), default="dark")
+    # The Google account a remote MCP sign-in must come from (decision 0111).
+    # An admin writes it; NULL means this user cannot sign in with Google.
+    # Stored lowercase, unique by `ux_users_email`.
+    email: Mapped[str | None] = mapped_column(String(254), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
@@ -4060,6 +4064,68 @@ class UserSession(Base):
     user: Mapped[User] = relationship(back_populates="sessions")
 
     __table_args__ = (Index("ix_user_session_user", "user_id"),)
+
+
+# ------------------------------------------------- remote MCP OAuth (decision 0111)
+class OAuthClient(Base):
+    """A client that registered itself (RFC 7591), e.g. a Claude connector.
+    `info` is the SDK's `OAuthClientInformationFull` as JSON."""
+
+    __tablename__ = "oauth_clients"
+
+    client_id: Mapped[str] = mapped_column(String(100), primary_key=True)
+    info: Mapped[dict] = mapped_column(JSONB)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class OAuthRequest(Base):
+    """An /authorize request waiting for the Google sign-in. Used once."""
+
+    __tablename__ = "oauth_requests"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    client_id: Mapped[str] = mapped_column(String(100))
+    params: Mapped[dict] = mapped_column(JSONB)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # The Google leg: state, nonce and PKCE verifier, set when the user leaves for Google.
+    google_state: Mapped[str | None] = mapped_column(String(64), nullable=True, unique=True)
+    google_nonce: Mapped[str] = mapped_column(String(64), default="")
+    google_verifier: Mapped[str] = mapped_column(String(128), default="")
+
+
+class OAuthCode(Base):
+    """An authorization code, stored as its SHA-256. Used once, five minutes."""
+
+    __tablename__ = "oauth_codes"
+
+    code_hash: Mapped[str] = mapped_column(String(64), primary_key=True)
+    client_id: Mapped[str] = mapped_column(String(100))
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+    data: Mapped[dict] = mapped_column(JSONB)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class OAuthToken(Base):
+    """An access or refresh token, stored as its SHA-256. `pair` is the hash
+    of the other token of the same issue, so revoking one revokes both."""
+
+    __tablename__ = "oauth_tokens"
+
+    token_hash: Mapped[str] = mapped_column(String(64), primary_key=True)
+    kind: Mapped[str] = mapped_column(String(10))  # access | refresh
+    client_id: Mapped[str] = mapped_column(String(100))
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+    scopes: Mapped[list] = mapped_column(JSONB, default=list)
+    resource: Mapped[str | None] = mapped_column(Text, nullable=True)
+    pair: Mapped[str] = mapped_column(String(64), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    __table_args__ = (Index("ix_oauth_token_user", "user_id"),)
 
 
 class LoginAttempt(Base):

@@ -143,7 +143,9 @@ The credential is admin-only and encrypted — never an env var, never a Setup k
 
 The platform is on the internet at `https://henry.disfunction.cc` and the API is
 **default-deny**: a browser needs a session, every machine client needs a
-personal API token. Full rules in `api/CLAUDE.md` (backend) and `web/CLAUDE.md`
+personal API token, and a remote MCP client (Claude on a phone) needs a
+one-hour OAuth token from a Google sign-in (decision
+[0111](docs/decisions/0111-a-remote-mcp-endpoint-signs-in-with-google.md)). Full rules in `api/CLAUDE.md` (backend) and `web/CLAUDE.md`
 (the sign-in gate). Three facts that belong at this level:
 
 - **Accounts are made by an admin, on Admin → Users.** No sign-up, no password

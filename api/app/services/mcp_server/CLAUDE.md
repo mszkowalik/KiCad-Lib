@@ -139,6 +139,13 @@ converted to MCP image content; every other tool returns a JSON string as text.
   drift from the gate. A DELETE needs `confirm`. When agents use one route
   often, tag it (`docs/reference/agent-tools.md`); the general pair is the fallback.
 
+## The remote endpoint (`services/mcp_remote.py`, decision 0111)
+
+henry-api also serves the tools at `/mcp` for Claude on a phone, signed in with
+Google. **It runs this file's handlers** with `server.CALLER` set, so every new
+HTTP call here must build its client with `_client()`. The rules are in
+[docs/reference/remote-mcp.md](../../../../docs/reference/remote-mcp.md).
+
 **Configuration:** the Account page's prompt registers the downloaded copy at
 user scope with the PUBLIC `KICAD_API_URL`, so the server works away from the
 LAN as well as on it. **A token must reach the server** — the agent surface is

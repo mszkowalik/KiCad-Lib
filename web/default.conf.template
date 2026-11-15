@@ -49,6 +49,17 @@ server {
         include /etc/nginx/nginx-api-proxy.inc;
     }
 
+    # Decision 0111: the remote MCP endpoint, the OAuth server the MCP SDK
+    # serves at the ROOT (their paths are fixed by the SDK), and the Google
+    # sign-in pages. Keep in step with `services/mcp_remote.PATHS`.
+    location ~ ^/(mcp|authorize|token|register|revoke)$ {
+        include /etc/nginx/nginx-api-proxy.inc;
+    }
+
+    location ~ ^/(\.well-known/oauth-|oauth/) {
+        include /etc/nginx/nginx-api-proxy.inc;
+    }
+
     # ------------------------------------------------------------- the SPA
     # WebAssembly for the STEP viewer. Defensive: WebAssembly.instantiate-
     # Streaming rejects a wrong content type, and older mime.types files do not

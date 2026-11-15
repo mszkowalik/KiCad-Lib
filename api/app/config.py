@@ -51,6 +51,12 @@ class Settings(BaseSettings):
     # locally stored datasheets injected into generated symbols.
     public_base_url: str = "http://localhost:8020"
 
+    # The Google OAuth client the remote MCP sign-in uses (decision 0111). Both
+    # empty means the sign-in page says so and issues no token. Its redirect
+    # URI is `<public_base_url>/oauth/google/callback`.
+    google_client_id: str = ""
+    google_client_secret: str = ""
+
     # The address a PROGRAMMED DEVICE fetches its berryware from, when that is
     # not the address a browser uses. Empty means "the same", and that is the
     # right answer almost everywhere.

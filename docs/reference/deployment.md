@@ -10,7 +10,9 @@ every push to `main` (pull requests build without pushing);
 
 - **The deployed UI is same-origin.** The `web` image is a `prod` Dockerfile
   target: the built SPA served by nginx, which reverse-proxies `/api`,
-  `/kicad`, `/files`, `/docs` and `/openapi.json` to the api container. Vite
+  `/kicad`, `/files`, `/docs` and `/openapi.json` to the api container, and
+  the remote MCP paths (`/mcp`, the OAuth endpoints at the root, `/.well-known/oauth-*`,
+  `/oauth/*`, decision [0111](../decisions/0111-a-remote-mcp-endpoint-signs-in-with-google.md)). Vite
   inlines env vars at build time, so a baked-in API URL would tie an image to
   one hostname — `src/api.ts` therefore defaults `API_URL` to `""`. Never
   reintroduce an absolute default (see `web/CLAUDE.md`).
@@ -56,6 +58,11 @@ is very slow under emulation.
   shared `nginx.conf`, and `henry.env`. The wildcard certificate and the
   dnsmasq `address=/disfunction.cc/` line already cover every subdomain.
   The server's own `HOMELAB.md` §3 lists them.
+- **The remote MCP sign-in needs `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`
+  in `henry.env`**, and the Google client must list
+  `<PUBLIC_BASE_URL>/oauth/google/callback` as a redirect URI (decision
+  [0111](../decisions/0111-a-remote-mcp-endpoint-signs-in-with-google.md)).
+  Without them `/mcp` still answers, and the sign-in page says it is not set up.
 - **`https://disfunction.cc/lib/…` is a 307 to the same path on henry, and it
   stays.** Every datasheet link in a schematic made before 2026-11-01, every
   KiCad PCM repository URL pasted before then, and every installed sync plugin

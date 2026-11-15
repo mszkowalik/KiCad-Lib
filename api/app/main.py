@@ -173,6 +173,32 @@ app.include_router(activity.router)
 app.include_router(undo_router.router)
 app.include_router(plans_router.router)
 
+
+# Decision 0111: the remote MCP endpoint and its OAuth sign-in. Each of its
+# paths is a plain route to the Starlette app the SDK builds, so nothing else
+# falls through to it. The SDK checks the token on /mcp itself, which is why
+# the gate lists these paths as open (authgate._OPEN_PREFIXES).
+from starlette.routing import Route as _Route  # noqa: E402
+
+from .services import mcp_remote  # noqa: E402
+
+_mcp_app = mcp_remote.build_app()
+for _r in _mcp_app.routes:
+    app.router.routes.append(_Route(_r.path, endpoint=_mcp_app))
+
+
+@app.on_event("startup")
+async def _mcp_start() -> None:
+    # The SDK's session manager needs its task group open for the life of the
+    # process; startup and shutdown run in the same lifespan task.
+    app.state.mcp_session = mcp_remote.SERVER.session_manager.run()
+    await app.state.mcp_session.__aenter__()
+
+
+@app.on_event("shutdown")
+async def _mcp_stop() -> None:
+    await app.state.mcp_session.__aexit__(None, None, None)
+
 # Published-state file mirror, served read-only (sync + downloads).
 app.mount("/files", StaticFiles(directory=settings.mirror_dir), name="files")
 
@@ -858,6 +884,12 @@ _PHASE1_DDL = (
      "ALTER TABLE component_suppliers ADD COLUMN IF NOT EXISTS qty_at_once integer"),
     ("component_suppliers.lead_source",
      "ALTER TABLE component_suppliers ADD COLUMN IF NOT EXISTS lead_source varchar(300) NOT NULL DEFAULT ''"),
+    # Decision 0111: the Google e-mail a remote MCP sign-in must match. The
+    # oauth_* tables arrive through create_all.
+    ("users.email",
+     "ALTER TABLE users ADD COLUMN IF NOT EXISTS email varchar(254)"),
+    ("ux_users_email",
+     "CREATE UNIQUE INDEX IF NOT EXISTS ux_users_email ON users (lower(email)) WHERE email IS NOT NULL"),
     ("component_suppliers.lead_as_of",
      "ALTER TABLE component_suppliers ADD COLUMN IF NOT EXISTS lead_as_of varchar(10) NOT NULL DEFAULT ''"),
     ("component_suppliers.at_once_days",

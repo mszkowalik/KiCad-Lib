@@ -145,11 +145,34 @@ def resolve_token(db: Session, raw: str) -> M.User | None:
         .first()
     )
     if tok is None:
-        return None
+        return _resolve_oauth_token(db, raw)
     user = db.get(M.User, tok.user_id)
     if user is None or not user.active:
         return None
     now = utcnow()
+    last = _aware(tok.last_used_at)
+    if last is None or now - last > _TOUCH_INTERVAL:
+        tok.last_used_at = now
+        db.commit()
+    return user
+
+
+def _resolve_oauth_token(db: Session, raw: str) -> M.User | None:
+    """The user behind a remote-MCP OAuth access token (decision 0111), while
+    it is unexpired and unrevoked and its user is active. It is a Henry
+    credential like a personal token, only shorter-lived."""
+    now = utcnow()
+    tok = (
+        db.query(M.OAuthToken)
+        .filter(M.OAuthToken.token_hash == _digest(raw), M.OAuthToken.kind == "access",
+                M.OAuthToken.revoked_at.is_(None), M.OAuthToken.expires_at > now)
+        .first()
+    )
+    if tok is None:
+        return None
+    user = db.get(M.User, tok.user_id)
+    if user is None or not user.active:
+        return None
     last = _aware(tok.last_used_at)
     if last is None or now - last > _TOUCH_INTERVAL:
         tok.last_used_at = now
@@ -221,6 +244,10 @@ def end_all_sessions(db: Session, user_id: int) -> int:
     rows = db.query(M.UserSession).filter(M.UserSession.user_id == user_id).all()
     for row in rows:
         db.delete(row)
+    # A remote MCP sign-in is a session too (decision 0111): its access and
+    # refresh tokens end with the others.
+    db.query(M.OAuthToken).filter(M.OAuthToken.user_id == user_id,
+                                  M.OAuthToken.revoked_at.is_(None)).update({"revoked_at": utcnow()})
     return len(rows)
 
 

@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-11-15 (Henry's agent tools from a phone)
+
+- **Claude on a phone can use Henry's agent tools** (decision 0111). Add `https://henry.disfunction.cc/mcp`
+  as a custom connector on claude.ai and sign in with Google. The Google e-mail must be the one an admin set
+  on your account under Admin → Users (new field). Calls run as you, with the same permissions, history and
+  undo as the local server. The two tools that read a file on your own computer stay local only.
+- **Admin → Users has a Google e-mail per account.** Changing or clearing it ends that account's phone
+  sign-ins.
+
 ## 2026-11-15 (the MCP server speaks the 2026-07-28 protocol)
 
 - **The `henry` MCP server runs on the MCP Python SDK 2.x** (`mcp>=2.3,<3`) and speaks protocol revision

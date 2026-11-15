@@ -140,6 +140,7 @@ is `NNNN-title-with-dashes.md`, four digits, no gaps skipped on purpose.
 | [0108](0108-an-approved-alternate-stands-in-for-a-part-and-the-schematic-stays.md) | Approve an alternate on the part once, and let planning and buying follow it while the schematic stays (overrides item 7 of [0038](0038-a-substitution-belongs-to-the-batch.md) for an approved alternate) | Backend, frontend, library, production, planning |
 | [0109](0109-comp-type-is-the-discriminator-and-categories-stay-flat.md) | Keep `comp_type` as the discriminator inside a category, and keep the category tree flat | Library, review axis |
 | [0110](0110-the-jlc-rotation-belongs-to-the-part.md) | Store the JLC rotation on the component as the full correction, with Auto Translate off, and keep the footprints as they are | Backend, frontend, library, production, KiCad output |
+| [0111](0111-a-remote-mcp-endpoint-signs-in-with-google.md) | Serve a remote MCP endpoint at `/mcp` from henry-api, with Henry as the OAuth server and a Google sign-in that must match the e-mail an admin set on the account | Backend, access control, deployment, agent |
 
 ## Proposed
 

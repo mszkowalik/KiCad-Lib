@@ -12,6 +12,9 @@ dependencies = [
     "pydantic-settings>=2.3",
     "pyyaml>=6.0",
     "httpx>=0.27",
+    # The remote MCP endpoint and its OAuth server (decision 0111). The same SDK
+    # line as the stdio server; it brings PyJWT, which checks Google ID tokens.
+    "mcp>=2.3,<3",
     "anthropic>=0.117",
     "pymupdf>=1.26",
     # Layout-aware markdown for the per-page datasheet index. Same engine and

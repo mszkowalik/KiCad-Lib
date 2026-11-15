@@ -55,6 +55,7 @@ function UserDetail({
   const { companies } = useAuth();
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [email, setEmail] = useState(user.email);
 
   async function run(action: () => Promise<PlatformUser | { ok: boolean }>) {
     setBusy(true);
@@ -80,6 +81,28 @@ function UserDetail({
       </p>
       <CopyRow label="PCM repository" value={user.repository_url} />
       <CopyRow label="KiCad HTTP library" value={user.httplib_url} />
+
+      {/* Decision 0111: Claude on a phone signs in to /mcp with Google, and the
+          Google e-mail must be this one. Changing it ends those sign-ins. */}
+      <div className="field-row">
+        <Field label="Google e-mail (remote MCP sign-in)">
+          <input
+            className="text"
+            type="email"
+            value={email}
+            placeholder="none: cannot sign in with Google"
+            onChange={(e) => setEmail(e.target.value)}
+            autoComplete="off"
+          />
+        </Field>
+        <button
+          className="btn btn-sm"
+          disabled={busy || email.trim().toLowerCase() === user.email}
+          onClick={() => void run(() => updateUser(user.id, { email: email.trim() }))}
+        >
+          Save e-mail
+        </button>
+      </div>
 
       {/* Decision 0063: the companies whose data this user sees. An admin
           sees every company whatever is ticked here. */}
@@ -211,6 +234,7 @@ export default function UsersCard() {
   );
   const [username, setUsername] = useState("");
   const [displayName, setDisplayName] = useState("");
+  const [newEmail, setNewEmail] = useState("");
   const [password, setPassword] = useState("");
   const [role, setRole] = useState("user");
   const [busy, setBusy] = useState(false);
@@ -223,10 +247,12 @@ export default function UsersCard() {
         username,
         password,
         display_name: displayName,
+        email: newEmail.trim(),
         role,
       });
       setUsername("");
       setDisplayName("");
+      setNewEmail("");
       setPassword("");
       setRole("user");
       load();
@@ -350,6 +376,15 @@ export default function UsersCard() {
             className="text"
             value={displayName}
             onChange={(e) => setDisplayName(e.target.value)}
+            autoComplete="off"
+          />
+        </Field>
+        <Field label="Google e-mail (optional)">
+          <input
+            className="text"
+            type="email"
+            value={newEmail}
+            onChange={(e) => setNewEmail(e.target.value)}
             autoComplete="off"
           />
         </Field>
