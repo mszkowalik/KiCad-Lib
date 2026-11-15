@@ -180,6 +180,46 @@ def _resolve_oauth_token(db: Session, raw: str) -> M.User | None:
     return user
 
 
+# Decision 0112: a remote agent cannot hand a file on its user's computer to
+# the server, so the remote MCP tool hands out a ticket the agent's own shell
+# sends with the file. A ticket is good for ONE request, to ONE method and path,
+# for ten minutes, as the user who asked for it.
+UPLOAD_TICKET_PREFIX = "7u_"
+UPLOAD_TICKET_TTL = timedelta(minutes=10)
+
+
+def mint_upload_ticket(db: Session, user: M.User, method: str, path: str) -> str:
+    """A single-use credential for `method path` as `user`. The caller commits."""
+    raw = UPLOAD_TICKET_PREFIX + secrets.token_urlsafe(32)
+    db.add(M.OAuthToken(token_hash=_digest(raw), kind="upload", client_id="upload-ticket", user_id=user.id,
+                        scopes=[f"{method.upper()} {path}"], expires_at=utcnow() + UPLOAD_TICKET_TTL))
+    return raw
+
+
+def resolve_upload_ticket(db: Session, raw: str, method: str, path: str) -> M.User | None:
+    """The user behind an upload ticket for exactly this request, or None.
+    A ticket that matches is spent at once, whatever the request then does."""
+    if not raw.startswith(UPLOAD_TICKET_PREFIX):
+        return None
+    now = utcnow()
+    tok = (
+        db.query(M.OAuthToken)
+        .filter(M.OAuthToken.token_hash == _digest(raw), M.OAuthToken.kind == "upload",
+                M.OAuthToken.revoked_at.is_(None), M.OAuthToken.expires_at > now)
+        .with_for_update()
+        .first()
+    )
+    if tok is None or f"{method.upper()} {path}" not in (tok.scopes or []):
+        return None
+    user = db.get(M.User, tok.user_id)
+    if user is None or not user.active:
+        return None
+    tok.revoked_at = now
+    tok.last_used_at = now
+    db.commit()
+    return user
+
+
 def is_legacy_token(raw: str) -> bool:
     """A pre-auth shared secret from the environment. Never an identity."""
     if not settings.auth_legacy_tokens or not raw:

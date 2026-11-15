@@ -14,8 +14,14 @@ responses), with Henry as its own OAuth server. The rules, and why:
   its own permission check. That is also why `_get`, `_post` and `api_request`
   build their client with `_client()`: a new HTTP call here must too, or it
   silently goes to `API_URL` with no token when it runs remotely.
-- **`upload_model3d` and `attach_invoice_file` are not offered remotely**
-  (`DISK_TOOLS`): the file they read is on the user's own computer.
+- **`upload_model3d` and `attach_invoice_file` hand out an upload ticket
+  remotely** (decision
+  [0112](../decisions/0112-a-remote-agent-uploads-a-file-with-a-one-use-ticket.md)).
+  The file is on the agent's computer, so the tool returns a `curl` command
+  with a `7u_` ticket: one request, one method and path, ten minutes, as the
+  user. The agent's shell sends it to the normal route. The remote versions
+  are `REMOTE_DISK_TOOLS`; the stdio ones still read the file themselves.
+  A ticket goes in the `Authorization` header only, never in a query string.
 - **An OAuth access token is a Henry credential.** `auth.resolve_token` falls
   back to `oauth_tokens`, so the in-process call carries the same bearer.
   Access 1 h, refresh 90 days, rotated on use, both stored as SHA-256.

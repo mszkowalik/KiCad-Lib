@@ -5,7 +5,10 @@
 - **Claude on a phone can use Henry's agent tools** (decision 0111). Add `https://henry.disfunction.cc/mcp`
   as a custom connector on claude.ai and sign in with Google. The Google e-mail must be the one an admin set
   on your account under Admin → Users (new field). Calls run as you, with the same permissions, history and
-  undo as the local server. The two tools that read a file on your own computer stay local only.
+  undo as the local server.
+- **The remote connector can upload a 3D model or an invoice original too** (decision 0112).
+  `upload_model3d` and `attach_invoice_file` return a `curl` command with a one-use ticket that works for
+  ten minutes; Claude Code runs it in its own shell. Claude on a phone has no shell and uses the web app.
 - **Admin → Users has a Google e-mail per account.** Changing or clearing it ends that account's phone
   sign-ins.
 

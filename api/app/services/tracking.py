@@ -53,7 +53,7 @@ class RequestActor:
     username: str
     # What to write into a who-column: the display name, else the username.
     name: str
-    auth_via: str  # session | token | legacy | none
+    auth_via: str  # session | token | upload-ticket (decision 0112) | legacy | none
     # What drove the request: browser | token | mcp (the MCP server says so in
     # an `X-Kicad-Client` header) — decision 0089 groups an agent's changes by it.
     client: str = ""

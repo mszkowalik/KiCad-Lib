@@ -126,7 +126,7 @@ def _legacy_grants(token: str, path: str) -> bool:
     return False
 
 
-def _resolve(path: str, cookie_token: str, header_token: str, query_token: str):
+def _resolve(path: str, cookie_token: str, header_token: str, query_token: str, method: str = ""):
     """Runs in a worker thread — every branch here touches the database.
 
     Returns `(user, allowed, via)`. A legacy shared token yields
@@ -147,6 +147,12 @@ def _resolve(path: str, cookie_token: str, header_token: str, query_token: str):
                 return user, True, "token"
             if _legacy_grants(candidate, path):
                 return None, True, "legacy"
+        # Decision 0112: a one-use upload ticket, for exactly this method and
+        # path, sent as a header only.
+        if header_token:
+            user = auth.resolve_upload_ticket(db, header_token, method, path)
+            if user is not None:
+                return user, True, "upload-ticket"
         return None, False, "none"
     finally:
         db.close()
@@ -202,7 +208,7 @@ class AuthGate:
             return
 
         user, allowed, via = await run_in_threadpool(
-            _resolve, path, cookie_token, header_token, query_token
+            _resolve, path, cookie_token, header_token, query_token, method
         )
         # An open path is never refused, but it still gets the identity when one
         # is presented — `/api/auth/me` is exactly that case: reachable while

@@ -16,7 +16,8 @@ HTTP from henry-api, and is its own OAuth 2.1 authorization server:
   a tool call goes through the normal API in process, through the same gate,
   role checks, company scope, audit rows and undo records as a personal token.
   The handlers are the stdio server's own, run with `server.CALLER` set.
-- The two tools that read the user's disk are not offered here.
+- The two tools that send a file from the user's disk hand out a one-use
+  upload ticket instead (decision 0112), which the agent's shell sends.
 """
 
 from __future__ import annotations
@@ -438,19 +439,134 @@ def _as_caller():
     return stdio.CALLER.set((tok.token if tok else "", _transport()))
 
 
+# --------------------------------------------- the disk tools, remotely (0112)
+#
+# The stdio server reads the file itself. Here the file is on the agent's
+# computer and the server cannot reach it, so the tool hands out a one-use
+# upload ticket (`auth.mint_upload_ticket`) and the exact `curl` command the
+# agent runs in its own shell. The upload then goes through the normal route,
+# gate and audit as the user. An agent with no shell (a phone) cannot use it.
+
+_SHELL_NOTE = ("Run the command in your own shell, with the file path filled in, within 10 minutes. The ticket "
+               "works once and only for this upload. Without a shell (Claude on a phone), upload the file in "
+               "the Henry web app instead.")
+
+REMOTE_UPLOAD_MODEL3D = types.Tool(
+    name="upload_model3d",
+    description=(
+        "Store a 3D model (STEP/WRL) in the library, so a footprint can reference it as "
+        "${SEVENSIGMA_DIR}/3DModels/<rel_path>. Use it before proposing a footprint whose (model ...) points "
+        "anywhere else. Re-uploading the same rel_path REPLACES the file. This remote tool does not read the "
+        "file: it returns a one-use `curl` command that uploads it from your computer, and the ready "
+        "(model ...) node. " + _SHELL_NOTE),
+    inputSchema={
+        "type": "object",
+        "properties": {
+            "filename": {"type": "string", "description": "The file's name, e.g. 'SOIC-8.step'."},
+            "rel_path": {"type": "string",
+                         "description": "Where it goes under 3DModels/, e.g. "
+                                        "'Package_SO.3dshapes/SOIC-8_3.9x4.9mm_P1.27mm.step'. Defaults to "
+                                        f"'{stdio.HOUSE_DIR}/<filename>'. Use the source folder's name when "
+                                        "the file sits in a *.3dshapes folder."},
+        },
+        "required": ["filename"],
+        "additionalProperties": False,
+    },
+)
+
+REMOTE_ATTACH_INVOICE_FILE = types.Tool(
+    name="attach_invoice_file",
+    description=(
+        "File the original of a supplier invoice (PDF, KSeF XML or a scan) with its supplier document, so the "
+        "money and its evidence sit together. Use it after create_supplier_invoice or import_ksef_invoice. "
+        "This remote tool does not read the file: it returns a one-use `curl` command that uploads it from "
+        "your computer. " + _SHELL_NOTE),
+    inputSchema={
+        "type": "object",
+        "properties": {"document_id": {"type": "integer", "description": "The supplier document's id."}},
+        "required": ["document_id"],
+        "additionalProperties": False,
+    },
+)
+
+
+def _ticket(user_id: int, method: str, path: str) -> str:
+    def run(db):
+        user = _active_user(db, user_id)
+        if user is None:
+            raise PermissionError("the account is not active")
+        return auth.mint_upload_ticket(db, user, method, path)
+    return run
+
+
+def _curl(ticket: str, url: str) -> str:
+    return (f"curl -sS -H 'Authorization: Bearer {ticket}' -H 'X-Kicad-Client: mcp' "
+            f"-F 'file=@<PATH TO THE FILE>' '{url}'")
+
+
+async def _remote_upload_model3d(user_id: int, args: dict) -> str:
+    filename = str(args.get("filename") or "").strip().rsplit("/", 1)[-1]
+    if not filename:
+        return "filename is required."
+    if not filename.lower().endswith(stdio.MODEL_SUFFIXES):
+        return f"{filename}: a 3D model must be one of {', '.join(stdio.MODEL_SUFFIXES)}."
+    rel = str(args.get("rel_path") or "").strip().lstrip("/") or f"{stdio.HOUSE_DIR}/{filename}"
+    if ".." in rel.split("/") or "'" in rel:
+        return f"rel_path {rel!r} must not contain '..' or a quote."
+    path = "/api/models3d/upload"
+    ticket = await _db(_ticket(user_id, "POST", path))
+    url = f"{_base()}{path}?{urllib.parse.urlencode({'rel_path': rel})}"
+    return json.dumps({
+        "command": _curl(ticket, url),
+        "rel_path": rel,
+        "model_node": (f'(model "${{SEVENSIGMA_DIR}}/3DModels/{rel}"\n  (offset (xyz 0 0 0))\n'
+                       "  (scale (xyz 1 1 1))\n  (rotate (xyz 0 0 0))\n)"),
+        "note": _SHELL_NOTE,
+    }, indent=1)
+
+
+async def _remote_attach_invoice_file(user_id: int, args: dict) -> str:
+    try:
+        doc = int(args.get("document_id") or 0)
+    except (TypeError, ValueError):
+        doc = 0
+    if doc <= 0:
+        return "document_id is required."
+    path = f"/api/run-documents/{doc}/attachment"
+    ticket = await _db(_ticket(user_id, "POST", path))
+    return json.dumps({
+        "command": _curl(ticket, _base() + path),
+        "accepts": list(stdio.ATTACH_SUFFIXES),
+        "note": _SHELL_NOTE,
+    }, indent=1)
+
+
+REMOTE_DISK_TOOLS = {REMOTE_UPLOAD_MODEL3D.name: (REMOTE_UPLOAD_MODEL3D, _remote_upload_model3d),
+                     REMOTE_ATTACH_INVOICE_FILE.name: (REMOTE_ATTACH_INVOICE_FILE, _remote_attach_invoice_file)}
+assert set(REMOTE_DISK_TOOLS) == DISK_TOOLS
+
+
 async def list_tools(ctx, params) -> types.ListToolsResult:
     reset = _as_caller()
     try:
         result = await stdio.list_tools(ctx, params)
     finally:
         stdio.CALLER.reset(reset)
-    return types.ListToolsResult(tools=[t for t in result.tools if t.name not in DISK_TOOLS])
+    return types.ListToolsResult(tools=[t for t in result.tools if t.name not in DISK_TOOLS]
+                                 + [tool for tool, _fn in REMOTE_DISK_TOOLS.values()])
 
 
 async def call_tool(ctx, params: types.CallToolRequestParams) -> types.CallToolResult:
-    if params.name in DISK_TOOLS:
-        return stdio._error(f"{params.name!r} reads a file on your own computer, so only the local "
-                            "henry MCP server offers it.")
+    if params.name in REMOTE_DISK_TOOLS:
+        tok = get_access_token()
+        if tok is None or not str(tok.subject or "").isdigit():
+            return stdio._error("no signed-in user on this request")
+        _tool, fn = REMOTE_DISK_TOOLS[params.name]
+        try:
+            text = await fn(int(tok.subject), params.arguments or {})
+        except Exception as e:  # noqa: BLE001 — an inactive account, the database
+            return stdio._error(f"Error calling {params.name!r}: {e!r}")
+        return types.CallToolResult(content=[types.TextContent(type="text", text=text)])
     reset = _as_caller()
     try:
         return await stdio.call_tool(ctx, params)

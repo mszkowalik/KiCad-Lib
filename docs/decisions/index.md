@@ -141,6 +141,7 @@ is `NNNN-title-with-dashes.md`, four digits, no gaps skipped on purpose.
 | [0109](0109-comp-type-is-the-discriminator-and-categories-stay-flat.md) | Keep `comp_type` as the discriminator inside a category, and keep the category tree flat | Library, review axis |
 | [0110](0110-the-jlc-rotation-belongs-to-the-part.md) | Store the JLC rotation on the component as the full correction, with Auto Translate off, and keep the footprints as they are | Backend, frontend, library, production, KiCad output |
 | [0111](0111-a-remote-mcp-endpoint-signs-in-with-google.md) | Serve a remote MCP endpoint at `/mcp` from henry-api, with Henry as the OAuth server and a Google sign-in that must match the e-mail an admin set on the account | Backend, access control, deployment, agent |
+| [0112](0112-a-remote-agent-uploads-a-file-with-a-one-use-ticket.md) | Let a remote agent upload a file with a one-use, path-scoped, ten-minute ticket that its own shell sends with `curl` | Backend, access control, agent |
 
 ## Proposed
 

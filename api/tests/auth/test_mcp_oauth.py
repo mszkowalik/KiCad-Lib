@@ -124,5 +124,41 @@ def test_the_gate_opens_the_oauth_paths_only():
         assert not _is_open(path), path
 
 
-def test_the_remote_server_leaves_out_the_disk_tools():
-    assert mcp_remote.DISK_TOOLS == {"upload_model3d", "attach_invoice_file"}
+
+# --------------------------------------------- upload tickets (decision 0112)
+
+def test_an_upload_ticket_works_once_for_its_own_request(db):
+    u = _user(db)
+    raw = auth.mint_upload_ticket(db, u, "POST", "/api/models3d/upload")
+    db.flush()
+    assert raw.startswith("7u_")
+    assert auth.resolve_upload_ticket(db, raw, "GET", "/api/models3d/upload") is None
+    assert auth.resolve_upload_ticket(db, raw, "POST", "/api/models3d/other") is None
+    assert auth.resolve_upload_ticket(db, raw, "POST", "/api/models3d/upload").id == u.id
+    assert auth.resolve_upload_ticket(db, raw, "POST", "/api/models3d/upload") is None
+
+
+def test_an_upload_ticket_is_not_a_general_credential(db):
+    u = _user(db)
+    raw = auth.mint_upload_ticket(db, u, "POST", "/api/models3d/upload")
+    db.flush()
+    assert auth.resolve_token(db, raw) is None
+
+
+def test_an_expired_or_inactive_ticket_is_refused(db):
+    u = _user(db)
+    raw = auth.mint_upload_ticket(db, u, "POST", "/x")
+    db.flush()
+    db.get(M.OAuthToken, auth._digest(raw)).expires_at = auth.utcnow() - timedelta(seconds=1)
+    db.flush()
+    assert auth.resolve_upload_ticket(db, raw, "POST", "/x") is None
+    raw = auth.mint_upload_ticket(db, u, "POST", "/y")
+    u.active = False
+    db.flush()
+    assert auth.resolve_upload_ticket(db, raw, "POST", "/y") is None
+
+
+def test_the_remote_server_offers_ticket_versions_of_the_disk_tools():
+    assert set(mcp_remote.REMOTE_DISK_TOOLS) == mcp_remote.DISK_TOOLS
+    schema = mcp_remote.REMOTE_UPLOAD_MODEL3D.input_schema
+    assert "file_path" not in schema["properties"] and schema["required"] == ["filename"]
