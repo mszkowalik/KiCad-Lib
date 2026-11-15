@@ -46,9 +46,9 @@ export default function Feedback() {
   }
 
   const cols: Column<FeedbackReport>[] = [
-    { key: "id", label: "#", width: 6, numeric: true, get: (r) => r.id },
+    { key: "id", label: "#", width: 7, numeric: true, get: (r) => r.id },
     { key: "kind", label: "Kind", width: 10, get: (r) => r.kind },
-    { key: "title", label: "Title", width: 44, get: (r) => r.title },
+    { key: "title", label: "Title", width: 43, get: (r) => r.title },
     {
       key: "status",
       label: "Status",
