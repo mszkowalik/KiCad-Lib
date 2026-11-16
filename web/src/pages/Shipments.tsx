@@ -43,7 +43,17 @@ export default function Shipments() {
       { key: "products", label: "Products", width: 16, get: (s) => s.products.join(", ") },
       { key: "qty", label: "Devices", width: 8, numeric: true, get: (s) => s.qty },
       { key: "created", label: "Recorded", width: 10, className: "mono", get: (s) => localDate(s.created_at) },
-      { key: "shipped", label: "Sent", width: 10, className: "mono", get: (s) => s.shipped_at || "" },
+      {
+        key: "shipped",
+        label: "Sent",
+        width: 10,
+        className: "mono",
+        get: (s) => s.shipped_at || "",
+        // Newest first by default, and a shipment not sent yet above every sent
+        // one (user, 2026-11-16): an empty date sorts as the latest. Among those,
+        // the newest recorded first.
+        sortValue: (s) => `${s.shipped_at || "9999-12-31"} ${s.created_at ?? ""}`,
+      },
       { key: "tracking", label: "Tracking", width: 8, get: (s) => s.tracking },
     ],
     [],
@@ -83,9 +93,9 @@ export default function Shipments() {
             columns={columns}
             rowKey={(s) => s.id}
             group={(s) => (s.status === "open" ? 0 : 1)}
-            defaultSort={{ key: "id", dir: "desc" }}
+            defaultSort={{ key: "shipped", dir: "desc" }}
             onRowClick={(s) => navigate(`/sales/shipments/${s.id}`)}
-            persistKey="shipments"
+            persistKey="shipments-by-sent"
             empty="No shipments yet."
           />
           </>

@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-11-16 (shipments sort by the date they were sent)
+
+- **Sales → Shipments lists the newest shipment first, by the Sent date**, not by its number. A shipment
+  not sent yet comes above every sent one; the oldest are at the bottom. A sort you chose earlier on this
+  list is reset once.
+
 ## 2026-11-15 (report a bug or ask for a feature)
 
 - **User menu → Feedback** files a bug report or a feature request about the platform, and lists every report
