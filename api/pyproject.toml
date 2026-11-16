@@ -15,6 +15,8 @@ dependencies = [
     # The remote MCP endpoint and its OAuth server (decision 0111). The same SDK
     # line as the stdio server; it brings PyJWT, which checks Google ID tokens.
     "mcp>=2.3,<3",
+    # /metrics for the server's Grafana (decision 0113). Apache-2.0, pure Python.
+    "prometheus-client>=0.20",
     "anthropic>=0.117",
     "pymupdf>=1.26",
     # Layout-aware markdown for the per-page datasheet index. Same engine and

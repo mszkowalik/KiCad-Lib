@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-11-16 (Henry in the server's Grafana)
+
+- **Henry's own figures are in Grafana** (`https://obs.disfunction.cc`, folder Henry; LAN and Tailscale only,
+  decision 0113): requests and response times per route, errors, SQL time and slow queries, calls per agent
+  tool, accounts, active users and sessions, sign-ins, remote-MCP tokens and feedback reports. Henry's
+  database, file storage and availability were already there.
+
 ## 2026-11-16 (shipments sort by the date they were sent)
 
 - **Sales → Shipments lists the newest shipment first, by the Sent date**, not by its number. A shipment

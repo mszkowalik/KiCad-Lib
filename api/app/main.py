@@ -127,6 +127,12 @@ app.add_middleware(
     expose_headers=["X-Unit-Count", "X-Version-Id"],
 )
 
+# Decision 0113: request timing for the server's Grafana. Added LAST, so it is
+# the outermost layer and times the gate and CORS too.
+from .services import metrics as _metrics  # noqa: E402
+
+app.add_middleware(_metrics.MetricsMiddleware, api=app)
+
 app.include_router(auth_router.router)
 app.include_router(users.router)
 app.include_router(categories.router)
@@ -187,6 +193,15 @@ from .services import mcp_remote  # noqa: E402
 _mcp_app = mcp_remote.build_app()
 for _r in _mcp_app.routes:
     app.router.routes.append(_Route(_r.path, endpoint=_mcp_app))
+
+
+@app.on_event("startup")
+def _metrics_start() -> None:
+    # Decision 0113: SQL timing, the scrape-time gauges and /metrics on its own
+    # port (9100), which nginx does not proxy.
+    from .db import SessionLocal as _SessionLocal
+
+    _metrics.start(engine, _SessionLocal)
 
 
 @app.on_event("startup")

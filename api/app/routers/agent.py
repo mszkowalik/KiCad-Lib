@@ -27,7 +27,7 @@ from fastapi.responses import Response
 from starlette.concurrency import run_in_threadpool
 
 from ..config import settings
-from ..services import agent_routes, agent_tools
+from ..services import agent_routes, agent_tools, metrics
 from .util import content_disposition
 
 router = APIRouter(prefix="/api/agent")
@@ -154,6 +154,7 @@ async def call_tool(
     if not isinstance(args, dict):
         raise HTTPException(status_code=400, detail="body must be a JSON object of arguments")
     if tool is None:
+        metrics.TOOLS.labels(name, "route").inc()
         return await _call_route_tool(request, route_tool, args)
 
     try:
@@ -161,7 +162,10 @@ async def call_tool(
         # event loop so one slow call can't stall the API.
         result = await run_in_threadpool(tool.func, **args)
     except TypeError as e:  # unexpected / missing argument names
+        metrics.TOOLS.labels(name, "bad_arguments").inc()
         raise HTTPException(status_code=400, detail=f"bad arguments for {name!r}: {e}") from e
     except Exception as e:  # noqa: BLE001 — hand back to the agent, don't 500
+        metrics.TOOLS.labels(name, "error").inc()
         return {"result": json.dumps({"error": f"{type(e).__name__}: {e}"}), "is_error": True}
+    metrics.TOOLS.labels(name, "ok").inc()
     return {"result": result}

@@ -58,6 +58,14 @@ is very slow under emulation.
   shared `nginx.conf`, and `henry.env`. The wildcard certificate and the
   dnsmasq `address=/disfunction.cc/` line already cover every subdomain.
   The server's own `HOMELAB.md` §3 lists them.
+- **henry-api serves Prometheus metrics on port 9100** (`services/metrics.py`,
+  decision [0113](../decisions/0113-henry-api-exposes-prometheus-metrics-on-its-own-port.md)),
+  in a thread, outside the gate. Only the docker network reaches it: the
+  server's compose file gives `henry-api` the labels `obs.scrape: "true"` and
+  `obs.port: "9100"` and `expose: ["9100"]`, and Alloy scrapes it every 15 s.
+  Never proxy the port through nginx. Never put a raw path, an id or a name in a
+  label. The dashboards are in the server's
+  `observability/grafana/dashboards/Henry/`.
 - **The remote MCP sign-in needs `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`
   in `henry.env`**, and the Google client must list
   `<PUBLIC_BASE_URL>/oauth/google/callback` as a redirect URI (decision
