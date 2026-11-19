@@ -20,7 +20,8 @@ Invariants kept from the draft era:
 
 - **A pending human/agent DRAFT is skipped, never rewritten** — repointing a
   proposal under review would silently rewrite somebody's edit. Reported in
-  `skipped`.
+  `skipped`. Only a draft NEWER than the live version counts: one numbered
+  below it is a leftover a later publish went past, and it does not block.
 - **A leftover auto-DRAFT from the draft era is refreshed and published** in
   place of minting a second version.
 - **Never read `comp.versions` inside this module** — the session is
@@ -82,6 +83,21 @@ def _open_auto_draft(db: Session, comp: M.Component) -> M.ComponentVersion | Non
                  if v.status == "draft" and v.created_by == AUTO_ACTOR), None)
 
 
+def _pending_human_draft(db: Session, comp: M.Component,
+                         live: M.ComponentVersion) -> M.ComponentVersion | None:
+    """A human/agent draft NEWER than the live version — an edit in progress.
+
+    A draft numbered below the live version is a draft-era leftover: a later
+    version was published past it, so nobody can still approve it, and since
+    2026-08-23 nothing can discard it either. TCA6408ARGTR kept a v1 draft from
+    `propose_new_component` after v2 was published, and it held the part on
+    QFN-16 v8 through the v9 and v10 publishes. Such a draft must not block.
+    """
+    return next((v for v in _versions(db, comp)
+                 if v.status == "draft" and v.created_by != AUTO_ACTOR
+                 and v.version_no > live.version_no), None)
+
+
 def _pins_now(db: Session, cv: M.ComponentVersion) -> tuple[int | None, int | None]:
     """What this component version SHOULD pin, given what is published now."""
     sym = db.query(M.Symbol).filter_by(name=cv.base_component).first()
@@ -131,8 +147,7 @@ def repoint_for(db: Session, kind: str, parent) -> dict:
             continue
         sym_id, fp_id = _pins_now(db, live)
 
-        human = next((v for v in _versions(db, comp)
-                      if v.status == "draft" and v.created_by != AUTO_ACTOR), None)
+        human = _pending_human_draft(db, comp, live)
         if human is not None:
             # Someone is mid-edit. Repointing their draft would rewrite a
             # proposal under review; a parallel publish would collide with it

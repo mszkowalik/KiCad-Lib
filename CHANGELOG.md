@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-11-19 (repoint past stale drafts)
+
+- **A footprint or symbol publish now repoints a part that still has an old draft.** The repoint skipped
+  every part with a human or agent draft ("an edit is already pending review"). A draft numbered below the
+  part's live version is a leftover from before the draft gate was removed: nothing can approve or discard
+  it, so it blocked every later repoint. TCA6408ARGTR kept a v1 draft beside its published v2 and stayed on
+  QFN-16 v8 through the v9 and v10 publishes. Only a draft newer than the live version blocks now. The two
+  old drafts on the platform (TCA6408ARGTR v1, RT0402BRD0712K4L v1) are marked rejected, as 78L12 and
+  CJ79L12 v1 already were.
+
 ## 2026-11-16 (Henry in the server's Grafana)
 
 - **Henry's own figures are in Grafana** (`https://obs.disfunction.cc`, folder Henry; LAN and Tailscale only,

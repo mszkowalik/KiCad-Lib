@@ -183,10 +183,13 @@ tools over MCP.
   `AUTO_REPOINT_COMPONENTS=false` turns it off. What a stale pin looks like to
   a user is `PinnedRef.is_current === false` on the component page ("library
   serves v5") — the state this exists to prevent. Invariants in that module:
-  - **A leftover human/agent draft is skipped, not rewritten**, and reported in
-    `repointed.skipped`. Nothing files drafts any more, so this only fires on
-    rows from before the gate was removed — but rewriting one would still be
-    rewriting somebody's unfinished edit.
+  - **A leftover human/agent draft NEWER than the live version is skipped, not
+    rewritten**, and reported in `repointed.skipped`. Nothing files drafts any
+    more, so this only fires on rows from before the gate was removed — but
+    rewriting one would still be rewriting somebody's unfinished edit. A draft
+    numbered BELOW the live version does not block: a later publish already went
+    past it, and nothing can approve or discard it now. Such a v1 draft held
+    TCA6408ARGTR on QFN-16 v8 through two footprint publishes (found 2026-11-19).
   - **A leftover auto-draft is refreshed and published** rather than left beside
     a new parallel version.
   - **Properties are cloned in FULL fidelity** — `hide`, `show_name` and `layout`
