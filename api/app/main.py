@@ -907,6 +907,11 @@ _PHASE1_DDL = (
      "ALTER TABLE users ADD COLUMN IF NOT EXISTS email varchar(254)"),
     ("ux_users_email",
      "CREATE UNIQUE INDEX IF NOT EXISTS ux_users_email ON users (lower(email)) WHERE email IS NOT NULL"),
+    # Decision 0114: the home LDAP uid that may sign this user in.
+    ("users.ldap_uid",
+     "ALTER TABLE users ADD COLUMN IF NOT EXISTS ldap_uid varchar(100)"),
+    ("ux_users_ldap_uid",
+     "CREATE UNIQUE INDEX IF NOT EXISTS ux_users_ldap_uid ON users (lower(ldap_uid)) WHERE ldap_uid IS NOT NULL"),
     ("component_suppliers.lead_as_of",
      "ALTER TABLE component_suppliers ADD COLUMN IF NOT EXISTS lead_as_of varchar(10) NOT NULL DEFAULT ''"),
     ("component_suppliers.at_once_days",

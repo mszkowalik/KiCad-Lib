@@ -4,7 +4,8 @@
 lets through unauthenticated — see `main.py::_OPEN_PATHS`.
 
 There is no registration endpoint and no password-reset endpoint, by user
-decision 2026-07-31. An admin creates accounts and resets passwords in the
+decision 2026-07-31. A user an admin linked to a home LDAP uid may also sign in
+with the directory password (decision 0114, `services/ldap_login.py`). An admin creates accounts and resets passwords in the
 Setup page (`routers/users.py`). Do not add either: the login page has no link
 to them, so an endpoint would be a way in that the UI does not admit to.
 """
@@ -12,12 +13,13 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from .. import models as M
 from ..config import settings
 from ..db import get_db
-from ..services import auth
+from ..services import auth, ldap_login
 from .util import audit
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
@@ -68,27 +70,44 @@ def login(body: LoginIn, request: Request, response: Response, db: Session = Dep
         raise HTTPException(429, f"too many failed attempts — try again in {locked // 60 + 1} min")
 
     user = db.query(M.User).filter(M.User.username == username).first()
+    if user is None and ldap_login.enabled():
+        # Decision 0114: the directory uid signs in too ("mateusz", not the
+        # Henry username). Only a uid an admin linked to an account.
+        user = db.query(M.User).filter(func.lower(M.User.ldap_uid) == username).first()
+    # One lockout per ACCOUNT, whichever of its two names was typed.
+    if user is not None and user.username != username:
+        locked = auth.lockout_remaining(db, user.username)
+        if locked:
+            raise HTTPException(429, f"too many failed attempts — try again in {locked // 60 + 1} min")
+    via = "password"
     if user is None:
         # Spend the same argon2 time as a real check, so response latency does
         # not tell an attacker which usernames exist.
         auth.verify_nobody(body.password)
         ok = False
+    elif not user.active:
+        auth.verify_nobody(body.password)
+        ok = False
+    elif user.ldap_uid and ldap_login.check(user.ldap_uid, body.password):
+        # The directory password. The local one below keeps working beside it,
+        # so a directory outage never locks the admin out (decision 0114).
+        ok, via = True, "ldap"
     else:
-        ok = user.active and auth.verify_password(user, body.password)
+        ok = auth.verify_password(user, body.password)
     if not ok:
-        auth.record_failure(db, username)
+        auth.record_failure(db, user.username if user is not None else username)
         # One message for every failure mode (unknown user, wrong password,
         # deactivated account) so the response cannot enumerate accounts.
         raise HTTPException(401, "wrong username or password")
 
-    auth.clear_failures(db, username)
+    auth.clear_failures(db, user.username)
     user.last_login_at = auth.utcnow()
     session = auth.create_session(
         db, user,
         user_agent=request.headers.get("user-agent", ""),
         ip=request.headers.get("cf-connecting-ip") or (request.client.host if request.client else ""),
     )
-    audit(db, "auth.login", "user", user.id, actor=user.username)
+    audit(db, "auth.login", "user", user.id, details={"via": via}, actor=user.username)
     db.commit()
     _set_cookie(response, session.id)
     return user_json(user)

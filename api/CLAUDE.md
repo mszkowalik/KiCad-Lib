@@ -292,6 +292,14 @@ the published port restricts direct LAN access, but `cloudflared` reaches
   never be signed into; it must never run twice, or the environment could
   silently reset a live account. A deployment with auth on and no admin logs a
   warning naming the problem.
+- **The home LDAP password is a second way to sign in, never a second source of
+  accounts** (decision
+  [0114](../docs/decisions/0114-a-browser-sign-in-also-takes-the-home-ldap-password.md),
+  `services/ldap_login.py`). Only an account with `users.ldap_uid` asks the
+  directory, and its local password keeps working beside it. Do not make
+  accounts or roles from the directory, and do not drop the empty-password
+  refusal in `ldap_login.check`: an LDAP bind with a DN and no password is an
+  unauthenticated bind that a server may report as success.
 - **No registration endpoint and no password-reset endpoint exist** (user
   decision 2026-07-31). An admin creates accounts and resets passwords in
   `routers/users.py`. Do not add either — the login page has no link to them, so

@@ -3997,6 +3997,10 @@ class User(Base):
     # An admin writes it; NULL means this user cannot sign in with Google.
     # Stored lowercase, unique by `ux_users_email`.
     email: Mapped[str | None] = mapped_column(String(254), nullable=True)
+    # The home LDAP uid whose directory password also signs this user in
+    # (decision 0114). An admin writes it; NULL means local password only.
+    # Stored lowercase, unique by `ux_users_ldap_uid`.
+    ldap_uid: Mapped[str | None] = mapped_column(String(100), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 

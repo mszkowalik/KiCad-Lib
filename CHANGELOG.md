@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-11-24 (sign in with the home LDAP account)
+
+- **A browser sign-in also takes the home directory password** (lldap, decision 0114). An admin links an
+  account to a directory uid in Admin → Users → the user's row → "LDAP uid". The account then signs in with
+  the uid or its Henry username, and the directory password or the local one. The uid must be in the
+  directory group `henry`. Accounts, roles and companies are still set in Henry only. KiCad, the sync plugin
+  and the MCP server keep their personal tokens.
+
 ## 2026-11-19 (repoint past stale drafts)
 
 - **A footprint or symbol publish now repoints a part that still has an old draft.** The repoint skipped

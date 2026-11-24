@@ -143,6 +143,7 @@ is `NNNN-title-with-dashes.md`, four digits, no gaps skipped on purpose.
 | [0111](0111-a-remote-mcp-endpoint-signs-in-with-google.md) | Serve a remote MCP endpoint at `/mcp` from henry-api, with Henry as the OAuth server and a Google sign-in that must match the e-mail an admin set on the account | Backend, access control, deployment, agent |
 | [0112](0112-a-remote-agent-uploads-a-file-with-a-one-use-ticket.md) | Let a remote agent upload a file with a one-use, path-scoped, ten-minute ticket that its own shell sends with `curl` | Backend, access control, agent |
 | [0113](0113-henry-api-exposes-prometheus-metrics-on-its-own-port.md) | Expose henry-api's Prometheus metrics on port 9100 for the server's Grafana: route templates, SQL time, agent tools and user counts, no raw paths or ids in labels | Backend, deployment |
+| [0114](0114-a-browser-sign-in-also-takes-the-home-ldap-password.md) | A browser sign-in also takes the home LDAP password, for an account an admin linked to a uid; the local password stays, the directory never makes accounts or roles | Access control, deployment |
 
 ## Proposed
 

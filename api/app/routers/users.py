@@ -83,6 +83,8 @@ def user_json(db: Session, user: M.User, *, reveal: bool = False) -> dict:
         "display_name": user.display_name,
         # Decision 0111: the Google account a remote MCP sign-in must come from.
         "email": user.email or "",
+        # Decision 0114: the home LDAP uid whose password also signs this user in.
+        "ldap_uid": user.ldap_uid or "",
         "role": user.role,
         # Decision 0063: the companies the user belongs to (an admin sees all).
         "company_ids": sorted(cid for (cid,) in db.query(M.UserCompany.company_id).filter_by(user_id=user.id)),
@@ -118,6 +120,7 @@ class UserIn(BaseModel):
     password: str
     display_name: str = ""
     email: str = Field(default="", max_length=254)
+    ldap_uid: str = Field(default="", max_length=100)
     role: str = "user"
 
 
@@ -134,6 +137,20 @@ def _email(db: Session, raw: str, user_id: int | None) -> str | None:
     if clash is not None:
         raise HTTPException(409, f"user {clash.username!r} already has this e-mail")
     return email
+
+
+def _ldap_uid(db: Session, raw: str, user_id: int | None) -> str | None:
+    """A cleaned LDAP uid, or None for empty. Refuses characters a uid does not
+    carry and a uid another account already has (decision 0114)."""
+    uid = (raw or "").strip().lower()
+    if not uid:
+        return None
+    if not all(c.isalnum() or c in "._-" for c in uid):
+        raise HTTPException(422, f"{uid!r} is not an LDAP uid (letters, digits, '.', '_', '-')")
+    clash = db.query(M.User).filter(func.lower(M.User.ldap_uid) == uid, M.User.id != (user_id or 0)).first()
+    if clash is not None:
+        raise HTTPException(409, f"user {clash.username!r} already has this LDAP uid")
+    return uid
 
 
 @router.post("")
@@ -154,6 +171,7 @@ def create_user(body: UserIn, db: Session = Depends(get_db),
         password_hash=auth.hash_password(body.password),
         display_name=body.display_name.strip(),
         email=_email(db, body.email, None),
+        ldap_uid=_ldap_uid(db, body.ldap_uid, None),
         role=body.role,
     )
     db.add(user)
@@ -173,6 +191,8 @@ class UserPatch(BaseModel):
     display_name: str | None = None
     # Empty clears it. A change ends the remote MCP sign-ins made with the old one.
     email: str | None = Field(default=None, max_length=254)
+    # Empty clears it. A change ends the user's sessions (decision 0114).
+    ldap_uid: str | None = Field(default=None, max_length=100)
     role: str | None = None
     active: bool | None = None
     password: str | None = None
@@ -219,6 +239,15 @@ def update_user(user_id: int, body: UserPatch, db: Session = Depends(get_db),
                                           M.OAuthToken.revoked_at.is_(None)).update({"revoked_at": auth.utcnow()})
             changed["email"] = email or ""
             user.email = email
+    if body.ldap_uid is not None:
+        uid = _ldap_uid(db, body.ldap_uid, user.id)
+        if uid != user.ldap_uid:
+            # A session opened with the old directory account must not outlive
+            # the link that let it in. Adding a first link ends nothing.
+            if user.ldap_uid:
+                auth.end_all_sessions(db, user.id)
+            changed["ldap_uid"] = uid or ""
+            user.ldap_uid = uid
     if body.role is not None and body.role != user.role:
         if body.role not in ("admin", "user"):
             raise HTTPException(422, "role must be 'admin' or 'user'")

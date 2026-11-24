@@ -71,6 +71,15 @@ is very slow under emulation.
   `<PUBLIC_BASE_URL>/oauth/google/callback` as a redirect URI (decision
   [0111](../decisions/0111-a-remote-mcp-endpoint-signs-in-with-google.md)).
   Without them `/mcp` still answers, and the sign-in page says it is not set up.
+- **The home LDAP sign-in needs `LDAP_URL`, `LDAP_BIND_DN`,
+  `LDAP_BIND_PASSWORD`, `LDAP_USER_BASE` and `LDAP_USER_FILTER` in
+  `henry.env`** (decision
+  [0114](../decisions/0114-a-browser-sign-in-also-takes-the-home-ldap-password.md)).
+  On the server: `ldap://lldap:3890` (henry-api and lldap share the
+  `aws-deployment_default` network), the read-only account `svc-readonly`, base
+  `ou=people,dc=disfunction,dc=cc`, filter
+  `(memberOf=cn=henry,ou=groups,dc=disfunction,dc=cc)`. Empty `LDAP_URL`
+  turns it off and the login behaves as before.
 - **`https://disfunction.cc/lib/…` is a 307 to the same path on henry, and it
   stays.** Every datasheet link in a schematic made before 2026-11-01, every
   KiCad PCM repository URL pasted before then, and every installed sync plugin

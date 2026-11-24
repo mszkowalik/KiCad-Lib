@@ -155,6 +155,20 @@ class Settings(BaseSettings):
     login_max_failures: int = 8
     login_lockout_minutes: int = 15
 
+    # Home LDAP directory for the browser sign-in (decision 0114). Empty
+    # `ldap_url` turns it off. A user signs in with the directory password only
+    # when an admin linked the account to a uid (`users.ldap_uid`); the local
+    # password keeps working beside it. `ldap_user_filter` is ANDed with
+    # `(uid=...)` and is where the group condition goes. The bind password is
+    # read from `ldap_bind_password_file` when that is set.
+    ldap_url: str = ""
+    ldap_bind_dn: str = ""
+    ldap_bind_password: str = ""
+    ldap_bind_password_file: str = ""
+    ldap_user_base: str = ""
+    ldap_user_filter: str = ""
+    ldap_timeout_s: float = 5.0
+
     # ------------------------------------------------------------- projects
     # MinIO object storage: project snapshot archives, cached renders
     # (board layer SVGs, schematic SVGs, GLB/STEP, gerber bundles) and

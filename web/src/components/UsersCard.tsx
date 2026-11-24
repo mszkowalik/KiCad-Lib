@@ -56,6 +56,7 @@ function UserDetail({
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [email, setEmail] = useState(user.email);
+  const [ldapUid, setLdapUid] = useState(user.ldap_uid);
 
   async function run(action: () => Promise<PlatformUser | { ok: boolean }>) {
     setBusy(true);
@@ -101,6 +102,27 @@ function UserDetail({
           onClick={() => void run(() => updateUser(user.id, { email: email.trim() }))}
         >
           Save e-mail
+        </button>
+      </div>
+
+      {/* Decision 0114: the home LDAP uid whose directory password also signs
+          this user in, beside the local one. Changing a link ends sessions. */}
+      <div className="field-row">
+        <Field label="LDAP uid (home directory sign-in)">
+          <input
+            className="text"
+            value={ldapUid}
+            placeholder="none: local password only"
+            onChange={(e) => setLdapUid(e.target.value)}
+            autoComplete="off"
+          />
+        </Field>
+        <button
+          className="btn btn-sm"
+          disabled={busy || ldapUid.trim().toLowerCase() === user.ldap_uid}
+          onClick={() => void run(() => updateUser(user.id, { ldap_uid: ldapUid.trim() }))}
+        >
+          Save uid
         </button>
       </div>
 

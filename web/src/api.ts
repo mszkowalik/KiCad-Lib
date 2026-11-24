@@ -1326,6 +1326,8 @@ export interface PlatformUser {
   display_name: string;
   /** The Google account a remote MCP sign-in must come from (decision 0111). "" = none. */
   email: string;
+  /** The home LDAP uid whose password also signs this user in (decision 0114). "" = none. */
+  ldap_uid: string;
   role: string;
   active: boolean;
   created_at: string | null;
@@ -1388,6 +1390,7 @@ export function updateUser(
     username?: string;
     display_name?: string;
     email?: string;
+    ldap_uid?: string;
     role?: string;
     active?: boolean;
     password?: string;
