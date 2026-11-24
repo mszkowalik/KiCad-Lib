@@ -149,3 +149,49 @@ def test_uid_is_cleaned_and_unique(db):
     with pytest.raises(HTTPException) as exc:
         users_router._ldap_uid(db, "LDAP-test-mateusz", None)
     assert exc.value.status_code == 409
+
+
+class _FakeConnection:
+    """Stands in for ldap3.Connection: the service account and one person."""
+
+    calls = []
+
+    def __init__(self, server, user, password, receive_timeout, raise_exceptions):
+        assert isinstance(receive_timeout, int), "ldap3 refuses a float receive_timeout"
+        self.user, self.password = user, password
+        self.bound = (user, password) in {("uid=svc,ou=people,dc=x", "svc-pass"),
+                                          ("uid=kuba,ou=people,dc=x", "kuba-pass")}
+        self.result = {"description": "invalidCredentials"}
+        self.entries = []
+        _FakeConnection.calls.append(user)
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+    def search(self, base, flt, attributes, size_limit):
+        assert flt == "(&(uid=kuba)(memberOf=cn=henry,ou=groups,dc=x))" or "uid=kuba" not in flt
+        if "(uid=kuba)" in flt:
+            self.entries = [type("E", (), {"entry_dn": "uid=kuba,ou=people,dc=x"})()]
+
+
+def test_check_binds_twice_through_the_group_filter(monkeypatch):
+    import ldap3
+
+    monkeypatch.setattr(ldap3, "Connection", _FakeConnection)
+    monkeypatch.setattr(settings, "ldap_url", "ldap://directory.invalid:3890")
+    monkeypatch.setattr(settings, "ldap_bind_dn", "uid=svc,ou=people,dc=x")
+    monkeypatch.setattr(settings, "ldap_bind_password", "svc-pass")
+    monkeypatch.setattr(settings, "ldap_bind_password_file", "")
+    monkeypatch.setattr(settings, "ldap_user_base", "ou=people,dc=x")
+    monkeypatch.setattr(settings, "ldap_user_filter", "(memberOf=cn=henry,ou=groups,dc=x)")
+    monkeypatch.setattr(settings, "ldap_timeout_s", 2.5)
+    _FakeConnection.calls = []
+    assert ldap_login.check("kuba", "kuba-pass") is True
+    assert _FakeConnection.calls == ["uid=svc,ou=people,dc=x", "uid=kuba,ou=people,dc=x"]
+    assert ldap_login.check("kuba", "wrong") is False
+    assert ldap_login.check("stranger", "kuba-pass") is False
+    monkeypatch.setattr(settings, "ldap_bind_password", "bad")
+    assert ldap_login.check("kuba", "kuba-pass") is False

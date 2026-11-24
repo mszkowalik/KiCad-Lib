@@ -58,7 +58,10 @@ def check(uid: str, password: str) -> bool:
         log.error("ldap: the ldap3 package is not installed")
         return False
 
-    timeout = settings.ldap_timeout_s
+    # ldap3 takes a float connect timeout, but `receive_timeout` must be an int:
+    # a float raises "required argument is not an integer" on the first bind
+    # (measured against lldap, 2026-11-24).
+    timeout = max(1, round(settings.ldap_timeout_s))
     server = Server(settings.ldap_url, get_info=NONE, connect_timeout=timeout)
     flt = f"(&(uid={escape_filter_chars(uid)}){settings.ldap_user_filter})"
     try:
