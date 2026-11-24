@@ -154,22 +154,22 @@ def test_uid_is_cleaned_and_unique(db):
 class _FakeConnection:
     """Stands in for ldap3.Connection: the service account and one person."""
 
-    calls = []
+    calls: list = []  # noqa: RUF012 — reset by the test
 
     def __init__(self, server, user, password, receive_timeout, raise_exceptions):
         assert isinstance(receive_timeout, int), "ldap3 refuses a float receive_timeout"
         self.user, self.password = user, password
-        self.bound = (user, password) in {("uid=svc,ou=people,dc=x", "svc-pass"),
-                                          ("uid=kuba,ou=people,dc=x", "kuba-pass")}
         self.result = {"description": "invalidCredentials"}
         self.entries = []
+        self.unbound = False
         _FakeConnection.calls.append(user)
 
-    def __enter__(self):
-        return self
+    def bind(self):
+        return (self.user, self.password) in {("uid=svc,ou=people,dc=x", "svc-pass"),
+                                              ("uid=kuba,ou=people,dc=x", "kuba-pass")}
 
-    def __exit__(self, *exc):
-        return False
+    def unbind(self):
+        self.unbound = True
 
     def search(self, base, flt, attributes, size_limit):
         assert flt == "(&(uid=kuba)(memberOf=cn=henry,ou=groups,dc=x))" or "uid=kuba" not in flt

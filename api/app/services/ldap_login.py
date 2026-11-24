@@ -64,22 +64,32 @@ def check(uid: str, password: str) -> bool:
     timeout = max(1, round(settings.ldap_timeout_s))
     server = Server(settings.ldap_url, get_info=NONE, connect_timeout=timeout)
     flt = f"(&(uid={escape_filter_chars(uid)}){settings.ldap_user_filter})"
+    # Explicit bind() and unbind(), never `with Connection(...)`: the context
+    # manager binds on entry and RAISES LDAPBindError for a wrong password,
+    # which would log every mistyped password as an error.
+    svc = person = None
     try:
-        with Connection(server, user=settings.ldap_bind_dn, password=_bind_password(),
-                        receive_timeout=timeout, raise_exceptions=False) as svc:
-            if not svc.bound:
-                log.error("ldap: the service bind failed: %s", svc.result.get("description"))
-                return False
-            svc.search(settings.ldap_user_base, flt, attributes=[], size_limit=2)
-            entries = list(svc.entries)
+        svc = Connection(server, user=settings.ldap_bind_dn, password=_bind_password(),
+                         receive_timeout=timeout, raise_exceptions=False)
+        if not svc.bind():
+            log.error("ldap: the service bind failed: %s", svc.result.get("description"))
+            return False
+        svc.search(settings.ldap_user_base, flt, attributes=[], size_limit=2)
+        entries = list(svc.entries)
         if len(entries) != 1:
             # 0: unknown uid or not in the group. 2: a filter that matches too
             # much — refuse rather than guess which person this is.
             return False
-        dn = entries[0].entry_dn
-        with Connection(server, user=dn, password=password,
-                        receive_timeout=timeout, raise_exceptions=False) as person:
-            return bool(person.bound)
+        person = Connection(server, user=entries[0].entry_dn, password=password,
+                            receive_timeout=timeout, raise_exceptions=False)
+        return bool(person.bind())
     except Exception as exc:  # noqa: BLE001 — a directory fault must not 500 the login
         log.error("ldap: %s: %s", type(exc).__name__, exc)
         return False
+    finally:
+        for conn in (person, svc):
+            if conn is not None:
+                try:
+                    conn.unbind()
+                except Exception:  # noqa: BLE001, S110 — closing a dead socket
+                    pass
