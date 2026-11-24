@@ -2,7 +2,7 @@
 name: kicad-conventions-footprints
 description: "Choosing AND authoring footprints: where to get the copper, how to publish it, and the index of every footprint rule with the check that now holds it. The rules themselves live in the footprint checklist — read them with get_review_checklist('footprint'). Use when naming, picking or authoring any footprint."
 ---
-<!-- platform-skill: conventions-footprints v58 — source of truth is the platform; check with list_skills, refresh with get_skill -->
+<!-- platform-skill: conventions-footprints v59 — source of truth is the platform; check with list_skills, refresh with get_skill -->
 # Footprint conventions
 
 **The rules are checks now, not prose.** Every convention this document used to
@@ -147,6 +147,7 @@ Pass the model path as it appears after `3DModels/` in the `(model ...)` line.
 | Does the model actually fit, measured? | `fp.model_fit` |
 | Is a JLC rotation offset real (a reviewed export, or an exact JLC land), and named correctly? | `fp.rotation_offset`, `fp.rotation_field_name` |
 | What does the exposed-pad pin connect to, and what is it named? | `cmp.exposed_pad_documented` |
+| Where do QFN pad centres go, and what shape is a QFN courtyard? | this document, "No-lead quad packages" below |
 
 Full naming standard, the per-footprint migration table and the catalogue of
 canonical names for packages not yet in the library: `docs/footprint-naming/`.
@@ -275,7 +276,8 @@ the offset. See the 3D-model paragraph under Getting the copper.
 
 ## Pad placement grid — still prose, because no check holds it
 
-Pad centres and sizes belong on the **0.1 mm grid**, with two exceptions:
+Pad centres and sizes belong on the **0.1 mm grid**, with two exceptions
+(no-lead quad packages have their own rule, in the next section):
 
 - **The pitch axis of a fine-pitch package**, where lead positions do not divide
   by 0.1 mm. A 0.5 mm-pitch package with two leads per side has them at
@@ -316,6 +318,63 @@ SOIC puts its pads at ±0.635 and ±1.905; a two-row 2.54 mm header puts its row
 at ±1.27. The same **spacing versus absolute grid** distinction the symbol side
 already recorded applies here, and the honest check would measure the
 across-edge axis only. Until it exists, this stays prose.
+
+## No-lead quad packages: pad centres on the 0.05 mm grid, stepped courtyard
+
+Decided by Mateusz Kowalik on 2026-11-19, for QFN, VQFN, WQFN, DHVQFN and UQFN
+lands.
+
+**Every pad centre goes on the 0.05 mm grid.** The IPC generator writes
+across-edge centres such as 1.4625 or 3.4375 mm. No trace end then meets a
+routing grid, and the layout is hard to route. The 0.1 mm grid costs 0.05 mm or
+more of copper on these lands. The 0.05 mm grid costs 0.025 mm or less.
+
+Snap the ACROSS-EDGE centre to 0.05 mm and choose the pad length on the
+0.05 mm grid. Rank the candidates in this order:
+
+1. The smallest largest move of either pad edge. Never more than 0.025 mm.
+2. The heel (the inner edge, toward the exposed pad) stays where it was.
+3. A length on the 0.1 mm grid.
+4. If the toe moves, it moves outward.
+
+A pad whose centre is already on 0.05 mm and whose length is on 0.05 mm stays
+as it is.
+
+Decided case: `QFN-16-1EP_3x3mm_P0.5mm_EP1.7x1.7mm_ThermalVias` v10. The centre
+went 1.4625 → 1.45 and the length 0.825 → 0.8. The heel stayed at 1.05 and the
+toe moved 0.025 mm in. The symmetric option (1.45 / 0.825, both edges moved
+0.0125 mm) was offered and not chosen. The same rule moved DHVQFN-16 v4,
+QFN-28 v6, QFN-56-1EP_7x7mm_P0.4mm_EP3.2x3.2mm v5, QFN-68 v6 and VQFN-20 v7 on
+the same day.
+
+Do not move these:
+
+- **The pitch axis.** A 0.45 mm pitch (`TexasInstruments_RPW0010A`, ±0.225) and
+  the HotRod offsets (`TexasInstruments_RYQ0021A`, 0.54 / 1.04) are the
+  vendor's land.
+- **Irregular vendor lands:** the TI VQFN-HR family and `Texas_RQM0029A`.
+  Snapping them is a datasheet question, not a grid question.
+- **Custom-shape pads**, such as the chamfered corner pads of `QFN-28_4x4mm`
+  (pins 1, 7, 8, 14, 15, 21, 22, 28).
+- **A land whose `descr` disagrees with its copper.** `QFN-60-1EP_7x7mm` was
+  left unsnapped on 2026-11-19 for this reason. Settle the datasheet first.
+- **Thermal vias and paste apertures.** Nothing routes to them.
+
+After a snap, check that `descr` does not still quote the old pad size.
+
+**The courtyard is stepped, not a rectangle.** Draw the union of two sets of
+rectangles. The first is the body outline + 0.25 mm. The second is every copper
+pad + 0.25 mm. Snap each rectangle OUTWARD to the 0.1 mm grid, then fill every
+notch narrower than 0.5 mm. Thermal-via holes inside the body add nothing. Draw
+the outline as `F.CrtYd` fp_lines, 0.05 mm wide.
+
+On `QFN-16-1EP_3x3mm` this gives pad-row arms at ±2.1 over ±1.2 and body corners
+at ±1.8. A part whose pads reach its body corners (`TexasInstruments_RPE0009B`,
+`RPW0010A`, `Texas_RQM0029A`) comes out as a plain rectangle, and that is
+correct. A courtyard larger than this needs a reason in the proposal comment
+(`fp.courtyard_clearance`). Two older courtyards were shrunk to the rule on
+2026-11-19 with no recorded reason: Microchip QFN-64 (±4.6 → ±4.4) and
+Microchip VQFN-24 (±3.0 → ±2.7).
 
 ## Two rules this document used to state, which are wrong
 
